@@ -1,0 +1,56 @@
+===== /c/Program Files/nodejs/npm.cmd run typecheck =====
+
+> my-vue-app@0.0.0 typecheck
+> node scripts/typecheck.js
+
+EXIT_CODE=0
+
+===== /c/Program Files/nodejs/npm.cmd test =====
+
+> my-vue-app@0.0.0 test
+> vitest run
+
+
+[1m[30m[46m RUN [49m[39m[22m [36mv5.0.5 [39m[90mD:/HR Hub/my-vue-app[39m
+
+ [32m✓[39m tests/time.test.js [2m([22m[2m2 tests[22m[2m)[22m[32m 36[2mms[22m[39m
+ [32m✓[39m tests/require-role.test.js [2m([22m[2m4 tests[22m[2m)[22m[32m 12[2mms[22m[39m
+ [32m✓[39m tests/meeting-window.test.js [2m([22m[2m10 tests[22m[2m)[22m[32m 15[2mms[22m[39m
+ [32m✓[39m tests/meeting-roster.test.js [2m([22m[2m6 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32m✓[39m tests/register-window.test.js [2m([22m[2m7 tests[22m[2m)[22m[32m 48[2mms[22m[39m
+ [32m✓[39m tests/meeting-overview.test.js [2m([22m[2m9 tests[22m[2m)[22m[32m 48[2mms[22m[39m
+ [32m✓[39m tests/pin.test.js [2m([22m[2m7 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32m✓[39m tests/attendance-status.test.js [2m([22m[2m4 tests[22m[2m)[22m[32m 7[2mms[22m[39m
+ [32m✓[39m tests/national-id.test.js [2m([22m[2m2 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m tests/unique-violation.test.js [2m([22m[2m3 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m tests/access.test.js [2m([22m[2m5 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m11 passed[39m[22m[90m (11)[39m
+[2m      Tests [22m [1m[32m59 passed[39m[22m[90m (59)[39m
+[2m   Start at [22m 10:02:04
+[2m   Duration [22m 746ms[2m (import 40%, transform 24%, tests 23%, worker 13%, environment 1%)[22m
+
+EXIT_CODE=0
+
+===== /c/Program Files/nodejs/npm.cmd run build =====
+
+> my-vue-app@0.0.0 build
+> vite build
+
+[36mvite v8.3.5 [32mbuilding client environment for production...[36m[39m
+transforming...
+✓ 1081 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                   0.67 kB │ gzip:   0.37 kB
+dist/assets/index-BoWClduY.css  588.57 kB │ gzip:  80.57 kB
+dist/assets/index-CKggej6E.js   866.15 kB │ gzip: 277.18 kB
+
+[32m✓ built in 747ms[39m
+[33m[plugin builtin:vite-reporter] 
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.[39m
+EXIT_CODE=0
+

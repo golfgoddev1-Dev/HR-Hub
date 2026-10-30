@@ -1,0 +1,53 @@
+import { createRouter, createWebHistory } from 'vue-router'
+import { getSession } from './api.js'
+import LoginPage from './pages/LoginPage.vue'
+import PendingPage from './pages/PendingPage.vue'
+import SetPinPage from './pages/SetPinPage.vue'
+import ControllerQrPage from './pages/ControllerQrPage.vue'
+import ControllerRosterPage from './pages/ControllerRosterPage.vue'
+import RegisterPage from './pages/RegisterPage.vue'
+import ControllerOverviewPage from './pages/ControllerOverviewPage.vue'
+import ControllerDashboardPage from './pages/ControllerDashboardPage.vue'
+
+const allowedPathsByRole = {
+  employee: ['/leave', '/leave/approvals'],
+  hr: ['/leave/hr'],
+  meeting_controller: [
+    '/meeting/controller',
+    '/meeting/controller/qr',
+    '/meeting/controller/roster',
+    '/meeting/controller/dashboard',
+  ],
+  system_admin: ['/admin'],
+}
+
+export const router = createRouter({
+  history: createWebHistory(),
+  routes: [
+    { path: '/login', component: LoginPage },
+    { path: '/pending', component: PendingPage },
+    { path: '/', redirect: '/login' },
+    { path: '/set-pin', component: SetPinPage },
+    { path: '/meeting/controller', component: ControllerOverviewPage, meta: { requiresAuth: true } },
+    { path: '/meeting/controller/qr', component: ControllerQrPage, meta: { requiresAuth: true } },
+    { path: '/meeting/controller/roster', component: ControllerRosterPage, meta: { requiresAuth: true } },
+    { path: '/meeting/controller/dashboard', component: ControllerDashboardPage, meta: { requiresAuth: true } },
+    { path: '/meeting/register', component: RegisterPage },
+    { path: '/:pathMatch(.*)*', component: PendingPage, meta: { requiresAuth: true, catchAll: true } },
+  ],
+})
+
+router.beforeEach(async (to) => {
+  if (!to.meta.requiresAuth) return true
+
+  const session = await getSession()
+  if (!session) return '/login'
+
+  const allowedPaths = allowedPathsByRole[session.role] ?? []
+  if (session.redirectTo !== to.fullPath && !allowedPaths.includes(to.path)) {
+    return session.redirectTo
+  }
+
+  if (to.meta.catchAll) return session.redirectTo
+  return true
+})

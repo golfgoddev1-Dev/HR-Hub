@@ -1,0 +1,12 @@
+
+> my-vue-app@0.0.0 typecheck
+> node scripts/typecheck.js
+
+EXIT CODE: 0
+
+> my-vue-app@0.0.0 check:meeting-types
+> node scripts/check-meeting-types.js
+
+MEETING TYPES OK
+rows: 1
+EXIT CODE: 0
