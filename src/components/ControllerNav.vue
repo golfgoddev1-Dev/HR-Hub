@@ -11,6 +11,7 @@ const items = [
   { label: 'หน้าหลัก', to: '/meeting/controller', icon: 'dashboard', ready: true },
   { label: 'QR และรอบประชุม', to: '/meeting/controller/qr', icon: 'qr_code_2', ready: true },
   { label: 'รายชื่อประชุม', to: '/meeting/controller/roster', icon: 'groups', ready: true },
+  { label: 'ผู้เข้าร่วม', to: '/meeting/controller/registrants', icon: 'badge', ready: true },
   { label: 'ข้อมูลย้อนหลัง', to: '', icon: 'history', ready: false },
   { label: 'แดชบอร์ด', to: '/meeting/controller/dashboard', icon: 'insights', ready: true },
 ]

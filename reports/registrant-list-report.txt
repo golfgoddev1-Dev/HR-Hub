@@ -1,0 +1,153 @@
+REGISTRANT LIST PAGE — BUILD REPORT
+Date: 2026-10-31
+
+Scope: the Vue app inside D:\HR Hub\my-vue-app only. Nothing was committed, pushed or
+deployed. No wrangler command ran, no SQL ran, no live database write happened, and no
+secret, PIN, token, cookie, national ID or reset code was read, printed or written.
+Nothing under server/, worker/src/ or worker/tests/ was modified.
+
+===============================================================================
+1. REVIEW OF EXISTING UNCOMMITTED CHANGES IN src/
+===============================================================================
+
+`git status` shows exactly one modified file under src/ plus my new work:
+
+  M  src/pages/ControllerDashboardPage.vue   (+381 / -6)
+
+That diff contains two unrelated pieces of work:
+
+  (a) Registrant work - PART OF THIS FEATURE, pre-existing:
+      - state `registrants` + `registrantsRequestId`, computed `registrantFilters`,
+        `registrantsCounts`, `registrantsFiltered`
+      - `loadRegistrants()` calling GET /api/meeting/dashboard/registrants?code&cycle
+      - a "รายชื่อผู้ลงทะเบียน" card with status filter chips and a list, plus the
+        REGISTRANTS/EMPTY/EMPTY_FILTER Thai messages and the `.chips`, `.chip`,
+        `.reg-list`, `.reg-row`, `.reg-pill`, `.reg-meta` styles
+      Verdict: same feature as this task, already implemented inline on the dashboard.
+
+  (b) Dashboard mobile work - UNRELATED to this task:
+      - `data-label` attributes on the existing department, monthly and top-absent
+        tables
+      - the `@media (max-width: 600px)` block that turns those tables/charts into
+        stacked cards
+      Verdict: belongs to the earlier dashboard-mobile task (see
+      reports/dashboard-mobile.txt), not to the registrant page.
+
+Neither piece was reverted, edited or reformatted. The overlap in (a) is recorded as an
+open question below rather than "fixed" by deleting someone else's uncommitted work.
+
+Other uncommitted items in the repo (server/*, worker/*, tests/*, vercel.json,
+reports/*, .cloud-attachments/) were outside this task's scope and were not touched.
+
+===============================================================================
+2. FILES ADDED OR CHANGED
+===============================================================================
+
+Added:
+  src/pages/RegistrantsPage.vue   the page (read-only, 733 lines incl. scoped CSS)
+
+Changed (minimal wiring):
+  src/router.js                   import + route '/meeting/controller/registrants'
+                                  (meta.requiresAuth) + a matching entry in
+                                  allowedPathsByRole.meeting_controller
+  src/components/ControllerNav.vue one nav item "ผู้เข้าร่วม" -> the new route
+
+No Worker, server or test file was touched.
+
+Page behaviour:
+  - type tabs "ประชุมหัวหน้างาน" / "ประชุม Monthly" (same labels as the dashboard)
+  - round selector fed by the Worker's own cycle options, defaulting to the current
+    round; changing type resets to that type's current round
+  - status filter chips rendered in the Worker's STATUS_LABELS order, with per-status
+    counts; "ทั้งหมด" first
+  - rows show name, employee code, department, status label, registration time
+    (HH:mm + " น."), values defaulting to "-" like the Worker's own DASH
+  - loading ("กำลังโหลด…"), empty ("ยังไม่มีผู้ลงทะเบียนในรอบนี้"), filtered-empty
+    ("ไม่มีรายชื่อในสถานะนี้") and error states; the error text is `data.message`
+    from the server when present, otherwise one fixed Thai sentence - never a stack
+    trace, status code or raw error
+  - stale-response guard: a sequence counter drops responses from a superseded
+    type/round request
+  - guard: the route uses meta.requiresAuth and is listed for role
+    meeting_controller, so router.beforeEach sends other roles to their own
+    redirectTo, exactly like the other controller pages
+  - responsive: list layout, 16px side gutter at <=899px, table columns stack into
+    labelled rows at <=600px, `min-width: 0` and `overflow-wrap: anywhere` on flex
+    and table cells, no `overflow-x: auto` anywhere on the page
+
+===============================================================================
+3. ENDPOINTS USED (both GET, read-only)
+===============================================================================
+
+  1) GET /api/meeting/dashboard?code=sup|monthly
+     Used for: `statuses` (STATUS_LABELS order for the chips), `history.options`
+     (round selector) and `current.key` (default round).
+  2) GET /api/meeting/dashboard/registrants?code=sup|monthly&cycle=<key>
+     Used for: `items[]` (name, departmentName, positionName, status, shift, time),
+     `total`, `cycle.label`.
+
+Both are Hono GET routes in worker/src/routes/meeting-dashboard.js (mounted at
+/api/meeting/dashboard). Neither has side effects: the file's own header states the
+dashboard GETs perform no auto-absent, no attendance writes and no audit insert.
+The page sends no other request: `grep` over the file shows only those two `/api/...`
+strings, and both go through a helper hard-wired to method GET.
+
+===============================================================================
+4. CONTRACT GAP (STOP CONDITION, REPORTED NOT PATCHED)
+===============================================================================
+
+The task asks for the employee code per registrant. The registrants endpoint does not
+return one: each item is
+  { name, departmentName, positionName, status, shift, time }
+and the database read behind it selects only employee `id, full_name,
+departments(name), positions(name)` (EMPLOYEE_COLUMNS in the Worker, identical in
+server/routes/meeting-dashboard.js:410-430). Employee codes are selected only by
+/api/meeting/roster (member/candidate rows), which lists the roster, not the actual
+registrants - a different population, and matching on name would be guesswork.
+
+Per the task's stop condition I did not change the Worker. The page therefore renders
+the "รหัสพนักงาน" column from `item.employeeCode` when the API provides it and shows
+"-" otherwise, which is the Worker's own convention for a missing value. As of this
+build the column is always "-" until a field is added to the endpoint's response.
+Owner decision needed (see open questions).
+
+===============================================================================
+5. BUILD AND LINT
+===============================================================================
+
+  npm run build       -> exit 0 (vite 8.3.5, 1085 modules, dist/assets/index-*.js
+                         896.08 kB / 284.37 kB gzip, CSS 611.60 kB). The only output
+                         besides the summary is Vite's pre-existing chunk-size warning.
+  npm run typecheck   -> exit 0 (scripts/typecheck.js only runs `node --check` on .js
+                         files, so it does not validate .vue templates)
+  npm run lint        -> not run: package.json has no lint script (scripts are dev,
+                         dev:api, dev:web, build, preview, test, typecheck,
+                         check:*, issue:reset-code, start)
+
+Host scan of dist/ (case-insensitive, all files):
+  localhost      0 files
+  127.0.0.1      0 files
+  workers.dev    0 files
+  supabase       0 files (also 0 for `supabase.`)
+
+Not verified: an in-browser render at phone width. The page sits behind the controller
+route guard, so viewing it needs a signed-in controller session; the task did not ask
+for a login and I did not create one. The 16px gutter / no-horizontal-scroll claim is
+therefore based on the CSS (gutter on the shell at <=899px, stacked labelled rows at
+<=600px, wrapping + min-width:0 on every flex and table cell), not on a screenshot.
+
+===============================================================================
+6. OPEN QUESTIONS
+===============================================================================
+
+1. Employee code is missing from the /registrants contract (section 4). Options: add
+   employee_code to that endpoint's employee select and items (a Worker + Express
+   change, outside this task's rules), or accept the "-" column, or drop the column.
+2. Duplicate surface: the uncommitted dashboard card shows the same registrants that
+   this new page shows. Keeping both is redundant (and the dashboard loads the
+   registrants list on every dashboard load). Which one should survive? Removing the
+   dashboard card would discard uncommitted work, which this run was told not to do.
+3. Round selection defaults to the Worker's current round. If the owner wants a
+   "latest round" default instead of the current one, that is a one-line change.
+4. `positionName` and `shift` are returned but not displayed, since the task listed
+   name, code, department, status and time only. Easy to add if wanted.

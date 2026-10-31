@@ -71,7 +71,7 @@ function installFetch(handler) {
 /** eq / gte / is.null filter check against a fake row. */
 function matches(params, row) {
   for (const [key, value] of params.entries()) {
-    if (key === "select" || key === "order" || key === "limit" || key === "onConflict") {
+    if (key === "select" || key === "order" || key === "limit" || key === "on_conflict") {
       continue;
     }
     if (value === "is.null") {
@@ -184,6 +184,11 @@ function createBackend(options = {}) {
         return jsonResponse(Number.isFinite(limitParam) && params.get("limit") !== null ? rows.slice(0, limitParam) : rows);
       }
       if (method === "POST") {
+        // Pin the upsert query string: PostgREST's parameter is on_conflict.
+        // Any other shape (the old camelCase onConflict) is rejected here.
+        if (parsed.search !== "?on_conflict=meeting_type_id%2Cemployee_id&select=*") {
+          throw new Error("unexpected roster upsert query string");
+        }
         const body = JSON.parse(init.body ?? "{}");
         state.rosterUpserts.push({ url, init, body });
         // Upsert returns the representation; one row per request.
@@ -588,7 +593,10 @@ test("add: upserts both type rows with the controller as creator and writes no a
   assert.deepEqual(typeIds.sort(), [MONTHLY_TYPE_ID, SUP_TYPE_ID]);
 
   for (const call of fake.state.rosterUpserts) {
-    assert.equal(new URL(call.url).searchParams.get("onConflict"), "meeting_type_id,employee_id");
+    const upsertUrl = new URL(call.url);
+    assert.equal(upsertUrl.searchParams.get("on_conflict"), "meeting_type_id,employee_id");
+    assert.equal(upsertUrl.searchParams.has("onConflict"), false);
+    assert.equal(upsertUrl.search, "?on_conflict=meeting_type_id%2Cemployee_id&select=*");
     assert.deepEqual(call.body, {
       meeting_type_id: call.body.meeting_type_id,
       employee_id: EMPLOYEE_ID_2,
@@ -599,6 +607,25 @@ test("add: upserts both type rows with the controller as creator and writes no a
   }
 
   assert.equal(fake.state.auditLogs.length, 0);
+});
+
+test("add: both upserts use PostgREST's on_conflict parameter", async (t) => {
+  freeze(t);
+  const fake = createBackend({ employees: [employeeRow()] });
+  t.after(() => fake.restore());
+
+  const res = await post("/api/meeting/roster/add", { employeeId: EMPLOYEE_ID_2 });
+  assert.equal(res.status, 200);
+
+  // The fake rejects any other query string, so the old camelCase onConflict
+  // would turn this into a 500 instead of two upserts.
+  assert.equal(fake.state.rosterUpserts.length, 2);
+  for (const call of fake.state.rosterUpserts) {
+    const url = new URL(call.url);
+    assert.equal(url.search, "?on_conflict=meeting_type_id%2Cemployee_id&select=*");
+    assert.equal(url.searchParams.get("on_conflict"), "meeting_type_id,employee_id");
+    assert.equal(url.searchParams.has("onConflict"), false);
+  }
 });
 
 test("add: a database failure is 500", async (t) => {

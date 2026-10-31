@@ -41,7 +41,9 @@ const ROSTER = {
 ROSTER[TYPE_M] = ROSTER[TYPE_S];
 
 const DIRECTORY = {
-  [EMP_A]: { full_name: "คนเอ", departments: { name: "แผนกวิจัย" }, positions: { name: "หัวหน้าฝ่ายวิจัย" } },
+  // EMP_A carries a synthetic employee_code so /registrants can prove the
+  // pass-through; the others omit it to prove a missing code maps to null.
+  [EMP_A]: { full_name: "คนเอ", employee_code: "A0001", departments: { name: "แผนกวิจัย" }, positions: { name: "หัวหน้าฝ่ายวิจัย" } },
   [EMP_B]: { full_name: "คนบี", departments: { name: "แผนกวิจัย" }, positions: { name: "พนักงานวิจัย" } },
   [EMP_C]: { full_name: "คนซี", departments: { name: "แผนกการตลาด" }, positions: { name: "พนักงานการตลาด" } },
   [EMP_D]: { full_name: "คนดี", departments: { name: "แผนกประชาสัมพันธ์" }, positions: { name: "พนักงานประชาสัมพันธ์" } },
@@ -598,9 +600,9 @@ test("GET /registrants: ascending order and employee joins", async (t) => {
     assert.deepEqual(body.cycle, { key: "2026-12-22", label: "วันอังคาร 22 ธ.ค. 2569" });
     assert.equal(body.total, 3);
     assert.deepEqual(body.items, [
-      { name: "คนดี", departmentName: "แผนกประชาสัมพันธ์", positionName: "พนักงานประชาสัมพันธ์", status: "ติดงานด่วน", shift: null, time: "08:00" },
-      { name: "คนบี", departmentName: "แผนกวิจัย", positionName: "พนักงานวิจัย", status: "ลาประชุม", shift: "กะบ่าย", time: "09:30" },
-      { name: "คนเอ", departmentName: "แผนกวิจัย", positionName: "หัวหน้าฝ่ายวิจัย", status: "เข้าร่วมประชุม", shift: "กะเช้า", time: "10:00" },
+      { name: "คนดี", departmentName: "แผนกประชาสัมพันธ์", positionName: "พนักงานประชาสัมพันธ์", status: "ติดงานด่วน", shift: null, time: "08:00", employeeCode: null },
+      { name: "คนบี", departmentName: "แผนกวิจัย", positionName: "พนักงานวิจัย", status: "ลาประชุม", shift: "กะบ่าย", time: "09:30", employeeCode: null },
+      { name: "คนเอ", departmentName: "แผนกวิจัย", positionName: "หัวหน้าฝ่ายวิจัย", status: "เข้าร่วมประชุม", shift: "กะเช้า", time: "10:00", employeeCode: "A0001" },
     ]);
 
     for (const query of ["?code=sup", "?code=sup&cycle=fff"]) {
@@ -608,6 +610,51 @@ test("GET /registrants: ascending order and employee joins", async (t) => {
       assert.equal(bad.status, 400, query);
       assert.deepEqual(await bad.json(), { ok: false, error: INVALID_INPUT }, query);
     }
+  } finally {
+    backend.restore();
+  }
+});
+
+test("GET /registrants: employee_code is selected and mapped to employeeCode", async (t) => {
+  freeze(t);
+  const backend = createBackend();
+  try {
+    const res = await get("/api/meeting/dashboard/registrants?code=sup&cycle=2026-12-22");
+    assert.equal(res.status, 200);
+    const body = await res.json();
+
+    // The employee read for this route must ask for employee_code, and must
+    // still ask for the original columns first, unchanged and in order.
+    const employeeCalls = backend.calls.filter((call) =>
+      tableOf(call.url) === "employees" &&
+      String(new URL(call.url).searchParams.get("select") ?? "").includes("departments")
+    );
+    assert.ok(employeeCalls.length > 0, "expected an employees select for the registrant rows");
+    for (const call of employeeCalls) {
+      const select = new URL(call.url).searchParams.get("select");
+      assert.ok(select.includes("employee_code"), select);
+      assert.ok(
+        select.startsWith("id,full_name,departments(name),positions(name)"),
+        select,
+      );
+    }
+
+    // Existing fields keep their names and order; employeeCode is appended.
+    assert.equal(body.total, 3);
+    for (const item of body.items) {
+      assert.deepEqual(Object.keys(item), [
+        "name",
+        "departmentName",
+        "positionName",
+        "status",
+        "shift",
+        "time",
+        "employeeCode",
+      ]);
+    }
+
+    // A present code passes through; a missing one is null, never an empty string.
+    assert.deepEqual(body.items.map((item) => item.employeeCode), [null, null, "A0001"]);
   } finally {
     backend.restore();
   }

@@ -58,6 +58,9 @@ const SESSIONS_COLUMNS = "id,session_date";
 const ATTENDANCE_COLUMNS = "id,session_id,employee_id,status_code,reason,shift,registered_at";
 const ROSTER_COLUMNS = "employee_id,employees!meeting_roster_employee_id_fkey!inner(full_name,departments(name),positions(name))";
 const EMPLOYEE_COLUMNS = "id,full_name,departments(name),positions(name)";
+// /registrants also returns employee_code. Kept as its own string so the shared
+// EMPLOYEE_COLUMNS (and therefore every other route's query) stays unchanged.
+const REGISTRANTS_EMPLOYEE_COLUMNS = `${EMPLOYEE_COLUMNS},employee_code`;
 
 const VALID_CODES = new Set(["sup", "monthly"]);
 const VALID_MODES = new Set(["day", "month", "year"]);
@@ -159,12 +162,12 @@ async function loadRoster(db, typeId) {
   });
 }
 
-async function loadEmployees(db, employeeIds) {
+async function loadEmployees(db, employeeIds, columns = EMPLOYEE_COLUMNS) {
   const ids = [...new Set(employeeIds)].filter((id) => typeof id === "string" && id.length > 0);
   const loaded = new Map();
   for (const part of chunk(ids, EMPLOYEE_CHUNK_SIZE)) {
     const rows = await db.select(EMPLOYEES_TABLE, {
-      columns: EMPLOYEE_COLUMNS,
+      columns,
       filters: [["id", "in", part]],
     });
     for (const row of rows) {
@@ -172,6 +175,7 @@ async function loadEmployees(db, employeeIds) {
         fullName: row.full_name ?? DASH,
         departmentName: firstEmbedded(row.departments)?.name ?? DASH,
         positionName: firstEmbedded(row.positions)?.name ?? DASH,
+        employeeCode: row.employee_code ?? null,
       });
     }
   }
@@ -472,7 +476,11 @@ dashboard.get("/registrants", async (c) => {
     const sessionIds = sessions.map((row) => row.id);
     const cycleRows = await loadAttendance(db, sessionIds);
     const latest = sortByRegisteredAt(latestPerEmployee(cycleRows));
-    const employees = await loadEmployees(db, latest.map((row) => row.employee_id));
+    const employees = await loadEmployees(
+      db,
+      latest.map((row) => row.employee_id),
+      REGISTRANTS_EMPLOYEE_COLUMNS,
+    );
 
     const items = latest.map((row) => {
       const employee = employees.get(row.employee_id);
@@ -483,6 +491,7 @@ dashboard.get("/registrants", async (c) => {
         status: STATUS_LABEL_BY_CODE[row.status_code] ?? DASH,
         shift: row.shift ?? null,
         time: timeOfDay(row.registered_at),
+        employeeCode: employee?.employeeCode ?? null,
       };
     });
 

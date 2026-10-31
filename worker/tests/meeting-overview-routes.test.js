@@ -62,7 +62,7 @@ function installFetch(handler) {
 /** eq / is.null filter check against a fake row. */
 function matches(params, row) {
   for (const [key, value] of params.entries()) {
-    if (key === "select" || key === "order" || key === "limit" || key === "onConflict") {
+    if (key === "select" || key === "order" || key === "limit" || key === "on_conflict") {
       continue;
     }
     if (value === "is.null") {

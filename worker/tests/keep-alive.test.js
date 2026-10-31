@@ -65,6 +65,7 @@ test("keep-alive issues exactly one read and writes nothing", async (t) => {
   assert.equal(params.get("select"), "id");
   assert.equal(params.get("limit"), "1");
   assert.equal(params.has("order"), false);
+  assert.equal(params.has("on_conflict"), false);
   assert.equal(params.has("onConflict"), false);
 });
 

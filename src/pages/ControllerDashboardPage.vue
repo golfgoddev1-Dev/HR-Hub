@@ -10,7 +10,6 @@ const NO_DATA_MESSAGE = 'ยังไม่มีข้อมูลในระ�
 const EMPTY_DEPT_MESSAGE = 'ไม่มีรายชื่อในแผนกนี้'
 const NO_REASON_TEXT = 'ไม่ระบุเหตุผล'
 const DASH = '-'
-
 const REASON_STATUSES = ['ติดงานด่วน', 'ลาประชุม']
 const NOT_YET_LABEL = 'ยังไม่ลงทะเบียน'
 const STATUS_TONE = {
@@ -504,9 +503,11 @@ loadDashboard()
                     @keydown.enter="openDept(row.name)"
                   >
                     <td class="cell-name">{{ row.name }}</td>
-                    <td class="cell-num">{{ row.registered }} / {{ row.total }}</td>
-                    <td class="cell-num">{{ row.notYet }}</td>
-                    <td>
+                    <td class="cell-num" data-label="ลงทะเบียน / ทั้งหมด">
+                      {{ row.registered }} / {{ row.total }}
+                    </td>
+                    <td class="cell-num" data-label="ยังไม่ลงทะเบียน">{{ row.notYet }}</td>
+                    <td data-label="อัตราเข้าร่วม">
                       <div class="rate">
                         <span class="rate-track">
                           <span class="rate-fill" :style="{ width: percent(row.rate) }"></span>
@@ -616,10 +617,15 @@ loadDashboard()
                   <tbody>
                     <tr v-for="row in monthly.data.depts" :key="row.name">
                       <td class="cell-name">{{ row.name }}</td>
-                      <td v-for="label in dash.statuses" :key="label" class="cell-num">
+                      <td
+                        v-for="label in dash.statuses"
+                        :key="label"
+                        class="cell-num"
+                        :data-label="label"
+                      >
                         {{ row.counts?.[label] ?? 0 }}
                       </td>
-                      <td class="cell-num">{{ row.rows }}</td>
+                      <td class="cell-num" data-label="รวม">{{ row.rows }}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -642,7 +648,12 @@ loadDashboard()
                   <tbody>
                     <tr v-for="dept in topByDept" :key="dept.name">
                       <td class="cell-name">{{ dept.name }}</td>
-                      <td v-for="cell in dept.cells" :key="cell.status" class="cell-top">
+                      <td
+                        v-for="cell in dept.cells"
+                        :key="cell.status"
+                        class="cell-top"
+                        :data-label="TOP_STATUS_LABEL[cell.status]"
+                      >
                         <span class="top-name">{{ cell.name || DASH }}</span>
                         <span class="top-meta">{{ cell.count }} ครั้ง · {{ percent(cell.pct) }}</span>
                       </td>
@@ -1680,6 +1691,138 @@ loadDashboard()
 
   .topbar {
     padding: 12px 14px;
+  }
+}
+
+@media (max-width: 600px) {
+  .table-wrap {
+    overflow-x: visible;
+  }
+
+  .table,
+  .table-wide {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    font-size: 13px;
+  }
+
+  .table thead {
+    display: none;
+  }
+
+  .table tbody {
+    display: block;
+  }
+
+  .table tbody tr {
+    display: block;
+    margin-bottom: 10px;
+    padding: 10px 12px;
+    border: 1px solid #eef1ef;
+    border-radius: 12px;
+    background: #f7faf8;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .table tbody tr:last-child {
+    margin-bottom: 0;
+  }
+
+  .table td {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 8px;
+    align-items: center;
+    min-width: 0;
+    padding: 3px 0;
+    border-bottom: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .table td::before {
+    content: attr(data-label);
+    min-width: 0;
+    color: #6b7a75;
+    font-size: 12px;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+
+  .table td.cell-name {
+    display: block;
+    padding: 0 0 6px;
+    color: #115447;
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  .table td.cell-name::before {
+    content: none;
+  }
+
+  .table td.cell-num,
+  .table td.cell-top {
+    text-align: left;
+    white-space: normal;
+  }
+
+  .table td.cell-top::before {
+    align-self: start;
+  }
+
+  .rate {
+    min-width: 0;
+  }
+
+  .chart-wrap {
+    overflow-x: visible;
+  }
+
+  .chart {
+    min-width: 0;
+    gap: 4px;
+    padding: 0;
+  }
+
+  .chart-col {
+    min-width: 0;
+    gap: 2px;
+  }
+
+  .chart-total {
+    font-size: 10px;
+  }
+
+  .chart-track {
+    height: 96px;
+  }
+
+  .chart-bar,
+  .chart-seg {
+    min-width: 0;
+  }
+
+  .chart-label {
+    font-size: 10px;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+  }
+
+  .chart-col:nth-child(even) .chart-label {
+    display: none;
+  }
+
+  .card,
+  .state-box,
+  .history-controls,
+  .field,
+  .select,
+  .input {
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
 }
 

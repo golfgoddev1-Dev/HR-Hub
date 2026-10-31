@@ -85,7 +85,7 @@ function tableOf(url) {
 /** eq / gte / lte / is.null / in.(...) filter check against a fake row. */
 function matches(params, row) {
   for (const [key, value] of params.entries()) {
-    if (key === "select" || key === "order" || key === "limit" || key === "onConflict") continue;
+    if (key === "select" || key === "order" || key === "limit" || key === "on_conflict") continue;
     if (value === "is.null") {
       if (row[key] !== null && row[key] !== undefined) return false;
       continue;

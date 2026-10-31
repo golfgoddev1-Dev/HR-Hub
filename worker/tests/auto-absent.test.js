@@ -78,7 +78,7 @@ function rosterRow(employeeId, overrides = {}) {
 /** eq / gte / lte / is.null / in.(...) filter check against a fake row. */
 function matches(params, row) {
   for (const [key, value] of params.entries()) {
-    if (key === "select" || key === "order" || key === "limit" || key === "onConflict") continue;
+    if (key === "select" || key === "order" || key === "limit" || key === "on_conflict") continue;
     if (value === "is.null") {
       if (row[key] !== null && row[key] !== undefined) return false;
       continue;
@@ -150,11 +150,17 @@ function createBackend(options = {}) {
     const prefer = String(init.headers?.Prefer ?? "");
     const ignore = prefer.includes("resolution=ignore-duplicates");
     const params = new URL(call.url).searchParams;
+    // Upserts must name the conflict target with PostgREST's on_conflict
+    // parameter; the camelCase spelling used to be parsed as a filter.
+    if (table !== "audit_logs" && params.get("on_conflict") === null) {
+      throw new Error("upsert without on_conflict");
+    }
     state.writes.push({
       table,
       rows,
       prefer,
-      onConflict: params.get("onConflict"),
+      onConflict: params.get("on_conflict"),
+      search: new URL(call.url).search,
       hasSelect: params.has("select"),
     });
 
@@ -323,6 +329,7 @@ test("one due session: one batched attendance upsert and one marker insert", asy
   const attendanceWrite = fake.state.writes.find((write) => write.table === "meeting_attendance");
   assert.equal(attendanceWrite.rows.length, 2);
   assert.equal(attendanceWrite.onConflict, "session_id,employee_id");
+  assert.equal(attendanceWrite.search, "?on_conflict=session_id%2Cemployee_id");
   assert.equal(attendanceWrite.prefer.includes("resolution=ignore-duplicates"), true);
   assert.equal(attendanceWrite.prefer.includes("return=representation"), false);
   assert.equal(attendanceWrite.hasSelect, false);
@@ -443,6 +450,10 @@ test("creating the sup session costs one extra subrequest", async (t) => {
 
   const createWrite = fake.state.writes.find((write) => write.table === "meeting_sessions");
   assert.equal(createWrite.onConflict, "meeting_type_id,session_date");
+  assert.equal(
+    createWrite.search,
+    "?on_conflict=meeting_type_id%2Csession_date&select=id,%20meeting_type_id,%20session_date,%20cutoff_time"
+  );
   assert.equal(createWrite.prefer.includes("resolution=ignore-duplicates"), true);
   // The created row is requested back so this same run can mark it.
   assert.equal(createWrite.prefer.includes("return=representation"), true);
@@ -647,6 +658,7 @@ test("db.upsert keeps merge-duplicates by default", async (t) => {
   const write = fake.state.writes[0];
   assert.equal(write.prefer, "return=representation,resolution=merge-duplicates");
   assert.equal(write.onConflict, "session_id,employee_id");
+  assert.equal(write.search, "?on_conflict=session_id%2Cemployee_id&select=*");
   assert.equal(write.hasSelect, true);
 });
 

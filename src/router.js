@@ -8,6 +8,7 @@ import ControllerRosterPage from './pages/ControllerRosterPage.vue'
 import RegisterPage from './pages/RegisterPage.vue'
 import ControllerOverviewPage from './pages/ControllerOverviewPage.vue'
 import ControllerDashboardPage from './pages/ControllerDashboardPage.vue'
+import RegistrantsPage from './pages/RegistrantsPage.vue'
 
 const allowedPathsByRole = {
   employee: ['/leave', '/leave/approvals'],
@@ -17,6 +18,7 @@ const allowedPathsByRole = {
     '/meeting/controller/qr',
     '/meeting/controller/roster',
     '/meeting/controller/dashboard',
+    '/meeting/controller/registrants',
   ],
   system_admin: ['/admin'],
 }
@@ -32,6 +34,7 @@ export const router = createRouter({
     { path: '/meeting/controller/qr', component: ControllerQrPage, meta: { requiresAuth: true } },
     { path: '/meeting/controller/roster', component: ControllerRosterPage, meta: { requiresAuth: true } },
     { path: '/meeting/controller/dashboard', component: ControllerDashboardPage, meta: { requiresAuth: true } },
+    { path: '/meeting/controller/registrants', component: RegistrantsPage, meta: { requiresAuth: true } },
     { path: '/meeting/register', component: RegisterPage },
     { path: '/:pathMatch(.*)*', component: PendingPage, meta: { requiresAuth: true, catchAll: true } },
   ],

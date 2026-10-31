@@ -161,7 +161,10 @@ export function createDb(env) {
     requestHeaders.Prefer = wantsRows ? `return=representation,${resolution}` : resolution;
 
     const queryParts = [];
-    if (conflict) queryParts.push(`onConflict=${encodeURIComponent(conflict)}`);
+    // PostgREST's parameter is on_conflict (snake_case), as supabase-js sends.
+    // A camelCase name is not a parameter: PostgREST parses it as a column
+    // filter, and the comma in the list makes that filter unparseable (PGRST100).
+    if (conflict) queryParts.push(`on_conflict=${encodeURIComponent(conflict)}`);
     if (wantsRows) queryParts.push(`select=${columns}`);
 
     const response = await fetch(url(table, queryParts), {

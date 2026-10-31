@@ -1,0 +1,212 @@
+Registrants employeeCode + duplicate card removal report
+Date: 2026-10-31
+Scope: D:\HR Hub\my-vue-app only. Nothing committed, pushed, or deployed.
+
+===============================================================================
+PART A - employeeCode in GET /api/meeting/dashboard/registrants
+===============================================================================
+
+Files changed:
+  worker/src/routes/meeting-dashboard.js
+  worker/tests/meeting-dashboard-routes.test.js
+
+Shared-constant check (step 2):
+  The employee select was the module constant EMPLOYEE_COLUMNS =
+  "id,full_name,departments(name),positions(name)", read inside loadEmployees().
+  loadEmployees() is shared by two routes:
+    - GET /registrants        (line 475 before the change)
+    - GET /monthly-summary    (line 522 before the change)
+  Because another route uses the same select, EMPLOYEE_COLUMNS was left byte-for-byte
+  unchanged and /registrants was given its own string:
+
+    const REGISTRANTS_EMPLOYEE_COLUMNS = `${EMPLOYEE_COLUMNS},employee_code`;
+
+  loadEmployees() gained an optional third parameter, columns = EMPLOYEE_COLUMNS, so
+  every existing call site still asks for exactly the original columns. Only
+  /registrants passes the extended string. No other route's query changed.
+
+Row mapping:
+  employeeCode: employee?.employeeCode ?? null
+  The internal employee map stores employeeCode: row.employee_code ?? null, so a row
+  whose employee has no code yields null, never an empty string. When employee_code is
+  not selected (all other routes), the value is simply never read.
+
+Before / after response shape of /registrants (placeholder values only):
+
+  BEFORE
+  {
+    "ok": true,
+    "cycle": { "key": "<cycle-key>", "label": "<cycle-label>" },
+    "total": <n>,
+    "items": [
+      {
+        "name":               "<full name>",
+        "departmentName":     "<department name>",
+        "positionName":       "<position name>",
+        "status":             "<status label>",
+        "shift":              "<shift>" | null,
+        "time":               "<HH:MM>"
+      }
+    ]
+  }
+
+  AFTER
+  {
+    "ok": true,
+    "cycle": { "key": "<cycle-key>", "label": "<cycle-label>" },
+    "total": <n>,
+    "items": [
+      {
+        "name":               "<full name>",
+        "departmentName":     "<department name>",
+        "positionName":       "<position name>",
+        "status":             "<status label>",
+        "shift":              "<shift>" | null,
+        "time":               "<HH:MM>",
+        "employeeCode":       "<employee code>" | null
+      }
+    ]
+  }
+
+  Only employeeCode is new. It is appended last, so every existing field keeps its
+  name and position. ok, cycle, total, every item field, all status codes, and all
+  error messages are unchanged. The error envelope ({ ok: false, error: "<message>" }
+  with 400/401/403/500) was not touched.
+
+Other routes (step 5): confirmed unchanged.
+  - GET /                     still collects employees with columns: EMPLOYEE_COLUMNS
+  - GET /dept                 uses loadRoster(), untouched
+  - GET /cycles               no employee read
+  - GET /monthly-summary      still passes no columns argument -> EMPLOYEE_COLUMNS
+  - GET /dashboard/reason     exports loadContext(), untouched
+  The extra employeeCode key exists only inside the private employee map, which no
+  other handler serialises, so no other response can gain it.
+
+New test (node:test, fake fetch only):
+  "GET /registrants: employee_code is selected and mapped to employeeCode"
+  Asserts:
+    1. the captured employees select string contains "employee_code" and still starts
+       with "id,full_name,departments(name),positions(name)";
+    2. every returned row has exactly the keys
+       name, departmentName, positionName, status, shift, time, employeeCode
+       (existing field names and order unchanged);
+    3. a present code passes through and a missing code is null.
+  Fixture-only change: one synthetic employee in the fake DIRECTORY carries a
+  synthetic employee_code ("A0001"); the others omit it to exercise the null path.
+  The pre-existing /registrants deepEqual assertion was updated to include
+  employeeCode (null, null, "A0001"). No other assertion was weakened or removed.
+
+===============================================================================
+PART B - duplicate registrant card removed from ControllerDashboardPage.vue
+===============================================================================
+
+File changed: src/pages/ControllerDashboardPage.vue
+
+Ownership listing recorded BEFORE editing (line numbers in the pre-edit file):
+
+  Template block (the duplicate card)
+    586-642   <section class="card"> ... </section> — title "รายชื่อผู้ลงทะเบียน",
+              count tag, .chips filter group, loading/error/empty states, .reg-list
+
+  Script
+       8      const REGISTRANTS_ERROR_MESSAGE
+       9      const EMPTY_REGISTRANTS_MESSAGE
+      10      const EMPTY_FILTER_MESSAGE
+      16      const ALL_FILTER
+      58      const registrants = reactive({ ... filter: ALL_FILTER })
+      59      let registrantsRequestId = 0
+      85      const registrantFilters = computed(...)
+      87-92   const registrantsCounts = computed(...)
+      95-98   const registrantsFiltered = computed(...)
+     206-240  async function loadRegistrants()
+     258      await loadRegistrants()   <- call site inside loadDashboard()
+
+  CSS (card-only)
+    1787      .chips
+    1793      .chip
+    1808      .chip-active
+    1815      .chip-count
+    1820      .reg-list
+    1829      .reg-row
+    1842      .reg-main
+    1850      .reg-name
+    1856      .reg-sub
+    1862      .reg-side
+    1869      .reg-pill
+    1880      .reg-pill.tone-ok
+    1885      .reg-pill.tone-warn
+    1890      .reg-pill.tone-info
+    1895      .reg-meta
+
+  Imports: none were card-only. ControllerNav, computed/reactive/ref,
+  requestJson, formatUpdated and toneOfStatus are all used by the rest of the page.
+  No watchers existed for this card.
+
+Step 7 - reference search result: NO CARD-OWNED NAME IS USED ELSEWHERE.
+  Every occurrence of registrants, loadRegistrants, registrantsRequestId,
+  registrantFilters, registrantsCounts, registrantsFiltered, ALL_FILTER,
+  REGISTRANTS_ERROR_MESSAGE, EMPTY_REGISTRANTS_MESSAGE, EMPTY_FILTER_MESSAGE,
+  .chips and .reg-* lived inside the card itself, its computeds, its loader, or the
+  single loadDashboard() call site. Part B therefore did not hit its stop condition.
+
+Removed line ranges (names only):
+
+  Template    586-642   the duplicate registrant <section class="card"> block
+                        (including its trailing blank line)
+  Script          8-10  REGISTRANTS_ERROR_MESSAGE, EMPTY_REGISTRANTS_MESSAGE,
+                        EMPTY_FILTER_MESSAGE
+                   16   ALL_FILTER
+                58-59   registrants, registrantsRequestId
+                85-99   registrantFilters, registrantsCounts, registrantsFiltered
+                        (plus their separator blank lines)
+              206-241   loadRegistrants() (plus trailing blank line)
+                  258   await loadRegistrants() call inside loadDashboard()
+  CSS        1787-1899  .chips, .chip, .chip-active, .chip-count, .reg-list,
+                        .reg-row, .reg-main, .reg-name, .reg-sub, .reg-side,
+                        .reg-pill, .reg-pill.tone-ok, .reg-pill.tone-warn,
+                        .reg-pill.tone-info, .reg-meta
+
+  File length: 2078 -> 1908 lines (113 CSS + 57 template + 30 script lines).
+
+Deliberately KEPT (shared with the rest of the dashboard):
+  .count-tag      (dashboard head, dept table, monthly, drawer)
+  .state-box      (page load, monthly, drawer, mobile media query)
+  .inline-error   (monthly, drawer, PIN form)
+  .empty-text     (history, dept, monthly, top-by-dept, drawer)
+  toneOfStatus()  (still used by the roster group titles)
+  All data-label attributes on the history, dept and top-by-dept tables.
+  @media (max-width: 600px) block and its content: attr(data-label) rule.
+
+Post-removal verification:
+  grep for every removed name returns no matches in the file (exit 1).
+  .role-chip / .role-chip-icon CSS untouched.
+  loadDashboard() now ends at updatedText.value = formatUpdated(data.updated).
+
+===============================================================================
+TEST / BUILD RESULTS
+===============================================================================
+
+1. cd worker && npm test            -> PASS. tests 367, pass 367, fail 0
+                                       (previously 366, +1 new case)
+2. cd worker && npm run typecheck   -> exit 0
+3. npm run build (project root)     -> exit 0 (vite build OK, dist/ regenerated)
+4. npm run typecheck (project root) -> exit 0 (script exists: node scripts/typecheck.js)
+5. dist/ scan for localhost, 127.0.0.1, workers.dev, supabase -> no matches (clean)
+
+Note: the vite build prints a pre-existing chunk-size warning (>500 kB); it is not an
+error and is unrelated to these changes.
+
+===============================================================================
+OPEN QUESTIONS
+===============================================================================
+
+1. The dashboard page no longer requests /api/meeting/dashboard/registrants at all,
+   since RegistrantsPage is the single owner of that view. The route itself is kept
+   and still returns employeeCode — confirm nothing else (external link, printed
+   report, another tab) needs the dashboard's copy.
+2. employeeCode is now available on the Worker response but is not rendered in
+   RegistrantsPage; the UI change was not in scope here. Decide whether the table
+   should show it.
+3. The Express parity route under server/ was not inspected or modified per the hard
+   rules, so the Worker and Express responses now differ by the employeeCode field.
+   Decide whether parity matters for the remaining cutover window.

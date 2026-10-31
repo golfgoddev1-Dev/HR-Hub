@@ -71,7 +71,7 @@ function installFetch(handler) {
 /** eq / gte / is.null filter check against a fake row. */
 function matches(params, row) {
   for (const [key, value] of params.entries()) {
-    if (key === "select" || key === "order" || key === "limit" || key === "onConflict") {
+    if (key === "select" || key === "order" || key === "limit" || key === "on_conflict") {
       continue;
     }
     if (value === "is.null") {
@@ -159,6 +159,7 @@ function createBackend(options = {}) {
       return jsonResponse(Number.isFinite(limit) ? rows.slice(0, limit) : rows);
     }
     if (table === "meeting_sessions" && method === "POST") {
+      if (params.get("on_conflict") === null) throw new Error("missing on_conflict");
       state.sessionUpserts.push({ url, init, body: JSON.parse(init.body ?? "{}") });
       return jsonResponse([{ id: state.nextSessionId }], 200);
     }
@@ -472,7 +473,8 @@ test("monthly PUT: upserts with the composite conflict target and audit row", as
   assert.equal(fake.state.sessionUpserts.length, 1);
   const upsert = fake.state.sessionUpserts[0];
   const params = new URL(upsert.url).searchParams;
-  assert.equal(params.get("onConflict"), "meeting_type_id,session_date");
+  assert.equal(params.get("on_conflict"), "meeting_type_id,session_date");
+  assert.equal(new URL(upsert.url).search, "?on_conflict=meeting_type_id%2Csession_date&select=id");
   assert.equal(params.get("select"), "id");
   assert.equal((upsert.init.headers.Prefer ?? "").includes("resolution=merge-duplicates"), true);
   assert.deepEqual(upsert.body, {
