@@ -1,0 +1,97 @@
+Phase 4a review: Express vs Worker write parity, and the cron vs throttle
+==========================================================================
+
+Date: 2026-10-31
+Scope: worker/ only. No deploy, no live Supabase call, no secret read.
+The Phase 4a implementation was NOT changed: the comparison found no difference.
+
+Method (A1)
+-----------
+One temporary harness (deleted after the run, worker/.tmp-compare.mjs) ran both
+implementations against identical in-memory fixtures with the same frozen clock
+(global Date pinned to 2026-01-05T05:30:00Z = Monday 12:30 Asia/Bangkok):
+
+- Express: server/auto-absent-job.js runAutoAbsentOnce(supabase), driven by a
+  supabase-js style fake client (select/eq/gte/lte/in/upsert/insert) over the
+  shared in-memory store. The store honours onConflict and ignoreDuplicates and
+  generates the same session ids for both runs.
+- Worker: worker/src/auto-absent.js runAutoAbsentOnce(env, new Date(NOW)) with
+  global fetch pointed at the same store through a PostgREST-shaped fake.
+
+Only the Express and Worker modules were imported; server/ was not modified.
+
+Scenario 1: three sessions (sup today 12:00 cutoff, monthly yesterday 12:00
+cutoff, sup two days ago 12:00 cutoff = just outside the 48-hour window), an
+8-row roster across both types, and 2 pre-existing attendance rows
+(e1 attended on s1, e4 leave on s2).
+
+  meeting_attendance   Express 8 rows   Worker 8 rows   identical  yes
+  audit_logs           Express 2 rows   Worker 2 rows   identical  yes
+  meeting_sessions     Express 3 rows   Worker 3 rows   identical  yes
+
+Compared fields
+  attendance: session_id, employee_id, status_code, reason, shift,
+              department_id, position_id, registered_at
+  audit_logs: actor_id, action, entity, entity_id, detail
+  sessions:   meeting_type_id, session_date, cycle_key, open_time, cutoff_time
+
+All compared values match, including registered_at (one stamp per run, equal
+because the clock is pinned) and the audit detail JSON.
+
+The only observable difference is row order inside the batch. Express writes per
+session in database order, so its audit rows are [{"count":4},{"count":2}]; the
+Worker sorts due sessions oldest first, so the same two rows arrive as
+[{"count":2},{"count":4}]. Same rows, same counts, different insertion order,
+which no column or reader depends on.
+
+Scenario 2: the sup-session creation path (weekday Monday, now after the 12:00
+cutoff, no sessions yet, no skip date).
+
+  meeting_sessions     Express 1 row    Worker 1 row    identical  yes
+                       (sup-2026-01-05, open 09:00, cutoff 12:00)
+  meeting_attendance   Express 2 rows   Worker 2 rows   identical  yes
+  audit_logs           Express 1 row    Worker 1 row    identical  yes
+                       (detail {"count":2})
+
+Harness result: RESULT identical=true for both scenarios. No Part A failure, so
+no stop condition was triggered.
+
+Throttle analysis (A2)
+----------------------
+How Express triggers the job (server/index.js line 54-60 and
+server/auto-absent-job.js):
+- On boot, unless AUTO_ABSENT_ENABLED is exactly "false", startAutoAbsentJob()
+  sets a one-shot timer for FIRST_RUN_DELAY_MS (60 s) and a setInterval for
+  RUN_INTERVAL_MS (10 min), both unref'd.
+- Every tick calls triggerAutoAbsentIfDue(), which asks shouldStartRun():
+  it returns false when a run is in progress, and false when
+  now - lastStartedAt < 10 min; otherwise it stamps lastStartedAt, sets
+  runInProgress, runs runAutoAbsentOnce(), and clears runInProgress in finally.
+- Three request handlers also call triggerAutoAbsentIfDue() as an opportunistic
+  nudge: GET /api/meeting/dashboard, GET /api/meeting/overview and
+  GET /api/register/context.
+
+What the throttle controlled: only whether a run may start now. It read and
+wrote lastStartedAt and runInProgress, and nothing else. runAutoAbsentOnce()
+takes no throttle input and reads none of that state, so the two variables never
+influenced the algorithm, the queries or the rows.
+
+Why the Worker cron does not change behaviour: a cron event is one run, spaced
+exactly 10 minutes apart by the trigger, which is the same cadence the interval
+asked for. There is no in-memory state to keep, so the throttle has nothing left
+to do. Two timing nuances, neither a behaviour change:
+- Express also ran once ~60 s after boot; the Worker first runs at the next
+  10-minute boundary. The first run is idempotent, so only the start time moves.
+- The request-triggered nudges disappear, so a session that becomes due just
+  after a tick can be picked up to one interval (<= 10 min) later than a request
+  nudge would have. Anyone reading the dashboard can still see the previous
+  state until then; no row content differs.
+Even if two runs ever overlapped, the audit marker plus ignoreDuplicates keep the
+stored result identical, because the throttle never protected a critical section
+beyond suppressing a redundant run.
+
+Status (A3)
+-----------
+No difference in written rows or audit output, and no conflict between the spec
+and server/ behaviour. The Phase 4a code is unchanged by this review; only this
+report and the Phase 4b work follow.

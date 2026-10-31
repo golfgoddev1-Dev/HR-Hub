@@ -1,0 +1,4 @@
+.dev.vars
+.test-account.env
+.wrangler-dev.log
+node_modules

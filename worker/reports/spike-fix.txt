@@ -1,0 +1,53 @@
+HR Workers spike - PIN HMAC mismatch: diagnosis and fix
+Date: 2026-10-30T08:52:31Z
+Node: v24.22.1  wrangler: 4.156.0
+
+SYMPTOM: POST /test/pin with the test PIN returned { match: false }.
+
+DIAGNOSIS (booleans and lengths only - no secret, PIN, pepper or digest recorded):
+  pinHmacHex output === node:crypto createHmac output, same key + message : true
+  stored PIN_TEST_HASH === HMAC(PIN_PEPPER, PIN) from .dev.vars           : false
+  key/message interpretations tested (args swapped, key as hex/base64 bytes, whitespace
+  on key or message, unexpanded shell variables, case variants, truncated key, sha256
+  variants, alternate sample PINs, key/PIN swapped)                       : 37 tested, 0 matched
+  .dev.vars structure: PIN_PEPPER 64 chars, PIN_TEST_HASH 64 chars, plain lowercase hex,
+  no whitespace/quotes/CRLF, no duplicate keys, file not modified
+  workerd runtime: with an expected value computed by node:crypto, POST /test/pin
+  returned match true, so Web Crypto in workerd agrees with node:crypto
+  live workerd with the owner's .dev.vars: POST /test/pin -> 200 { match: false } (reproduced)
+
+ROOT CAUSE: no line in src/pin.js differs from the HMAC-SHA256 definition - it is byte-identical
+  to node:crypto for the same key and message. The stored PIN_TEST_HASH does not correspond to
+  HMAC(PIN_PEPPER in .dev.vars, that PIN); it was produced from a different pepper and/or PIN
+  (e.g. before the pepper was rotated), so every comparison is correctly false.
+  Secondary defect fixed: /test/pin and /test/bench read PIN_PEPPER and PIN_TEST_HASH raw, while
+  isConfigured() trims them; a trailing space or newline pasted into the dashboard or .dev.vars
+  would change the HMAC key and silently make every PIN compare false. Both handlers now trim
+  at the read site (readSecret). pinHmacHex(pepper, pin) and the output format are unchanged.
+
+VERIFIED AFTER THE FIX (fake values, in-process): clean env -> match true; padded env ->
+  match true; mismatched hash -> match false; wrong PIN -> match false; REPLACE_ME/missing ->
+  503 not_configured; no secret in any response body.
+
+
+> hr-workers-spike@0.1.0 typecheck
+> node --check src/index.js && node --check src/pin.js && node --check tests/hmac.test.js
+
+typecheck exit code: 0
+
+> hr-workers-spike@0.1.0 test
+> node --test
+
+✔ same inputs give the same output (6.7556ms)
+✔ different pepper gives a different output (2.5906ms)
+✔ output is 64 lowercase hex characters (1.4665ms)
+✔ matches node:crypto createHmac for the same key and message (1.2744ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 123.4998
+test exit code: 0

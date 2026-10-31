@@ -1,0 +1,134 @@
+RESET-CODE INVESTIGATION AND DEPLOY.md DECISIONS - PRE-CUTOVER RECORD
+Date: 2026-10-31
+Scope: read-only investigation of worker/ and server/, plus DEPLOY.md documentation edits.
+No secrets, PINs, reset codes, tokens, cookie values, national IDs or database passwords
+were read, printed, or written. Nothing was deployed.
+
+===============================================================================
+PART A - RESET CODE FLOW (summary; full detail in reports/reset-code-flow.md)
+===============================================================================
+
+a. Who creates a reset-code row?
+   Neither HTTP API. The only creator is the offline Node script
+   scripts/issue-reset-code.js, run as `npm run issue:reset-code -- <employee_code>`
+   (alias at package.json:17). It loads .env.local, looks up the employee by
+   employee_code, requires is_active = true, uses ADM001 as created_by/audit actor,
+   voids the employee's existing unused codes, then inserts one row with
+   code_hash = HMAC-SHA256(PIN_RESET_SECRET, "<employee_id>:<code>"), expires_at =
+   created_at + 60 minutes, attempts = 0, used_at = null, and writes audit_logs
+   action "pin_reset_code_issued".
+   No route, admin endpoint, or UI button creates a code: server/routes/auth.js
+   exposes only /me, /set-pin, /login, /logout; the Worker exposes only /login,
+   /me, /logout, /set-pin. Grep for an insert into pin_reset_codes outside the
+   script returns zero matches.
+
+b. How does the staff member receive the code?
+   Out of band from HR. The script's only output is the operator's terminal, which
+   prints the code once with its expiry and the warning
+   "รหัสนี้แสดงครั้งเดียว กรุณาส่งให้พนักงานด้วยช่องทางที่ปลอดภัย".
+   No email, SMS, or in-app delivery exists. Staff-facing UI text (src/pages/
+   SetPinPage.vue): line 103 "กรอกเลขบัตร รหัส 8 หลักจาก HR และ PIN ใหม่ 6 หลัก",
+   line 144 label "รหัสจาก HR 8 หลัก", line 233 "หากไม่ได้รับรหัส 8 หลัก หรือรหัส
+   หมดอายุ กรุณาติดต่อฝ่ายทรัพยากรบุคคลของหน่วยงานท่าน".
+
+c. Who verifies and consumes the code?
+   Both stacks, independently, on POST /api/auth/set-pin, with the same rules
+   (newest unused, unexpired row with attempts < 5; 5 failures burn the code):
+   - Express: server/routes/auth.js:40 (select 77-88, compare 93-96, attempts
+     97-107, consume 122-126).
+   - Worker: worker/src/routes/auth.js:283 (select 330-341, compare 348-350,
+     attempts 351-358, consume 382-383).
+   On success both write employee_credentials.pin_hash, clear lock counters, revoke
+   auth_sessions for that employee, and insert audit_logs action "pin_set".
+
+d. Does the Worker need PIN_RESET_SECRET?
+   To verify only. It has no creation path, so it never mints a code. Creation
+   needs the secret in the Express-side environment because the issuing script
+   imports getRequiredEnv and hmacSha256Hex from server/ and reads .env.local.
+   Both must hold the SAME value: the script hashes with the .env.local secret and
+   the Worker hashes with its own secret using the identical formula
+   (<employee_id>:<code>, HMAC-SHA256, hex). If the values differ, every issued code
+   fails on the Worker and burns one of 5 attempts per try, which looks exactly like
+   "wrong code".
+
+e. Does the Worker have a route that creates codes?
+   No. Plainly: the Worker cannot create reset codes. Issuing always requires the
+   local Node script, its Supabase credentials, and network access to Supabase -
+   after cutover as well.
+
+f. Conflicts between the two systems:
+   1. No serverless issuance - resets always depend on a local machine.
+   2. The code is stack-neutral but the resulting PIN is not (Express bcrypt vs
+      Worker HMAC with PIN_PEPPER); a PIN set on one stack does not work on the other.
+   3. Attempt increment race: Express adds .is('used_at', null) to the update;
+      the Worker patches by id only, so concurrent wrong guesses can lose an
+      increment.
+   4. Issuance requires employee ADM001 to exist; neither verifier reads created_by,
+      so this is operational only.
+   5. Re-issuing voids the previous unused code (single active code by design in both).
+   6. Audit action "pin_reset_code_issued" is written only by the script, so issuance
+      stays outside the API audit trail.
+
+Not confirmed from code: whether the owner wants another issuance channel, and
+whether the production .env.local secret already equals the Worker secret (env files
+were not read).
+
+===============================================================================
+PART B - DEPLOY.md CHANGES
+===============================================================================
+
+1. Added an unnumbered "## Decisions (owner-confirmed)" section immediately after the
+   intro and before "## 0. ภาพรวม" (no sections were renumbered, no steps added).
+   It records:
+   - Rollback: fix-forward. No rollback to Express; Express is not a public service.
+     reports/rollback-plan.md is reference only, not a plan to execute.
+   - Backup: no pre-cutover export, per owner, because the current database holds no
+     important data. Notes that real data will be imported later and that its pin_hash
+     and national_id_hash must be computed with the Worker's peppers
+     (PIN_PEPPER, NATIONAL_ID_PEPPER), not Express bcrypt.
+   - Index: owner drops the duplicate meeting_attendance_once index before deploy and
+     keeps meeting_attendance_session_employee_unique; links
+     reports/supabase-indexes.md.
+   - Pages: Git connection with production branch "release"; pushing to release deploys.
+   - Turnstile: off by default.
+   - Cutover gate: the EM001 login test on https://hr-hub.pages.dev must pass first.
+2. Section 3 (Pages): added "Production branch: release" and changed the deferral
+   sentence to reference pushing to release (still deferred until cutover).
+3. Section 4 (backup): kept every step, but the section now opens with
+   "สถานะ: ข้ามขั้นนี้ตามการตัดสินใจของ owner" and points to the Decisions section; the
+   steps are framed as being for a future real backup (e.g. before importing real data).
+4. Section 5 step 1: now reads that the backup step is skipped this round by owner
+   decision, pointing to Decisions.
+5. Section 5 step 5: names the production branch "release".
+6. Section 7: the rollback bullet now states the fix-forward approach and that
+   reports/rollback-plan.md is reference only.
+7. Section 2: the TURNSTILE_SECRET_KEY parenthetical notes Turnstile is off by default
+   and links to Decisions.
+
+No new deployment steps were introduced; a scan for Vercel/Render still returns zero
+matches.
+
+===============================================================================
+OPEN QUESTIONS
+===============================================================================
+
+1. Date on which the owner will drop meeting_attendance_once (recorded as
+   "TODO: confirm with owner" in DEPLOY.md).
+2. Whether PIN_RESET_SECRET in the production .env.local matches the Worker secret -
+   must be verified by the owner without printing either value; a mismatch breaks every
+   reset code after cutover.
+3. Whether an admin UI/API for issuing codes is planned; today every reset needs the
+   local script and Supabase credentials.
+4. Supabase region and schema source are still TODO in section 1 (unchanged).
+5. The worker package name in worker/package.json still reads "hr-workers-spike"
+   (left untouched; outside this task's allowed files).
+
+===============================================================================
+VERIFICATION
+===============================================================================
+
+- Read-only investigation only; no application source files were modified.
+- Files written: reports/reset-code-flow.md, reports/reset-code-decisions-report.txt,
+  and DEPLOY.md edits listed above.
+- No wrangler command of any kind was run; no Supabase connection was made; no SQL ran.
+- Nothing committed or pushed.

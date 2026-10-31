@@ -1,0 +1,146 @@
+Phase 2a — Public registration (Workers)
+Date: 2026-10-30
+Status: complete, not deployed
+Revision: SQLite-backed Durable Object limiters and hashed token keys
+
+1. Availability checks (checked 2026-10-30)
+
+Rate Limiting binding — NOT CONFIRMED for Workers Free
+- URL: https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/
+- The page contains no explicit statement that the Rate Limiting binding is
+  available on the Workers Free plan.
+- The only occurrence of "free" is:
+  "Different rate limits for different types of customers or users (ex: free vs. paid)"
+  which describes an application's user tiers, not Workers plan availability.
+- Result: not confirmed. Per the instruction, all three limiters were switched
+  to SQLite-backed Durable Objects.
+
+Durable Objects — CONFIRMED on Workers Free
+- URL: https://developers.cloudflare.com/durable-objects/platform/pricing/
+- Quotes:
+  "Durable Objects are available both on Workers Free and Workers Paid plans."
+  "Workers Free plan: Only Durable Objects with SQLite storage backend are available."
+  "Workers Free plan can only create and access SQLite-backed Durable Objects."
+- Result: confirmed. The limiters use new_sqlite_classes.
+
+Turnstile — CONFIRMED on Free
+- URL: https://developers.cloudflare.com/turnstile/plans/
+- Quotes:
+  "Cloudflare Turnstile is available on the following plans:"
+  "Free plan"
+  "Number of widgets: Up to 20 widgets"
+  "Unlimited challenges (traffic or verification requests): Yes"
+- Result: confirmed. No code change for this item.
+
+Supabase — CONFIRMED on Free (no code change)
+- URLs:
+  https://supabase.com/pricing
+  https://supabase.com/docs/guides/platform/free-project-pausing
+- Quotes from the pricing page:
+  "Unlimited API requests"
+  "50,000 monthly active users"
+  "500 MB database size"
+  "Free projects are paused after 1 week of inactivity. Limit of 2 active projects."
+- Quotes from the pausing docs:
+  "Supabase pauses Free Plan projects that show low activity over a 7-day period to save server resources."
+  "A Free plan project is considered inactive if it does not receive sufficient user database activity over the past week."
+- Result: confirmed. Note the inactivity pause risk: a long-idle free project
+  will pause and must be restored from the dashboard.
+
+2. DEPLOY.md
+
+Removed MEETING_QR_SECRET references (original 1-based line numbers):
+- line 32: the env-var name in the API host environment list
+- line 50: the "rotate MEETING_QR_SECRET and reprint QR" checklist item
+
+No MEETING_QR_SECRET text remains in DEPLOY.md.
+
+3. Files
+
+Created/updated in this revision:
+- worker/src/rate-limiter.js
+- worker/tests/rate-limiter.test.js
+- worker/reports/phase2a-register.txt
+
+Created earlier in 2a:
+- worker/src/register-window.js
+- worker/src/attendance-status.js
+- worker/src/rate-limit.js
+- worker/src/turnstile.js
+- worker/src/routes/register.js
+- worker/tests/register-window.test.js
+- worker/tests/rate-limit.test.js
+- worker/tests/turnstile.test.js
+- worker/tests/register-routes.test.js
+
+Modified:
+- worker/src/app.js (mounts /api/register)
+- worker/src/index.js (exports the three Durable Object classes)
+- worker/src/rate-limit.js (Durable Object namespace helper, hashed token key)
+- worker/src/routes/register.js (hashed token limiter key)
+- worker/src/db.js (insert can request the inserted row)
+- worker/wrangler.toml (Durable Object bindings and v1 SQLite migration)
+- worker/package.json (typecheck includes the new files)
+- worker/reports/phase2-spec-draft.md (limiter design updated)
+- DEPLOY.md (two MEETING_QR_SECRET lines removed)
+
+4. Rate limiting and token key
+
+Durable Object bindings:
+- RL_CONTEXT_IP -> ContextRateLimiter, 100 / 60 seconds, key context|<ip>
+- RL_SUBMIT_IP -> SubmitIpRateLimiter, 30 / 60 seconds, key submit|<ip>
+- RL_SUBMIT_TOKEN -> SubmitTokenRateLimiter, 60 / 60 seconds,
+  key submit|<sha256hex(token)>
+
+Migration:
+- [[migrations]] tag = "v1"
+- new_sqlite_classes = ContextRateLimiter, SubmitIpRateLimiter, SubmitTokenRateLimiter
+
+Behavior:
+- One Durable Object per key; a single SQLite row holds count and window_start.
+- Fixed 60-second window; over-limit is 429.
+- Missing binding, thrown error, non-2xx object response, or malformed response
+  fails closed with 503.
+- The raw QR token is hashed with Web Crypto SHA-256 before it becomes a key.
+  The binding and the object only receive the 64-hex digest.
+- No log line contains the QR token: the registration path logs only
+  name/code/constraint on errors and never logs URLs, bodies, or limiter keys.
+  Tests also assert the raw token is absent from logs, responses, and writes.
+  A scan of the Wrangler log found 0 token-shaped 64-hex strings.
+
+5. Local Wrangler check (no database access)
+
+Command: npx wrangler dev --port 8787
+Bindings resolved:
+- env.RL_CONTEXT_IP (ContextRateLimiter), Durable Object, local
+- env.RL_SUBMIT_IP (SubmitIpRateLimiter), Durable Object, local
+- env.RL_SUBMIT_TOKEN (SubmitTokenRateLimiter), Durable Object, local
+
+Route checks (status only):
+- GET /api/register/context with a malformed token -> 404
+- POST /api/register/submit with invalid JSON -> 400
+- POST /api/register/submit without t -> 404
+- GET /api/auth/me (existing route) -> 401
+
+The requests stopped at the cheap preflight checks, so no Supabase call or
+database write occurred. The Worker was stopped; port 8787 has no LISTENING
+socket.
+
+Additional Durable Object runtime check (throwaway config, removed afterwards):
+- ContextRateLimiter was called twice through a temporary Worker on port 8788.
+- Both calls returned 200 with {"success":true}, confirming that the SQLite
+  object, schema creation, and migration load correctly.
+- No Supabase call was made. Port 8788 is free and the temporary files are gone.
+
+6. Verification
+
+From worker/:
+- npm run typecheck -> exit code 0
+- npm test -> exit code 0
+- tests: 144
+- pass: 144
+- fail: 0
+- new tests in this revision: 9 (135 before this revision)
+
+No secrets, PINs, reset codes, tokens, hashes, national IDs, or response bodies
+are recorded in this report.

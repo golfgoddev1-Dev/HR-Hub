@@ -1,0 +1,130 @@
+Phase 4a report: auto-absent on a Cron Trigger, batched writes
+================================================================
+
+Date: 2026-10-31
+Scope: worker/ only. No deploy, no wrangler secret, no live Supabase call,
+no secret/PIN/token/national-id read or written. Nothing committed.
+
+1. Files changed
+----------------
+Added
+  worker/src/auto-absent.js        Express helpers ported 1:1 plus the batched
+                                   runAutoAbsentOnce(env, now) job and the
+                                   approved cron constant.
+  worker/tests/auto-absent.test.js 22 node:test cases with a fake PostgREST
+                                   backend (no network, no secrets).
+  worker/reports/phase4a-report.txt this file.
+Edited
+  worker/src/db.js                 upsert: ignoreDuplicates + columns:null
+                                   (no representation). insert: array body +
+                                   ignoreDuplicates. Defaults unchanged
+                                   (merge-duplicates, representation).
+  worker/src/index.js              named export of the constant moved out;
+                                   scheduled() dispatches "*/10 * * * *" via
+                                   ctx.waitUntil, every other cron is a no-op.
+  worker/wrangler.toml             [triggers] crons = ["*/10 * * * *"].
+  worker/package.json              typecheck list now covers the two new files.
+
+Read-only references: server/auto-absent.js, server/auto-absent-job.js,
+tests/auto-absent*.test.js (behaviour contract only; server/ untouched).
+
+2. Tests
+--------
+Before: 298 tests, 298 pass, 0 fail, exit 0.
+After:  320 tests, 320 pass, 0 fail, 0 skipped, exit 0 (duration 1483 ms).
+Command: cd worker && npm test          (node --test, pipefail preserved)
+New cases cover: helper parity (isDueSession, missingEmployees, isSkipDate,
+shouldEnsureSupSession, dayKeyBefore); N = 0, 1, 10, 11, 25 pending sessions;
+the subrequest count per run; the audit marker auto_absent_done including a
+count of 0; a second run writing nothing; ignoreDuplicates on
+meeting_sessions and meeting_attendance; an employee-registered row never
+overwritten; fail-closed skip-date read with only the error code logged;
+marker reads chunked at 100 ids; unknown cron no-op; scheduled() dispatch and
+its error path; db.upsert default merge-duplicates; db.insert array body.
+
+Typecheck: cd worker && npm run typecheck -> exit 0.
+
+3. Subrequest count
+-------------------
+Per run with N pending sessions and D due sessions:
+  1 GET meeting_types                           1
+  2 GET meeting_skip_dates                      1
+  3 POST meeting_sessions upsert (ignore)       0 or 1
+  4 GET meeting_sessions                        1
+  5 GET audit_logs markers, 100 ids per call    ceil(D / 100)
+  6 GET meeting_roster                          1
+  7 GET meeting_attendance, 100 ids per call    ceil(N / 100)   (N <= 10 -> 1)
+  8 POST meeting_attendance, one array body     1 if any row, else 0
+  9 POST audit_logs, one array body             1
+Total = 6 + ceil(D/100) + ceil(N/100) + (1 when the sup session is created)
+      = 8 for N = 1..10, or 9 when the sup session is also created.
+Ceiling stays under 50 until D exceeds about 4,100 due sessions in one tick.
+
+Approved formula holds whenever D <= 100: 6 + 2 * ceil(N / 100) (+1 for sup).
+Measured in workerd with D = 150: 9 subrequests, still well under 50.
+
+4. Local cron check (no live data)
+----------------------------------
+Method: sandbox copy of worker/src in worker/.tmp-cron-check (deleted after),
+its own wrangler.toml with fake [vars] pointing at a loopback fake PostgREST
+on 127.0.0.1:8799. No .dev.vars or real credential was present or read.
+  npx wrangler dev --test-scheduled            (wrangler 4.156.0, workerd local)
+  curl "http://localhost:8787/cdn-cgi/handler/scheduled?cron=*/10+*+*+*+*"
+Result: HTTP 200, full run completed, exactly this request sequence:
+  GET  meeting_types
+  GET  meeting_skip_dates
+  GET  meeting_sessions
+  GET  audit_logs           (marker read)
+  GET  meeting_roster
+  GET  meeting_attendance
+  POST meeting_attendance   rows=2
+  POST audit_logs           rows=1
+8 requests for one due session, matching the calculation above.
+
+5. CPU measurement
+------------------
+workerd CPU time: NOT MEASURED. wrangler dev 4.156.0 does not report CPU time
+for a scheduled invocation (only production Metrics / `wrangler tail` do).
+Node proxy measurement of the same code, same fixture sizes, fake fetch,
+process.cpuUsage over 5 rounds x 50 runs after a warm-up:
+  spec fixture (3 sessions, 800 roster rows, 800 attendance rows)
+    cpu_ms_per_run: min 3.120, median 3.140, max 5.300 (one GC spike)
+    wall_ms_per_run median 3.148
+  stress fixture (B = 10 sessions, 400 roster, 4,000 written rows)
+    cpu_ms_per_run: min 2.160, median 2.180, max 3.120
+Interpretation: the spec's pre-deploy criterion (<= 5 ms) is met at the
+median; one sample reached 5.30 ms through GC noise. This is a Node proxy,
+not workerd, so the 10 ms Workers-free budget is not proven by it. Do not
+read it as a measured workerd CPU figure.
+
+6. Deviations from the spec
+---------------------------
+a. One module worker/src/auto-absent.js instead of the spec's two files
+   (auto-absent.js + auto-absent-job.js), as this task requested.
+b. Writes are batched as the spec's sections 2 and 4 require: one
+   meeting_attendance upsert and one audit_logs insert per run. Express does
+   one of each per session; steps 17-19 of the spec read per session.
+c. The marker read chunks over due sessions D, because the spec's step 11
+   reads markers for due ids before the B = 10 cap. With D <= 100 the approved
+   formula is exact; above 100 the run spends ceil(D/100) there.
+d. The attendance upsert is skipped when the batch has no missing employee
+   (Express parity), which saves one subrequest.
+e. AUTO_ABSENT_CRON is exported from auto-absent.js, not index.js: the local
+   workerd run rejected the bundle with "Incorrect type for map entry
+   'AUTO_ABSENT_CRON': the provided value is not of type 'function or
+   ExportedHandler'", because every named export of the entry module must be
+   a handler or Durable Object class.
+f. runAutoAbsentOnce returns { processed: 0 } for an invalid `now` value
+   instead of throwing, so a malformed scheduledTime cannot fail every tick.
+
+7. Open questions
+-----------------
+a. workerd CPU: only production Metrics can confirm it. If the owner wants
+   more margin than the Node proxy suggests, lower BATCH_LIMIT (spec step 5).
+b. Real roster size: CPU and body size grow with roster rows. The measurement
+   assumes 400 active people per type; a much larger roster needs a re-measure.
+c. tests/auto-absent-throttle.test.js (Express) was intentionally not ported:
+   shouldStartRun only governed setInterval, and the throttle state is removed
+   in favour of cron.
+d. worker/ is currently untracked in git (root `git status` shows `?? worker/`).
+   Nothing was committed or pushed in this run.

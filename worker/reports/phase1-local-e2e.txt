@@ -1,0 +1,222 @@
+Phase 1 step 4 — local end-to-end auth run (EM001 only)
+Date: 2026-10-30
+Working directory: worker/
+
+RESULT: PASS — all scripted steps matched the Express contract; 0 status/message mismatches.
+No deploy, no wrangler login/secret/delete, no writes to any employee other than EM001.
+
+1. Entry and configuration
+
+- src/index.js now exports `default { fetch: app.fetch }` from src/app.js. No /test/* routes and no scheduled handler remain.
+- wrangler.toml no longer has a [triggers] cron block. `main` and `compatibility_date` are unchanged.
+- src/pin.js and its test remain on disk, detached from the entry.
+
+2. Local secret checks (booleans and lengths only; no values read into this report)
+
+- .dev.vars contains exactly 6 keys: PIN_PEPPER, PIN_RESET_SECRET, NATIONAL_ID_PEPPER, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, COOKIE_SECURE.
+- COOKIE_SECURE is exactly the string "false".
+- Compared with root .env.local as booleans:
+  - PIN_RESET_SECRET matches: true
+  - NATIONAL_ID_PEPPER matches: true
+  - SUPABASE_URL matches: true
+  - SUPABASE_SERVICE_ROLE_KEY matches: true
+- PIN_PEPPER: present, 64 characters; set in the earlier Phase 1 step-4 secret setup with a CSPRNG, not reused from the spike.
+- worker/.gitignore ignores .dev.vars (confirmed with git check-ignore).
+- No secret values, PINs, reset codes, tokens, hashes, national IDs, or response bodies appear in this report.
+
+3. Schema correction made before the run
+
+- Live schema inspection showed `employee_credentials` has no `id` column. The route previously updated credentials by `credential.id`.
+- All credential writes now filter by `employee_id` (matching server/pin-verify.js and server/routes/auth.js).
+- Unit tests now assert the credential PATCH URL uses `employee_id=eq.<id>` and no `id=eq.` filter.
+- Files changed: src/routes/auth.js, tests/auth-routes.test.js.
+
+4. Local server
+
+- Command: npx wrangler dev --port 8787 (local mode, .dev.vars loaded).
+- Readiness: GET /api/auth/me without a cookie returned 401 `{ ok: false, message: "ไม่ได้เข้าสู่ระบบ" }`.
+- Express server on port 3001 was not started, modified, or contacted.
+- Server stopped after the run; port 8787 released.
+
+5. Test account and write guard
+
+- worker/reports/test-accounts.txt contains exactly: EM001.
+- The harness refuses to run unless that file lists exactly EM001.
+- Every direct database write re-checks `employees.employee_code = EM001` before patching and is scoped to that employee's id.
+- EM001 was confirmed active and a plain employee (not in hr_admins, meeting_admins, or system_admins) before any write.
+- EM001's national ID is not stored in plaintext in the repo and is not kept in the employees table. During the earlier run it was recovered in memory from `employee_credentials.national_id_enc` using NATIONAL_ID_ENC_KEY, and accepted only after the GCM tag validated and the HMAC matched `national_id_hash`. That decryption path has since been removed; see section 11. The value was never printed, logged, or written to a file.
+
+6. Test sequence and observed results
+
+Step 1 — POST /api/auth/set-pin with a freshly issued reset code (8-digit, valid PIN)
+- HTTP 200
+- ok: true
+- message: none
+- Result: PASS
+
+Step 2 — POST /api/auth/login, loginType employee, correct PIN
+- HTTP 200
+- ok: true
+- redirectTo present: true
+- Set-Cookie: HttpOnly true; SameSite=Strict true; Path=/ true; Max-Age=43200; Secure false (COOKIE_SECURE=false locally)
+- Result: PASS
+
+Step 3 — POST /api/auth/login with a wrong PIN, five times
+- Statuses: 401, 401, 401, 401, 423
+- Fifth response: ok false; message "บัญชีถูกล็อกชั่วคราว"; lockedUntil present: true
+- Result: PASS
+
+Step 4 — POST /api/auth/login with the correct PIN while locked
+- HTTP 423
+- ok: false
+- message "บัญชีถูกล็อกชั่วคราว"
+- lockedUntil present: true
+- Result: PASS
+
+Step 5 — Guarded test write: clear lock for EM001
+- DB write scoped to EM001 only
+- failed_attempts: 0
+- locked_until: null
+- Result: PASS
+
+Step 6 — POST /api/auth/login with the correct PIN and a disallowed role (hr)
+- HTTP 401
+- ok: false
+- message "เลขบัตรประชาชนหรือ PIN ไม่ถูกต้อง"
+- failed_attempts after request: 1 (wrong role counted as a failure)
+- Result: PASS
+
+Step 7 — Guarded test write: clear counters for EM001 before the successful login
+- failed_attempts: 0
+- locked_until: null
+- Result: PASS
+
+Step 8 — POST /api/auth/login, loginType employee, correct PIN after clearing
+- HTTP 200
+- ok: true
+- redirectTo present: true
+- Result: PASS
+
+Step 9 — GET /api/auth/me with the session cookie
+- HTTP 200
+- ok: true
+- role: "employee"
+- redirectTo present: true
+- employeeId exposed in body: false
+- Result: PASS
+
+Step 10 — POST /api/auth/logout with the session cookie
+- HTTP 200
+- ok: true
+- Cache-Control: no-store true
+- Clearing cookie: HttpOnly true; SameSite=Strict true; Path=/ true; Max-Age=0; Secure false
+- Result: PASS
+
+Step 11 — GET /api/auth/me with the same cookie after logout
+- HTTP 401
+- ok: false
+- message "ไม่ได้เข้าสู่ระบบ"
+- Result: PASS
+
+Step 12 — POST /api/auth/set-pin with a fresh but wrong 8-digit reset code
+- HTTP 401
+- ok: false
+- message "เลขบัตรประชาชนหรือรหัสจาก HR ไม่ถูกต้อง"
+- Reset-code attempts before: 0
+- Reset-code attempts after: 1 (incremented by exactly one via read-only select)
+- Result: PASS
+
+7. Cross-check against the Express handlers
+
+Compared with server/routes/auth.js and server/pin-verify.js:
+
+- Set-pin success: Express 200 `{ ok: true }`; Workers 200 `{ ok: true }` — match.
+- Login success: Express 200 `{ ok: true, redirectTo }`; Workers 200 `{ ok: true, redirectTo }` — match.
+- Wrong PIN below threshold: Express 401 `{ ok: false, message: "เลขบัตรประชาชนหรือ PIN ไม่ถูกต้อง" }`; Workers same — match.
+- Fifth wrong PIN: Express 423 `{ ok: false, message: "บัญชีถูกล็อกชั่วคราว", lockedUntil }`; Workers same — match.
+- Correct PIN while locked: both 423 with lockedUntil — match.
+- Correct PIN with a disallowed role: both 401 with the generic invalid message and one counted failure — match.
+- /api/auth/me: both 200 `{ ok: true, role, redirectTo }` — match.
+- Logout: both 200 `{ ok: true }`, Cache-Control no-store, cookie cleared with Max-Age=0 — match.
+- /api/auth/me after logout: both 401 `{ ok: false, message: "ไม่ได้เข้าสู่ระบบ" }` — match.
+- Set-pin with a wrong reset code: both 401 with the same message and attempts + 1 — match.
+
+Mismatches: none.
+
+Intentional differences (Phase 1 design, not contract mismatches):
+- PIN storage: Workers uses HMAC-SHA256(PIN_PEPPER, employeeId + ":" + pin); Express uses bcrypt. Consequence: after this run, EM001's stored pin_hash is an HMAC value, so the Express server's bcrypt comparison will reject that PIN. EM001 can authenticate through the Workers implementation only until Express is migrated or the PIN is reset again via Express.
+- Cookie Secure: Workers reads COOKIE_SECURE (false locally only); Express uses NODE_ENV === "production". Production Workers must not set COOKIE_SECURE=false.
+- SameSite casing: "Strict" (Workers) vs "strict" (Express); cookie attribute values are case-insensitive.
+- Max-Age: 43200 seconds in both.
+
+8. Final state of EM001 (read-only verification)
+
+- employee_code: EM001; is_active: true.
+- failed_attempts: 0.
+- locked_until: null.
+- pin_set_at: set.
+- Active sessions: 0 after a final EM001-guarded cleanup revoked the one session left from the first successful login.
+- Latest reset code: attempts 1, unused, still within its 1-hour expiry window.
+- EM001's PIN is now the random test PIN generated in memory by the harness. It was not recorded anywhere. To sign in as EM001 again, issue a new reset code and set a new PIN.
+
+9. Commands and exit codes (from worker/)
+
+- npm run typecheck -> exit 0
+- npm test -> exit 0; tests 75, pass 75, fail 0
+- node scripts/local-auth-e2e.mjs -> exit 0; E2E_RESULT=PASS
+- wrangler dev stopped; port 8787 verified free.
+
+10. Artifacts
+
+- src/index.js — Workers entry now app.fetch only.
+- wrangler.toml — cron block removed.
+- src/routes/auth.js — credential writes use employee_id.
+- tests/auth-routes.test.js — credential id removed from fixtures; URL assertions added.
+- scripts/local-auth-e2e.mjs — guarded local harness for EM001; reads the test ID from .test-account.env, secrets kept in memory.
+- .wrangler-dev.log — local dev server log.
+
+11. Post-run change: decryption path removed
+
+- The earlier run decrypted EM001's national ID from `employee_credentials.national_id_enc` in memory. This is recorded here for transparency.
+- All decryption code has been removed from scripts/local-auth-e2e.mjs. The script no longer reads `national_id_enc`, does not read NATIONAL_ID_ENC_KEY, and does not import or call any cipher API.
+- The harness now reads TEST_EM001_NATIONAL_ID from worker/.test-account.env, supplied by the owner, and verifies it against EM001's stored `national_id_hash` before any write. It never prints or logs the value.
+- worker/.gitignore now ignores .test-account.env and .wrangler-dev.log (both confirmed with git check-ignore).
+- Owner-supplied candidate hash matches stored hash: true.
+- Secret scan of .wrangler-dev.log and every file under worker/reports/ for 13-digit national IDs (including separated/dashed forms), 8-digit and 6-digit PIN-like strings, 43-character base64url tokens, 64-hex hashes, and bcrypt-shaped hashes: no matches (8 files scanned).
+- The live end-to-end test was not rerun after this change.
+
+Post-change verification (from worker/):
+- node --check scripts/local-auth-e2e.mjs -> exit 0
+- npm run typecheck -> exit 0
+- npm test -> exit 0; tests 75, pass 75, fail 0
+
+12. Rerun with owner-supplied ID
+
+Preflight (booleans only):
+- reports/test-accounts.txt lists only EM001: true (1 entry).
+- .test-account.env exists: true.
+- Port 8787 free before start: true.
+
+Run:
+- Started npx wrangler dev --port 8787. Readiness check: GET /api/auth/me returned 401 `{ ok: false, message: "ไม่ได้เข้าสู่ระบบ" }`.
+- Command: node scripts/local-auth-e2e.mjs
+- Exit code: 0
+- Final line: E2E_RESULT=PASS
+- All 12 scripted steps passed: set-pin 200; employee login 200 with redirectTo; wrong PINs 401, 401, 401, 401, 423; correct PIN while locked 423; guarded lock clear; hr-role attempt 401 with attempts 1; guarded counter clear; employee login 200; me 200 with role employee; logout 200 with no-store and Max-Age=0; me after logout 401; wrong reset code 401 with attempts 0 -> 1.
+- The harness's pre-write check of the owner-supplied ID against EM001's stored national_id_hash passed; the harness aborts before any write on a missing, malformed, or mismatching value.
+
+Stop:
+- Worker stopped; port 8787 verified free.
+
+Secret scan:
+- Scanned .wrangler-dev.log and every file under worker/reports/ (8 files total) for raw and separated 13-digit national IDs, 8-digit and 6-digit PIN-like strings, 43-character base64url tokens, 64-hex hashes, and bcrypt-shaped hashes: no matches. No file/line findings.
+
+Post-rerun EM001 state:
+- EM001 is active and a plain employee; failed_attempts 0; locked_until null; pin_set_at set.
+- Active sessions: 1, from the first successful login. The harness logs out only the second login; the first holds no known token and expires within 12 hours or on idle timeout.
+- Latest reset code: attempts 1, unused, within its 1-hour expiry window.
+- EM001's PIN is the random test PIN generated in memory by this run and was not recorded.
+
+No deploy was run, and no account other than EM001 was changed.
+
+No secrets, PINs, reset codes, tokens, hashes, national IDs, or response bodies are included in this report.

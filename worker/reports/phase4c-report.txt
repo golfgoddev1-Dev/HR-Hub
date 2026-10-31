@@ -1,0 +1,402 @@
+Phase 4c report: every-minute cron, cheap idle path, measurements
+================================================================
+
+Date: 2026-10-31
+Scope: worker/ only. No deploy, no wrangler secret, no live Supabase call. All
+tests use fake fetch; the measurement harness used a loopback fake PostgREST with
+fake rows and a fake service key. No secret, PIN, token, cookie or national ID was
+read, printed or written, and .dev.vars / .test-account.env were not touched.
+Nothing committed. Nothing deployed.
+
+Part 1: the precheck
+====================
+
+1a. When does a run write nothing?
+----------------------------------
+Reading worker/src/auto-absent.js against server/auto-absent-job.js, Express is
+the source of truth and a run writes nothing exactly when:
+
+  no meeting_sessions row inside [today-2, today] (Asia/Bangkok) is due and
+  unmarked, and the sup-session upsert creates no row.
+
+"Due" is isDueSession: session_date <= today, cutoff moment <= now, and not more
+than 48 hours past the cutoff. "Unmarked" means no audit_logs row with
+action=auto_absent_done, entity=meeting_session for that session id. The sup rule
+is shouldEnsureSupSession: sup type has a weekday, today's weekday matches, now is
+at or past its cutoff, and today is not in meeting_skip_dates.
+
+1b. Why the cutoff-time-only precheck was rejected
+--------------------------------------------------
+The suggested precheck - one read of the earliest cutoff among enabled meeting
+types for today, then "if now is before every cutoff, nothing can be due" - is NOT
+equivalent, so it is not implemented. Counterexample, exercised as a test case:
+
+  sup default_cutoff_time = 12:00, now = 11:00 Bangkok (before every cutoff today)
+  meeting_sessions has one row: session_date = yesterday, cutoff_time = 18:00,
+  unmarked.
+
+The session's cutoff is 17 hours behind `now`, inside the 48-hour window, so it is
+due and the full run writes 800 attendance rows and one audit row. A precheck that
+only looked at today's type cutoffs would skip and lose those writes. The reason is
+structural: isDueSession accepts sessions up to 48 hours past their cutoff, so any
+session dated yesterday or the day before can be due while every cutoff today is
+still ahead. A time-only skip can therefore never be proven equivalent, and
+lowering the cutoff comparison to "the earliest cutoff in the window" degenerates
+to the interval start, which is always in the past.
+
+The same analysis rules out the other two candidate shortcuts: the marker rule
+cannot be checked without reading the candidate sessions, and the sup rule needs
+the sup type's weekday and cutoff, which is a meeting_types read. Meeting types
+also carry the enabled-type filter and the cutoff fallback for a session row whose
+cutoff_time is unparseable.
+
+1c. What is implemented instead
+-------------------------------
+Two proven-equivalent savings, both fail-open, neither able to skip a write.
+
+(1) Skip-date gate (supRulePossible, exported). meeting_skip_dates is read only
+    when the sup rule can act on it. supRulePossible mirrors shouldEnsureSupSession
+    minus the skip-date test and answers false exactly when that rule cannot fire
+    given the clock alone:
+      - no sup type among code in (sup, monthly)                  -> no read
+      - sup type has weekday null/undefined                       -> no read
+      - today's weekday is not the sup weekday                    -> no read
+      - now is before the sup cutoff moment                       -> no read
+      - otherwise                                                 -> read
+    Anything the rule cannot interpret (unparseable default_cutoff_time, unknown
+    today key, a thrown error) answers "read" - the fail-open direction. Proof it
+    cannot skip a write: meeting_skip_dates is consumed only by
+    shouldEnsureSupSession, whose remaining clauses are the ones just checked, and
+    when a clause makes the rule false the read result is unused by every other
+    step of the run. The sup upsert is the only write this read can influence.
+
+(2) Early exit on the due list (unchanged in substance, now the first thing after
+    the gated reads): if no session is due, the run returns { processed: 0 } before
+    the marker, roster and attendance reads. This was already Phase 4a behaviour;
+    what 4c adds is that it is reached after two reads instead of three.
+
+A single-read precheck ("one query when possible") is not achievable without an
+unverified assumption, so it was not built. The only candidate would be one
+embedded query against meeting_sessions joined to meeting_types
+(meeting_types!meeting_sessions_meeting_type_id_fkey!inner) replacing two reads,
+but the foreign-key constraint name cannot be verified without a live PostgREST
+call, and if the name is wrong the query 400s. It is listed as an open question,
+not implemented.
+
+The read-only verdict is exposed as `precheckAutoAbsent(env, now)` for tests and
+measurement. It runs the identical reads in the identical order with the same
+rules but never issues the sup upsert, and returns
+{ nothingToDo, reason } with reason one of: clock, window, skip-dates,
+due-session, sup-session, no-due-session. Production does not call it as a second
+pass - that would add requests - it reaches the same decision in the single pass
+that the run itself performs.
+
+Failure behaviour is unchanged and fail-closed where it must be: an unreadable
+skip-date set still ends the tick with no writes, a failed types read still
+propagates (and is logged by scheduled() as its code only), and every write still
+uses resolution=ignore-duplicates with the marker written only after the
+attendance upsert succeeded.
+
+1d. Parity tests
+----------------
+worker/tests/auto-absent-precheck.test.js, 23 tests in the first pass (16 scenario
+subtests plus 7 standalone; the follow-up adds 11 more, see Part 4). For every
+scenario it runs, with the clock pinned by node's mock timers so registered_at is
+identical:
+
+  A. precheckAutoAbsent (asserting zero writes), then runAutoAbsentOnce
+  B. runAutoAbsentOnce with { skipDateGate: false } - the pre-4c read sequence
+
+and then compares, order-insensitively, every written row: meeting_sessions
+(meeting_type_id, session_date, cycle_key, open_time, cutoff_time),
+meeting_attendance (all columns including registered_at) and audit_logs (all
+columns including the detail count), plus the returned { processed }. When the
+precheck answers nothingToDo it additionally asserts that the run wrote nothing
+and processed 0.
+
+  scenario                                        precheck   run (both paths identical)
+  weekday before the sup cutoff                   skip       processed 0, no writes
+  exactly at the sup cutoff                       work       1 created session, 1 audit row (count 0), processed 1
+  just after the sup cutoff                       work       same as above
+  sup cutoff passed but today is a skip date      skip       processed 0, no writes
+  sup session already exists and is due           work       1 attendance row, 1 audit row, processed 1
+  before today's cutoff, yesterday's session due  work       counterexample above: 1 attendance, 1 audit, processed 1
+  due session, never marked                       work       1 attendance row, 1 audit row, processed 1
+  due session already marked                      work        no writes (marker), processed 0
+  due session with an empty roster                work       0 attendance rows, 1 audit row (count 0), processed 1
+  no sessions at all                              skip       processed 0, no writes
+  yesterday's session inside the 48-hour window   work       1 attendance row, 1 audit row, processed 1
+  session more than 48 hours past its cutoff      skip       processed 0, no writes
+  session of a meeting type the job does not handle  skip    processed 0, no writes
+  sup type without a weekday, session due         work       1 attendance row, 1 audit row, processed 1
+  unparseable session cutoff, type default used   work       1 attendance row, 1 audit row, processed 1
+  both roster rows missing, one already attended  work       1 attendance row (the other employee), 1 audit row (count 1)
+  just after Bangkok midnight                     work       1 attendance row, 1 audit row, processed 1
+
+Standalone tests: supRulePossible's five false cases and its fail-open case; the
+skip-date read present/absent in the call log; fail-open on an unparseable sup
+cutoff; a failing skip-date read ending the tick with no writes; an invalid clock
+skipped by both paths. No scenario mismatched, so no stop condition was hit.
+
+Part 2: cron change
+===================
+
+worker/wrangler.toml
+-   crons = ["*/10 * * * *", "0 1,9,17 * * *"]
++   crons = ["* * * * *", "0 1,9,17 * * *"]      first 4c pass only; reverted to
++                                                the pre-cutover list in Part 4
+  The keep-alive entry is unchanged. Two comments were added: the every-minute
+  cadence, and the deploy note below.
+
+worker/src/auto-absent.js
+-   export const AUTO_ABSENT_CRON = "*/10 * * * *";
++   export const AUTO_ABSENT_CRON = "* * * * *";
+  The constant stays in this module, not in the entry module (workerd rejects a
+  non-function named export from the entry module; Phase 4a finding).
+
+worker/src/index.js - dispatch logic unchanged: AUTO_ABSENT_CRON still routes to
+runAutoAbsentOnce via ctx.waitUntil, KEEP_ALIVE_CRON still routes to runKeepAlive,
+anything else is still a silent no-op. Only the header comment was updated.
+
+Tests updated for the new trigger: the every-minute dispatcher test in
+worker/tests/keep-alive.test.js was renamed (it asserts auto-absent's own query
+shape, so nothing else changed), and the auto-absent 4a tests that assert exact
+request counts now use the gate-aware subrequestBudget and the updated comments.
+The unknown-cron test still uses "5 5 * * *", which is neither trigger.
+
+Deploy note (2d): the "* * * * *" trigger must NOT be present in the configuration
+used for deploy until the Express auto-absent job is switched off at cutover.
+Express schedules its own run every 10 minutes plus request nudges from three read
+routes (Phase 4a, A2), so with both live the same sessions would be processed by
+two writers. Rows would still converge because every write is idempotent
+(ignore-duplicates plus the marker), but audit_logs would gain duplicate markers
+and the detail counts would no longer match Express. Nothing in this change touches
+production configuration; the note lives in wrangler.toml and here.
+The follow-up (Part 4) turned this note into the shipped configuration: the
+deployed list now holds only the keep-alive trigger.
+
+Part 3: measurements
+====================
+
+Method. A temporary harness (deleted afterwards) imported src/auto-absent.js and
+ran it against a loopback fake PostgREST on 127.0.0.1:8798 that counts requests,
+response bytes and request-body bytes per table and applies ignore-duplicates
+writes. The fake server ran as its own process so the CPU numbers are client-only.
+Fixtures are generated rows, no real data. Clock pinned to 2026-01-05T05:30:00Z
+(Monday 12:30 Bangkok). Requests and bytes were identical across two independent
+runs; CPU per run is the mean over 50 further runs after subtracting the 50
+fixture-reset calls, and is labelled a Node proxy.
+
+Re-measured after the follow-up (Fix 1 + Fix 2), same loopback method. Bytes are
+the fake's unprojected responses, so they overstate the real PostgREST payload;
+the request count is the number to compare. CPU was not re-measured: it is
+dominated by the roster and attendance writes, which did not change.
+
+  scenario                                  requests  sup POST  resp bytes  req bytes  rows written
+  idle, no sup rule, gate on                       2         0         239          0  none
+  idle, sup weekday before the cutoff              2         0         239          0  none
+  sup weekday, steady tick (present + marked)      4         0         456          0  none
+  sup weekday, steady tick, pre-fix sequence       5         1         458        129  none
+  sup creation tick, 800-row roster                9         1     261,898    155,344  1 session, 800 attendance, 1 audit
+  sup weekday, 12h of one-minute ticks         2,885         1     617,803    155,344  1 session, 800 attendance, 1 audit
+  active, 1 session x 800 roster                   7         0     258,640    152,011  800 attendance, 1 audit
+  active, 10 sessions x 400 roster                 7         0     814,769    760,493  4,000 attendance, 10 audit
+
+The 12-hour row is 720 measured ticks (12:00-23:59 Bangkok, one per minute): 9
+requests on the tick that creates the session, then 4 per tick. Before the follow-up
+the same 720 ticks cost 3,604 requests, 720 of them the no-op sup upsert.
+
+Per-table detail for the two paths that matter on an idle tick:
+
+  gate on : meeting_types 1 request, meeting_sessions 1 request
+  gate off: meeting_types 1, meeting_skip_dates 1, meeting_sessions 1
+
+So the gate removes one request per idle tick. The byte saving is nothing to speak
+of because the skip-date response is an empty array; the request count is the point.
+
+Request counts match subrequestBudget: 2 for an idle gated tick, 7 for a tick with
+1-10 pending sessions, 9 when it also creates the sup session, all far under the
+free-plan ceiling of 50 subrequests per invocation.
+
+CPU caveat, from the first pass: the loopback timing was noisy at this scale - the
+difference between two and three reads was smaller than run-to-run variance and in
+one pair of runs even inverted. A cleaner in-memory comparison (fetch stubbed, 3,000
+runs each) gave gate on 0.14-0.20 ms/run against gate off 0.16-0.23 ms/run, so the
+removed read costs roughly 20-30 microseconds of local CPU. The cost that actually
+goes away is one network round trip to PostgREST, which this harness cannot measure
+and neither can wrangler dev (no workerd CPU reported locally). CPU was not
+re-measured for the follow-up; see Part 4.
+
+Projected daily totals (ESTIMATE, 1,440 ticks per day, one sup day per week):
+  ordinary day, 1,440 ticks x 2 requests               2,880 requests/day
+  sup weekday: 9 + 719 x 4                              2,885 requests/day
+  sup weekday before the follow-up: 9 + 719 x 5         3,604 requests/day
+  sup weekday sup-session POSTs                        1/day (was 720)
+  week of six ordinary days plus one sup day: 20,165 vs 20,884, about 3% fewer,
+  all of it on the sup day (719 requests, 20% of that day)
+
+Active work is small next to that: one 800-roster session costs 7 requests and
+about 265 KB returned+sent, so a typical day (a few sessions) stays under 1 MB.
+Idle egress is about 10 MB/month, and the roster reads dominate, not the idle
+ticks. All of this sits inside the free plan; no paid feature is used.
+
+Keep-alive (3c): runKeepAlive still makes exactly 1 request (GET meeting_types with
+select=id&limit=1), 19-226 B returned depending on the fixture, no writes.
+
+Verification (first 4c pass, before the follow-up)
+=================================================
+npm test: 350 tests, 350 pass, 0 fail, 0 skipped (was 327; +23 in the new file).
+npm run typecheck: exit 0. Both run after the last source edit.
+Part 4 ends with the same two commands run against the final state.
+
+Deviations, open questions
+==========================
+a. The one-query precheck asked for in 1b does not exist for this algorithm; the
+   implemented idle path costs two reads. The analysis and the tested
+   counterexample are in 1b and 1d. A one-read variant needs the embedded
+   meeting_types join, whose foreign-key constraint name must be verified against
+   a real PostgREST once (e.g. one request in a preview project) before it could be
+   trusted; if the name is wrong the read 400s, which would have to fail open to
+   this two-read path.
+b. Read-set delta, none of it changing written rows: a tick whose sup rule cannot
+   fire no longer reads meeting_skip_dates, so a transient failure of that table
+   no longer ends such a tick (previously it aborted with processed 0 before any
+   write). When the rule can fire, the read and the fail-closed behaviour are
+   exactly as before.
+c. Every-minute ticks mean the sup upsert is issued once a minute through the
+   12-hour window on the sup weekday, about 720 no-op writes with
+   resolution=ignore-duplicates, against about 72 at the old 10-minute cadence.
+   It writes no rows, but it is now the largest write-request consumer on that day.
+   Skipping it when the already-read sessions show a row for (sup, today) is
+   provably equivalent and would remove about 719 requests that day; it is left
+   out of 4c to keep the write sequence unchanged.
+   RESOLVED in the follow-up: the upsert is now skipped when the window read
+   proves the row exists, which is 1 creation instead of 720. See Part 4.
+d. At every minute there is still no overlap guard (no runInProgress state), by
+   design since 4a. Two overlapping ticks would both write idempotent attendance
+   but could insert two audit markers for one session, because the marker test is a
+   read and the insert has no unique constraint assumption. Run duration is about
+   0.1-0.2 s against a 60 s interval, so overlap needs a very slow run; noted, not
+   changed.
+e. The batch cap (10 per tick) now drains at 14,400 sessions/day, so a large
+   backlog is no longer a reason for the old cadence.
+f. workerd CPU was not measured; only the Node proxy above is available without a
+   deploy.
+g. README.md still describes an older scheduled() behaviour and the old cron; it
+   was out of scope for this change.
+
+Part 4: follow-up (Fix 1: sup upsert gate, Fix 2: pre-cutover crons)
+====================================================================
+
+4a. Fix 1 - the sup upsert is skipped when the read proves the row exists
+------------------------------------------------------------------------
+What changed: the window read of meeting_sessions ([today-2, today]) now happens
+before the sup upsert instead of after it, and the upsert is issued only when that
+read does not already contain a row with meeting_type_id = sup type id and
+session_date = today. No query was added; the same four reads happen in the same
+order otherwise (types, gated skip dates, sessions, then marker/roster/attendance).
+
+Why skipping is provably equivalent: the request is
+  POST meeting_sessions?onConflict=meeting_type_id,session_date
+  Prefer: return=representation,resolution=ignore-duplicates
+so for a key that already exists it cannot insert, update or delete anything. When
+the loaded read holds that key the request is a guaranteed no-op, and the only
+consumer of it is the creation of that row. Everything after it (due list, marker
+read, roster, attendance, audit) is computed from rows, never from the request, so
+no written row can depend on whether it was sent.
+
+When it still upserts (the "any doubt keeps the write" rule): no sup type row, a
+sup type without a string id, a row on the same date for another type (monthly), a
+loaded row with a missing meeting_type_id or session_date, or no match at all. The
+helper answers true only for an exact two-field match on data already loaded.
+
+Same-run marking is preserved: the upsert asks for the created row back
+(columns "id, meeting_type_id, session_date, cutoff_time" - the
+return=representation pattern routes/meeting-monthly.js already uses to read a
+generated id) and adds it to the due list, so the tick that creates the session
+still writes its attendance and marker, as Express and the pre-fix code did. If no
+usable row comes back (the insert was ignored as a duplicate), nothing is added and
+the next tick picks the session up from its own read: no partial write, no marker
+for a row that does not exist.
+
+Parity tests (tests/auto-absent-precheck.test.js, which now covers both gates):
+- "the sup upsert is skipped only when the window read proves the row exists":
+  absent (1 upsert), present with the same fields (0), present with different
+  fields (0), monthly row on the same date only (1), loaded row without a
+  meeting_type_id (1). Every case is compared with the ungated tick
+  (skipDateGate: false), which really issues the extra upsert, and the full row
+  set, audit rows and { processed } must be equal.
+- "a manual sup row keeps its fields when the upsert is skipped": the manual row is
+  unchanged after the tick, no session POST, attendance still written against it.
+- "twelve hours of sup-weekday ticks issue the sup upsert once": 720 one-minute
+  ticks over 12:00-23:59 Bangkok. Exactly 1 session POST (was 720), rows and
+  per-tick { processed } identical to the ungated path, 9 requests on the creation
+  tick and 4 on a steady tick (5 before the fix).
+- Three scenarios added to the existing parity table (sup row with different
+  fields, monthly row on the same date, session row without a meeting_type_id), so
+  20 scenarios are compared and all match.
+
+4b. Fix 2 - the deployable config is the pre-cutover list
+---------------------------------------------------------
+worker/wrangler.toml
+-   crons = ["* * * * *", "0 1,9,17 * * *"]
++   crons = ["0 1,9,17 * * *"]
+The every-minute path is untouched: src/index.js still routes "* * * * *" to
+runAutoAbsentOnce, and AUTO_ABSENT_CRON in src/auto-absent.js is still "* * * * *".
+Cutover is therefore adding that one string to crons.
+
+Guard test: tests/wrangler-crons.test.js reads the real wrangler.toml, extracts
+triggers.crons and asserts deepEqual with ["0 1,9,17 * * *"]; a second test asserts
+AUTO_ABSENT_CRON is "* * * * *" and that the deployed list does not contain it, so
+an accidental edit fails the suite instead of shipping the trigger. It reads a file
+and nothing else: no network, no wrangler.
+
+CUTOVER CHECKLIST (not performed, in order):
+  (a) confirm the Express auto-absent job is off (AUTO_ABSENT_ENABLED unset/false)
+  (b) add "* * * * *" to triggers.crons in worker/wrangler.toml
+  (c) deploy
+Until (a) is true, (b) and (c) stay undone: two writers would double the audit
+markers and break the detail counts, even though attendance rows converge.
+
+4c. Re-measured request counts (loopback fake, table updated in Part 3)
+----------------------------------------------------------------------
+  idle tick, gate on                        2 requests   (unchanged)
+  sup steady tick, session present          4 requests   (was 5)
+  sup creation tick, 800-row roster         9 requests   (unchanged)
+  sup weekday, 12h of one-minute ticks  2,885 requests   (was 3,604)
+  sup session POSTs over that window            1         (was 720)
+
+4d. Verification (final state, one run)
+---------------------------------------
+$ npm test
+  tests 363
+  suites 0
+  pass 363
+  fail 0
+  cancelled 0
+  skipped 0
+  todo 0
+  duration_ms 2396.8979
+
+$ npm run typecheck
+  exit 0 (every src and test file passes node --check, including
+  tests/wrangler-crons.test.js)
+
+363 against 350 before the follow-up: 13 more (the 5-upsert-case test plus its
+parent, the manual-row test, the twelve-hour test, 3 parity scenarios, 2 guards).
+
+4e. Open questions after the follow-up
+--------------------------------------
+- The embed-based single-read idle tick (question a) is still not implemented: the
+  FK constraint name still needs one verified PostgREST call.
+- A sup-weekday tick now costs 4 requests, three reads plus the marker read. The
+  marker read is what makes a processed session cheap to re-check; removing it
+  needs a per-session "done" column or a unique-constraint assumption.
+- That tick still reads meeting_skip_dates every minute (720 reads on the sup day)
+  although the session it guards already exists. Dropping it is provably safe once
+  the sessions read moves ahead of it; left out to keep this change minimal.
+- workerd CPU is still unmeasured, and the loopback CPU figures in Part 3 were not
+  re-taken; the writes that dominate CPU did not change.
+- No overlap guard with the every-minute trigger, unchanged since 4a.
+- Nothing was deployed, nothing committed, no live Supabase call was made;
+  README.md still describes the old cron.

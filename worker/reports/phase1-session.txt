@@ -1,0 +1,39 @@
+Phase 1 step 2 - Session layer (no routes)
+Date: 2026-10-30
+Scope: worker/ only. No routes, no real network calls, no database writes.
+
+Files created
+- src/db.js           PostgREST client: select, insert, update
+- src/session.js      createSession, readSession, revokeSession, allowedLoginTypesFor, landingPathFor
+- src/require-role.js requireRole
+- tests/session.test.js
+
+Files updated
+- package.json (typecheck script now syntax-checks the new source and test files)
+
+Left untouched
+- src/index.js, src/pin.js (spike files, kept as-is)
+- .dev.vars
+- Everything outside worker/
+
+Commands (run from worker/)
+npm run typecheck -> exit 0
+npm test          -> exit 0
+
+Test results
+tests 47, pass 47, fail 0, cancelled 0, skipped 0, todo 0
+(18 new session-layer tests + 29 earlier helper/spike tests)
+
+Coverage notes
+- readSession steps: no token, unknown token, idle >15 min, inactive employee,
+  role no longer allowed, success touching last_active_at, pending leave redirect,
+  thrown error swallowed.
+- Fake fetch only: exact PostgREST URLs and query strings for the eq, is.null, gt
+  filters and the insert URL; no request left the test process.
+- createSession stores only the SHA-256 of the returned token; token format checked.
+- requireRole 401 and 403 messages checked.
+- db errors surface only the upstream code, never the response body.
+
+Notes
+- No secrets, tokens, hashes, PINs, national IDs or response bodies are recorded here.
+- No deploy, login or delete command was run.

@@ -1,0 +1,138 @@
+Pre-cutover report
+==================
+Date: Oct 31, 2026. Scope: record the owner's confirmed values, rename the Worker,
+and write the two pre-cutover documents. Nothing was deployed, no wrangler deploy /
+secret / pages deploy command was run, no live Supabase connection was made, no
+write SQL was run, and no secret, PIN, token, cookie value, national ID or database
+password appears in any file written here.
+
+1. Files changed
+----------------
+DEPLOY.md (edited)
+  - Supabase project name recorded as KCS_DATA. The remaining unknown (project
+    region and where the schema comes from) is kept as a TODO.
+  - Worker name recorded as hr-hub-api (replaces hr-workers-spike in this file).
+    Added the warning that secrets belong to a Worker name, so all five required
+    secrets must be set again on hr-hub-api at cutover (plus TURNSTILE_SECRET_KEY
+    if Turnstile is on), and that the old hr-workers-spike Worker is deleted only
+    after owner confirmation.
+  - Pages project hr-hub, domain https://hr-hub.pages.dev, deploy method Git
+    connection, with the note that the Git connection is deferred until cutover
+    because a push to the production branch deploys automatically. Service binding
+    WORKER now points to hr-hub-api, and adding/changing the binding requires one
+    more Pages deploy to take effect.
+  - APP_ORIGIN set to https://hr-hub.pages.dev in both the variable list and the
+    deploy order.
+  - New section 4 "pre-cutover data backup (owner action)": export each table the
+    system uses, keep the files outside the repo, name them with the export date,
+    treat them as sensitive (pin_hash, token_hash, staff data). No credentials.
+  - Sections renumbered (deploy order is now 5, local Express 6, checklist 7) and
+    the deploy order now starts with the backup, then secrets, APP_ORIGIN, Worker
+    deploy, Git connection at cutover, binding, the 401 check, and deleting the old
+    Worker once rollback is ruled out.
+  - Checklist rollback item replaced with the confirmed decision: the owner decides
+    and executes, per reports/rollback-plan.md; added "read the rollback plan before
+    cutover" as the first checklist item.
+
+worker/wrangler.toml (edited, one line)
+  - name = "hr-hub-api" (was "hr-workers-spike"). No other line changed: main,
+    compatibility_date, the cron comment block, crons, the three Durable Object
+    bindings and the v1 migration are byte-for-byte as before.
+  - Note: worker/package.json still has "name": "hr-workers-spike". It is the npm
+    package name, not the deployed Worker name, and the task limited the edit to
+    wrangler.toml, so it was left alone.
+
+worker/tests/wrangler-crons.test.js (edited)
+  - Added nameInConfig() and a test asserting wrangler.toml deploys the Worker as
+    hr-hub-api. It reads the real file like the existing cron tests do, ignores
+    class_name lines (the regex anchors on the start of the line), and touches no
+    network or wrangler command. The file was chosen over a new test file so the
+    existing worker typecheck list (which enumerates every test file) stays correct
+    without another edit.
+
+reports/rollback-plan.md (new)
+  - Who decides and executes (owner) and the trigger conditions.
+  - What to stop first: remove the every-minute cron from wrangler.toml if it was
+    ever added, and make sure Express auto-absent is enabled.
+  - Two traffic-switch paths: A) run Express in production mode so it serves dist
+    and /api on port 3001 (no code change; users get a new origin and must log in
+    again because the cookie is host-only), B) keep hr-hub.pages.dev by changing
+    the Pages function proxy to point at Express (a code change, needs owner
+    approval, APP_ORIGIN and TRUST_PROXY_HOPS=1).
+  - The PIN incompatibility, read from the real code: Worker stores
+    hmacSha256(PIN_PEPPER, "<employeeId>:<pin>") as 64-char hex
+    (worker/src/pin-rules.js, pin-verify.js); Express stores bcrypt and verifies
+    with bcrypt.compare (server/routes/auth.js, server/pin-verify.js). bcryptjs
+    returns false when the hash length is not 60 (checked in node_modules/bcryptjs),
+    so every Worker-set PIN fails on Express, pins the user out after five attempts
+    (423, 15 minutes), and never takes the "no PIN yet" branch because pin_hash is
+    not null. Before rollback the owner must find rows whose pin_hash does not start
+    with "$2", null those values, issue reset codes with the existing
+    npm run issue:reset-code -- <employee_code>, and have each user set a PIN again
+    through Express. No DROP/ALTER was written or run, and no Express change is
+    proposed as part of this work.
+  - Data compatibility table: which tables the Worker writes (auth_sessions,
+    employee_credentials, pin_reset_codes, audit_logs, meeting_sessions,
+    meeting_attendance, meeting_roster, meeting_types), and that Express can read
+    all of them unchanged except the pin_hash format. Read-only tables are listed
+    separately. Based on the schema list in worker/reports/phase2-spec-draft.md 3.8
+    and the Phase 4a/4c parity results.
+  - A plain list of what cannot be undone: PINs set on the Worker, a deleted Worker
+    name (secrets cannot be read back), deleted audit rows, requests that never
+    reached the database, and a missing backup.
+
+reports/supabase-indexes.md (new)
+  - Records the pg_indexes result supplied by the owner: meeting_attendance has two
+    unique indexes on (session_id, employee_id), meeting_attendance_once and
+    meeting_attendance_session_employee_unique. States plainly that this environment
+    did not query Supabase and that the full indexdef is not stored in the repo.
+  - Impact (double index maintenance, ambiguous upsert arbiter for the
+    onConflict=session_id,employee_id calls, confusing 23505 names, no data
+    corruption), a recommendation to keep the descriptive one and drop the other
+    after backup and a constraint check, and read-only verification queries.
+  - No DROP/ALTER statement was written or executed.
+
+2. Test and check results
+-------------------------
+cd worker && npm test
+  364 tests, 364 pass, 0 fail (was 363 before this change; the new name test is the
+  extra one). Output includes:
+    ok wrangler.toml deploys the Worker as hr-hub-api
+    ok wrangler.toml ships exactly the pre-cutover triggers
+    ok the every-minute trigger is implemented but not deployed
+  exit code 0
+
+cd worker && npm run typecheck
+  exit code 0 (node --check on every src and test file)
+
+npm run typecheck (repo root, node scripts/typecheck.js)
+  exit code 0
+
+grep -ciE "vercel|render" DEPLOY.md
+  0 (the earlier cleanup still holds; the rewrite added no provider reference)
+
+No deploy, secret, pages deploy or Supabase command was run, so nothing was
+verified against a live account; all checks above are local.
+
+3. Open questions
+-----------------
+1. Supabase project region, and where the schema (migrations) comes from — still a
+   TODO in DEPLOY.md.
+2. Who is the owner in practice for the backup and for deleting hr-workers-spike,
+   and when the Git connection to Cloudflare Pages is made (deferred to cutover by
+   decision).
+3. Which of the two duplicate meeting_attendance unique indexes to drop, and when.
+   Recommendation is to keep meeting_attendance_session_employee_unique, but the
+   owner must confirm after checking constraints against the real database.
+4. Worker package name in worker/package.json is still hr-workers-spike; rename it
+   too, or leave it as the npm package name?
+5. Whether Turnstile is enabled in production, since TURNSTILE_SECRET_KEY must be
+   set on hr-hub-api only if it is.
+6. Rollback option A or B (keep the Pages domain or move to the Express origin) is
+   an owner decision that must be made before cutover, not during an incident.
+
+4. Not done on purpose
+----------------------
+No git commit or push. No server/ file changed. No Worker source file changed. No
+frontend source file changed. No read or write of worker/.dev.vars or
+worker/.test-account.env. No secret value printed or stored.

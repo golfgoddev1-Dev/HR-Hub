@@ -1,0 +1,57 @@
+Phase 3b — POST /api/meeting/dashboard/reason
+===============================================
+Date: 2026-10-31
+Scope: worker/ only. Spec: worker/reports/phase3-spec-draft.md sections 2.6, 3 (time helpers only), 5 (approved HMAC approach), 8, 10 (approved decisions). Contract reference: server/routes/meeting-dashboard.js (POST /reason) + server/pin-verify.js (read, not modified).
+Not touched: server/, root src/, root .env.local, .dev.vars, .test-account.env. No deploy, no wrangler login/secrets/delete, no database writes outside test fakes, no real network calls outside the local wrangler smoke check. No PIN, hash, token, national ID, reason text or request/response body was ever printed, logged or included in this report.
+
+Files changed (worker/)
+-----------------------
+- src/pin-verify.js (new)      ONE shared PIN-verification core, extracted from the Phase 1 login route so there is no second implementation: lock-window check (isLockActive), HMAC compare (PIN_PEPPER over `<employeeId>:<pin>` via pinHash + timingSafeEqualHex), allowed-login role check only on a PIN match, then the counter rule (below five failures bump failed_attempts with updated_at; the fifth failure resets the counter to 0, sets locked_until = now + 15 minutes and answers 423; below-5 failures answer 401; success resets failed_attempts to 0, clears locked_until and sets updated_at). All credential writes filter on employee_id (the table has no id column). Exports PIN_INVALID_MESSAGE/PIN_LOCKED_MESSAGE/MAX_FAILED_ATTEMPTS/LOCK_DURATION_MS/isLockActive/verifyPinAttempt.
+- src/routes/auth.js (edit)    The login route now calls the shared verifyPinAttempt instead of its inline copy. Behaviour is byte-identical; the Phase 1 test suite (tests/auth-routes.test.js, 28 tests) passes unchanged. The login lock/counter lines were removed together in one block; set-pin keeps its own reset-code checks untouched.
+- src/routes/dashboard-reason.js (new)  The reason route itself (below).
+- src/routes/meeting-dashboard.js (edit)  One `export` keyword added to loadContext so the reason route reuses the exact same context loader the five 3a GET routes use; the GET routes themselves are untouched.
+- src/app.js (edit)            Mounted the new router under /api/meeting/dashboard (alongside the 3a GET group).
+- package.json (edit)          Added src/pin-verify.js, src/routes/dashboard-reason.js and tests/dashboard-reason.test.js to the typecheck list; src/meeting-dashboard.js remains listed (an interim working edit briefly dropped it and listed a phantom helper file; corrected before the final run — final file verified clean).
+- tests/dashboard-reason.test.js (new)  13 tests, described below. Fake fetch only, Hono app.request, frozen Bangkok clock (2026-11-10T03:00Z); the fake backend keeps a mutable credential row so the counter/lock rule is driven attempt by attempt. Synthetic values only.
+- tests/meeting-dashboard-routes.test.js (edit)  The Phase 3b placeholder (POST /reason 404) is updated to assert the route is now mounted and answers 401 without a cookie.
+- reports/phase3b-dashboard-reason.txt  this report.
+
+Route (single) — POST /api/meeting/dashboard/reason
+---------------------------------------------------
+- Guard: requireRole('meeting_controller'); 401 'ไม่ได้เข้าสู่ระบบ' / 403 'ไม่มีสิทธิ์เข้าถึงส่วนนี้'. Cache-Control: no-store on every response including auth failures.
+- Body (strict): JSON Content-Type only, at most 4 KB (declared length and encoded size), valid JSON object, exactly the four string keys pin/code/cycle/employeeId — an extra field, a non-6-digit pin, a code outside sup|monthly, a cycle not matching ^\d{4}-\d{2}(-\d{2})?$, or an employeeId failing the Phase 2c UUID rule (versions 1-8 + RFC variant + nil and max UUIDs, case-insensitive) all answer 400 'ข้อมูลไม่ถูกต้อง' before any PIN-check or lookup call.
+- Step 1 — PIN check via the shared core: credential looked up by the logged-in controller's employee_id; missing credential, inactive employee or null pin_hash answer the generic 401 'เลขบัตรประชาชนหรือ PIN ไม่ถูกต้อง' with no counter write; a future locked_until answers 423 'บัญชีถูกล็อกชั่วคราว' with lockedUntil (from the stored value; no write); a missed compare (including a stored bcrypt-style hash, which can never equal a hex HMAC digest) or a role mismatch counts a failure: attempts below 5 bump failed_attempts and updated_at then answer the generic 401; the 5th failure resets failed_attempts to 0, sets locked_until = now + 15 min (423 with lockedUntil); success resets failed_attempts to 0, sets locked_until null and updated_at (2 200-verified writes; success response also resets).
+- Step 2 — lookup: loadContext(code) (same loader as the GET routes); no type row → 400 'ประเภทการประชุมไม่ถูกต้อง'. Cycle rows filtered to the body employeeId, then latest-per-employee. No rows → HTTP 200 {ok:false, 'ไม่พบข้อมูลของคนนี้ในรอบนี้'}; status outside urgent_busy|leave → HTTP 200 {ok:false, 'สถานะนี้ไม่มีเหตุผล'}. Neither case writes audit.
+- Step 3 — success: exactly one audit_logs insert {actor_id: controller id, action: 'dashboard_reason_viewed', entity: 'meeting_attendance', entity_id: attendance row id, detail: null} (no employee name, no reason text, nothing personal), then 200 {ok: true, status: Thai label by code, reason: <reason ?? ''>}. Any thrown error answers 500 'ระบบขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้ง'; the log line carries only the error name/code.
+- Response-body field naming follows the 3a dashboard-group convention ({ok, error}); the lockedUntil field name is as specified. Reason text exists only in the sanctioned success field reachable after a verified controller session and PIN; it never appears in any audit row, log line or other response field.
+
+Tests (tests/dashboard-reason.test.js — 13 tests, 13 pass, 0 fail)
+---------------------------------------------------------------
+1. strict body rejects extras and malformed values with 400 before any PIN or lookup call (extra field, 5- and 7-digit pin, bad code, two bad cycles, non-UUID and version-0 UUID, wrong content type, over-4KB body; asserts zero employee_credentials reads / meeting_types reads / audit writes for each).
+2. nil and max UUIDs pass body validation and reach the row lookup.
+3. auth: 401 without a cookie and 403 for an employee session, with no lookup.
+4. wrong PIN bumps the counter with the generic 401 and never reaches the lookup (asserts the exact counter patch and zero meeting_types/audit calls).
+5. the fifth failure locks: counter resets to 0, lock is now + 15 minutes, later requests stay locked (attempts 1-4 answer 401 with growing counters, the 5th answers 423 with lockedUntil = now + 15 min, the stored row shows counter 0 + locked_until, a request after the lock — even with the correct PIN — answers 423 from the stored value and writes nothing).
+6. a failed role check counts as the same attempt failure with the generic 401 (the fake denies meeting_admins membership only in the PIN wave, so the session stays valid while the route-level role check fails; exact counter patch asserted).
+7. missing, inactive and null-hash credentials answer the generic 401 without a counter write (three sub-cases; the fake separates the session-path employees row from the route's id/is_active row so the inactive case is exercised at the PIN step, matching the Phase 1 route order).
+8. a stored bcrypt-style pin_hash answers 401 every time (counter bumps each attempt).
+9. unknown meeting type: 400 with the exact Thai message (after the PIN passes).
+10. 200 ok:false without audit: no row for this person (nil UUID in a live cycle; a different cycle) and a status without a reason.
+11. success: exact audit row (actor/action/entity/entity_id/detail:null) for urgent_busy and leave labels, reason null falls back to '', and the success reset patch (failed_attempts 0, locked_until null, updated_at) asserted.
+12. a failing lookup answers 500 with the exact Thai server message.
+13. leak test: PIN, hashes, tokens, employee names stay out of responses, audit rows and log lines; reason text never appears in a log line or audit row (it exists only in the sanctioned success response field).
+
+Verification
+------------
+- npm run typecheck (worker/): exit code 0.
+- npm test (worker/): exit code 0 — 298 tests, 298 pass, 0 fail (285 before this phase + 13 here).
+- npx wrangler dev --port 8787: POST /api/meeting/dashboard/reason (no cookie) answers 401; the 3a GET / still answers 401. Route loads correctly in workerd.
+- Stopped only the wrangler tree started for the smoke test (killed by PID from process listings, never by a name pattern; a respawning workerd child chain was stopped by PID as well); port 8787 confirmed free afterwards.
+- Port 3001 (Express reference server) was not running before and was untouched afterwards.
+- No real network calls: unit/route tests fake fetch entirely; the smoke check is the local workerd on loopback.
+
+Cost concern
+------------
+None. Everything uses the existing free stack: the project's PostgREST client (src/db.js), Web Crypto (already-used HMAC/timing-safe helpers), the Hono dependency already in place, and no new dependency. The bcrypt requirement of Express is covered by the approved HMAC design from draft section 5, which is free in itself; if a stored bcrypt hash prevents verification at cutover the free path is /api/auth/set-pin (Phase 1), per owner decision 3 in draft section 10. No paid service was encountered or needed.
+
+Stop here per instructions: Phase 4 (auto-absent cron) not started.

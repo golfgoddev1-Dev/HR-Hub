@@ -1,0 +1,268 @@
+Phase 5: Vue on Cloudflare Pages, /api proxied to the Worker
+===========================================================
+Oct 31, 2026. One origin for the frontend and the API so the SameSite=Strict
+hr_session cookie works: Cloudflare Pages serves the built Vue app, and a Pages
+Function forwards /api/* to the API Worker over a service binding named WORKER.
+
+Nothing was deployed. No account was touched: no wrangler deploy, no wrangler
+pages deploy, no wrangler secret, workers.dev not enabled. No live Supabase was
+contacted; the only database was a loopback fake PostgREST on 127.0.0.1:8798.
+server/ (Express) and the Worker source were not modified. worker/.dev.vars and
+worker/.test-account.env were never read or written.
+
+Files added
+-----------
+functions/api/[[path]].js   Pages Function proxy (new)
+reports/phase5-pages-report.txt   this file
+
+Nothing else changed: no dependency was added, no build config was touched, no
+_redirects file ships (see "SPA routing" below) and no Pages Wrangler config
+file was added (see "Open questions").
+
+1. Inventory: every /api call in the Vue source
+-----------------------------------------------
+24 call sites in 8 files, all plain fetch. There is no axios anywhere in the
+app (the dependency is not installed). Every call passes
+credentials: "same-origin", which is exactly why frontend and API must share an
+origin: the browser attaches hr_session by itself, and SameSite=Strict would
+drop it on a cross-site call. No call reads or writes document.cookie, and no
+call sets a custom or non-standard header. Bodies are always JSON strings with
+Content-Type: application/json; no FormData, no multipart, no streaming.
+
+  file                          method  path                                        body  headers
+  src/api.js (getSession)       GET     /api/auth/me                                -     none
+  src/api.js (postLogout)       POST    /api/auth/logout                            -     none
+  src/pages/LoginPage.vue       POST    /api/auth/login                             JSON  Content-Type: application/json
+  src/pages/SetPinPage.vue      POST    /api/auth/set-pin                           JSON  Content-Type: application/json
+  src/pages/RegisterPage.vue    GET     /api/register/context?t=<token>             -     Accept: application/json
+  src/pages/RegisterPage.vue    POST    /api/register/submit                        JSON  Content-Type: application/json
+  ControllerOverviewPage.vue    GET     /api/meeting/overview                       -     Accept: application/json
+  ControllerOverviewPage.vue    GET     /api/meeting/overview/pending?code=<code>   -     Accept: application/json
+  ControllerDashboardPage.vue   GET     /api/meeting/dashboard?<params>             -     Accept: application/json
+  ControllerDashboardPage.vue   GET     /api/meeting/dashboard/cycles?code=<code>   -     Accept: application/json
+  ControllerDashboardPage.vue   GET     /api/meeting/dashboard/registrants?<params> -     Accept: application/json
+  ControllerDashboardPage.vue   GET     /api/meeting/dashboard/dept?<params>        -     Accept: application/json
+  ControllerDashboardPage.vue   GET     /api/meeting/dashboard/monthly-summary?<p>  -     Accept: application/json
+  ControllerDashboardPage.vue   POST    /api/meeting/dashboard/reason               JSON  Content-Type: application/json
+  ControllerQrPage.vue          GET     /api/meeting/types                          -     Accept: application/json
+  ControllerQrPage.vue          GET     /api/meeting/monthly-session                -     Accept: application/json
+  ControllerQrPage.vue          POST    /api/meeting/qr/rotate                      JSON  Content-Type + Accept
+  ControllerQrPage.vue          PUT     /api/meeting/window                         JSON  Content-Type + Accept
+  ControllerQrPage.vue          PUT     /api/meeting/monthly-session                JSON  Content-Type + Accept
+  ControllerRosterPage.vue      GET     /api/meeting/roster                         -     Accept: application/json
+  ControllerRosterPage.vue      GET     /api/meeting/roster/search?<params>         -     Accept: application/json
+  ControllerRosterPage.vue      POST    /api/meeting/roster/add                     JSON  Content-Type: application/json
+  ControllerRosterPage.vue      POST    /api/meeting/roster/remove                  JSON  Content-Type: application/json
+
+Totals: 13 distinct GET endpoints, 8 POST, 2 PUT, 0 DELETE - 24 call sites in
+the source, because the dashboard fetches /api/meeting/dashboard/cycles twice
+(once per type). 9 of the call sites send a JSON body (every POST except
+logout, plus both PUTs). Two rows are the shared helpers in src/api.js;
+getSession runs on every protected navigation through the router guard, so
+GET /api/auth/me is the most frequent call in the app.
+
+2. What the Worker depends on from the request
+---------------------------------------------
+Searched worker/src for Host, Origin, Referer, APP_ORIGIN, CORS and CSRF.
+
+  a. Host header: not read anywhere. No route builds an absolute URL from the
+     request, and no redirect is derived from it (redirectTo values are app
+     paths such as /pending?to=...). Forwarding the request URL unchanged is
+     therefore safe.
+  b. Origin / Referer: not read anywhere, and there is no CSRF token or
+     same-origin check. The Worker also sets no Access-Control-* response
+     headers, so the proxy needs no preflight handling and adds none.
+  c. APP_ORIGIN (a Worker variable, not a header): read in
+     src/routes/meeting.js at the types and qr/rotate handlers, and used by
+     buildRegisterUrl() in src/meeting-window.js to build the QR register link.
+     So the Worker never derives the public origin from the request; in
+     production APP_ORIGIN must be the Pages origin. Locally it was set to
+     http://127.0.0.1:8788 and the tests confirm the built link starts with that
+     origin (check e6), i.e. the link follows configuration, not Host.
+  d. Cookie: read from the Cookie request header in src/require-role.js and in
+     the /api/auth/me and /api/auth/logout handlers. The proxy must (and does)
+     forward Cookie unchanged.
+  e. Content-Type and Content-Length: validated by the dashboard reason, roster,
+     monthly-session, register and meeting handlers before parsing a JSON body.
+     The proxy forwards both headers and streams the body unchanged, so those
+     checks see exactly what the browser sent.
+  f. CF-Connecting-IP: read by src/rate-limit.js. It is an ordinary request
+     header on Pages, so it is forwarded like every other header.
+  g. Response side: the Worker sets Set-Cookie (login/logout) and
+     Cache-Control: no-store on several routes. The proxy returns the Worker
+     response object itself, so both survive untouched.
+
+Conclusion: the Worker needs no change to run behind the proxy, so the stop
+condition "the Worker needs a code change" was not hit.
+
+3. The proxy and its configuration
+----------------------------------
+functions/api/[[path]].js exports one onRequest handler (all methods, /api and
+/api/*):
+
+  - builds a Headers copy of the request, skipping the RFC 9110 hop-by-hop
+    headers (connection, keep-alive, proxy-authenticate, proxy-authorization,
+    te, trailer, transfer-encoding, upgrade) and nothing else, so Cookie,
+    Content-Type, Content-Length, Accept, CF-Connecting-IP and Host are
+    forwarded as sent;
+  - constructs new Request(request.url, { method, headers, body, redirect:
+    "manual" }) - the URL is the Pages URL, so path and query string cross the
+    binding unchanged and a Worker redirect is passed to the browser instead of
+    being followed;
+  - sends it with env.WORKER.fetch(...) and returns that response object as-is
+    (status, body and every Set-Cookie header untouched; nothing is rebuilt, no
+    cookie is added, removed or rewritten);
+  - returns a fixed 503 {"ok":false,"message":"service unavailable"} with
+    Cache-Control: no-store when env.WORKER is missing or the fetch throws. The
+    thrown error is swallowed, never logged into the response.
+
+Configuration keys, verified against developers.cloudflare.com/pages:
+
+  Local (used for the tests below, exact command):
+    wrangler pages dev dist --ip 127.0.0.1 --port 8788 \
+      --service WORKER=hr-workers-spike --compatibility-date 2026-09-01
+    Binding name: WORKER. Script name: hr-workers-spike (worker/wrangler.toml
+    "name"). Wrangler printed "env.WORKER (hr-workers-spike) Worker local
+    [connected]", i.e. the binding reached the separately running local Worker.
+
+  Production (not performed; one equivalent of the same binding):
+    Pages project -> Settings -> Bindings -> Add -> Service binding,
+    Variable name WORKER, Service hr-workers-spike.
+    Or, if the project is switched to a Pages Wrangler config file:
+      name = "hr-hub-web"
+      pages_build_output_dir = "./dist"
+      compatibility_date = "2026-09-01"
+      [[services]]
+      binding = "WORKER"
+      service = "hr-workers-spike"
+
+  Docs read for this step:
+  - /pages/functions/bindings/ (Service bindings): "Service bindings enable you
+    to call a Worker from within your Pages Function" and, for local work,
+    "run the Worker you want to bind to via wrangler dev and in parallel, run
+    wrangler pages dev with --service <BINDING_NAME>=<SCRIPT_NAME> where
+    SCRIPT_NAME indicates the name of the Worker". The documented example call
+    is "return context.env.SERVICE.fetch(context.request)".
+  - /pages/functions/wrangler-configuration/: the Pages-only key is
+    pages_build_output_dir, and using the file makes it the source of truth for
+    the project - which is why no such file was added in this phase.
+  - /pages/configuration/serving-pages/ (SPA rendering): "If your project does
+    not include a top-level 404.html file, Pages assumes that you are deploying
+    a single-page application ... serves the root (/) for any incoming path
+    that does not correspond to a static asset."
+
+SPA routing: no _redirects file is needed or shipped. A /* /index.html 200 rule
+was tried first, but wrangler rejected it locally with "Infinite loop detected
+in this rule and has been ignored", and with the rule removed the client routes
+still answered 200 from the documented SPA default. The same behaviour covers
+the QR deep link /meeting/register?t=... .
+
+4. Local end-to-end results
+---------------------------
+Stack: loopback fake PostgREST (127.0.0.1:8798, synthetic fixtures only) <-
+wrangler dev Worker (127.0.0.1:8787, temporary config outside worker/ so
+worker/.dev.vars could not be loaded; SUPABASE_URL pointed at the fake) <-
+wrangler pages dev (127.0.0.1:8788, dist + functions, --service WORKER=...).
+All requests went to the Pages origin unless a check says "Worker directly".
+31 checks, all passing:
+
+  a1 POST /api/auth/login through Pages answers 200                    status=200
+  a2 exactly one Set-Cookie header                                      count=1
+  a3 cookie name is hr_session and carries a value                      ok
+  a4 HttpOnly                                                           present
+  a5 SameSite=Strict                                                    present
+  a6 Path=/                                                             present
+  a7 Max-Age=43200                                                      present
+  a8 Secure absent (local COOKIE_SECURE=false)                          attrs: HttpOnly; SameSite=Strict; Path=/; Max-Age=43200
+  a9 body carries the role landing path                                 /meeting/controller
+  b1 GET /api/auth/me through Pages answers 200                         status=200
+  b2 same identity as the login response                                role=meeting_controller
+  b3 identical to the Worker called directly                            status+body equal
+  c1 POST /api/auth/logout through Pages answers 200                    status=200
+  c2 clearing cookie hr_session with Max-Age=0                          HttpOnly; SameSite=Strict; Path=/; Max-Age=0
+  c3 clearing cookie keeps HttpOnly, SameSite=Strict, Path=/            ok
+  c4 the revoked session is rejected by /api/auth/me                    status=401
+  d1 wrong-type login matches the Worker status                         pages=401 worker=401
+  d2 wrong-type login body is byte-identical to the Worker              ok
+  d3 the failure is the generic 401                                     ok
+  d4 no cookie is issued on a failed login                              ok
+  e1 GET / serves the built Vue entry                                   status=200 text/html, id="app"
+  e2 entry script is a same-origin /assets bundle                       ok
+  e3 the HTML references no Worker URL                                  ok
+  e4 a client route is served by the Pages SPA default                  /meeting/controller 200
+  e5 the app's own API call succeeds on the same origin                 GET /api/meeting/types 200
+  e6 register links are built from APP_ORIGIN, not the request Host     both links start with the Pages origin
+  e7 the query string is forwarded (?code=sup echoed back)              status=200 code=sup
+  e8 the same route without the query is rejected                       status=400
+  f1 a missing binding answers 503                                      status=503 (second pages dev without --service)
+  f2 the body is the fixed JSON error with no details                   exact match
+  f3 the 503 is not cached                                              Cache-Control: no-store
+
+Extra check, binding throws: the local Worker was killed while pages dev kept
+running; /api/auth/me through the Pages origin then answered
+{"ok":false,"message":"service unavailable"} with status 503 - the catch branch
+behaves like the missing-binding branch and leaks no error text.
+
+What the cookie checks show: the header the browser would store is exactly
+"hr_session=<value>; HttpOnly; SameSite=Strict; Path=/; Max-Age=43200" with no
+Secure only because COOKIE_SECURE=false was set for local http. No cookie value
+is reproduced in this report; the test asserted flags, not values, and printed
+none.
+
+Fixtures: one synthetic employee with a synthetic national ID and PIN (values
+identical to the existing worker test fixtures in shape, invented here), a
+meeting_admin row so the controller login is allowed, and two meeting_types rows
+so the types and pending routes answer. The fake served only those tables. No
+production data, no real account, no live database.
+
+5. Frontend build
+-----------------
+npm run build (vite build), exit 0, built in 880 ms:
+  dist/index.html                    0.67 kB
+  dist/assets/index-*.css          605.37 kB
+  dist/assets/index-*.js           889.23 kB
+No Worker URL is baked into the output: grep over dist for workers.dev,
+127.0.0.1:8787, localhost:3001, supabase.co found nothing, so every browser
+request stays relative (/api/...) and lands on the Pages origin.
+
+6. Worker test suite
+--------------------
+cd worker && npm test -> exit 0: tests 363, pass 363, fail 0, skipped 0, todo 0.
+Unchanged from the Phase 4c follow-up; no Worker file was edited in this phase.
+npm run typecheck was not re-run here because nothing under worker/src changed;
+the new file was checked with node --check instead (passes).
+
+7. Secrets
+----------
+No secret value appears in the report, the build output, or any log quoted here.
+The local Worker ran from a temporary config whose values were synthetic
+fixtures pointing at 127.0.0.1:8798; worker/.dev.vars was deliberately kept out
+of the process by placing that config outside worker/ (wrangler listed exactly
+the seven fixture variables it loaded). wrangler pages dev also listed several
+inherited Pages variables as "(hidden)" - values were not printed by wrangler
+and were not read here. The temporary config, fake, test script and local state
+directories were deleted after the run.
+
+Open questions
+--------------
+a. The production binding is a dashboard setting (Settings -> Bindings ->
+   Service binding, WORKER = hr-workers-spike) or requires adding the Pages
+   Wrangler config file, which would then become the source of truth for the
+   whole Pages project (including its variables). Neither was done: deploying is
+   out of scope for this phase, and DEPLOY.md was not edited. Whoever deploys
+   must pick one and record it there.
+b. APP_ORIGIN must be the final Pages origin (or custom domain) on the Worker,
+   otherwise QR register links point at the wrong host. It is a Worker variable,
+   so it is set by the existing Worker deploy procedure, not by Pages.
+c. The session cookie keeps Secure whenever COOKIE_SECURE is unset, which is
+   correct on the HTTPS Pages origin; the local run needed COOKIE_SECURE=false
+   and that flag must never be set in production.
+d. No route sets more than one Set-Cookie today, so the "every Set-Cookie
+   survives" property is guaranteed by returning the response object untouched
+   rather than by a multi-cookie test; if a future route sets two, nothing in
+   the proxy would need to change.
+e. Pages' SPA default depends on the project having no top-level 404.html. If a
+   404.html is ever added to public/, client routes and QR deep links would 404
+   and a routing rule would be required again.
+f. Local tests used fixed ports 8787/8788/8789 and a loopback fake; workerd CPU
+   was not measured, and nothing here was exercised against a live edge.

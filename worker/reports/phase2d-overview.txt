@@ -1,0 +1,121 @@
+Phase 2d — Overview (controller) report
+=======================================
+Date: 2026-10-31
+Working directory: worker/ only. No changes to server/, root src/, or root .env.local.
+Prerequisite checked: Phase 2c report present, npm run typecheck exit 0, npm test 222/222 before starting.
+No edits to any file created in Phase 2b or 2c (src/routes/meeting*.js, src/meeting-monthly.js,
+src/meeting-roster.js, src/meeting-window.js). Only pre-existing shared files were touched:
+src/app.js (mount) and package.json (typecheck list) — both required by the task.
+
+Routes implemented (mounted exactly in src/app.js)
+--------------------------------------------------
+- GET /api/meeting/overview
+- GET /api/meeting/overview/pending?code=sup|monthly
+
+Files
+-----
+- src/meeting-overview.js (new) — pure helpers:
+  * countByStatus(rows): counts every attendance row of the session (not latest-per-employee),
+    same as Express; rows with an empty status_code are skipped entirely like the Express helper.
+  * sessionPhase({now, openTime, cutoffTime}): 'not_open' / 'open' / 'closed' from the Bangkok
+    clock; 'none' when now is missing or either HH:mm value is unusable.
+  * formatDateText(now): Thai Bangkok date text (th-TH, weekday/day/month/year).
+  * findPending(roster, attendanceRows): excludes anyone with any attendance row in the session
+    (any status, including not_attended), Thai sort on fullName.
+  * weekdayOf(dateText): weekday number from UTC date parts.
+  * todayOf(now): reuses bangkokToday() from src/register-window.js (not duplicated);
+    normalizeTime is also reused there.
+- src/routes/meeting-overview.js (new) — both routes behind requireRole('meeting_controller')
+  with Cache-Control: no-store. GET-only, reads only: no audit rows, no database writes,
+  no auto-absent invocation anywhere.
+- src/app.js (mount) — app.route("/api/meeting/overview", overview). Dashboard routes remain
+  unmounted. Roster/monthly-session/auth/register mounts unchanged.
+- tests/meeting-overview.test.js (new) — helper tests.
+- tests/meeting-overview-routes.test.js (new) — route tests with fake fetch, Hono
+  app.request, and a frozen Bangkok clock (skip dates/times outside the frozen window).
+- package.json — added the two new test/source files to the typecheck list.
+
+Behavior notes
+--------------
+- Overview body: {ok:true, today:{dateText, sup:{...}, monthly:{...}}}.
+- sup.hasSession is true when today's Bangkok weekday equals meeting_types.weekday even with no
+  meeting_sessions row; counts are then all zeros and phase falls back per sessionPhase ('none'
+  when no row gives usable times). hasSession false otherwise (weekday mismatch).
+- monthly.hasSession is true only when a meeting_sessions row exists for today.
+- Times: openTime/cutoffTime are normalized to HH:mm; null when nothing usable.
+- GET /overview/pending: strict single query key 'code'; anything else or a value outside
+  sup/monthly -> 400 "ประเภทการประชุมไม่ถูกต้อง". No session today -> {ok:true, code,
+  sessionDate:null, pending:[]}. With a session -> sessionDate set (Bangkok today) and
+  pending list of {fullName, departmentName, positionName}, Thai-sorted, excluding anyone with
+  any attendance row in that session. Missing type row also answers 400.
+- Error messages exactly as draft section 2.4: reads on both routes fail with 500
+  "ระบบขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้ง" (NOT the roster/types save message — the draft
+  assigns the other message to those groups and the overview one here).
+- No secrets, tokens, cookie values, request/response bodies or employee national IDs are
+  logged or included in responses. Logs contain error name/code only.
+
+Chosen time source (draft flags the canonical-source question)
+--------------------------------------------------------------
+sup open/cutoff: meeting_types.default_open_time / default_cutoff_time take precedence; the
+  today meeting_sessions row's open_time / cutoff_time is used only when the default is missing
+  on that field (per-field nullish fallback, matching the Express read order "defaults first,
+  then session fallback"). Recorded here as the chosen canonical source; a later decision can
+  flip the order without touching the response shape.
+monthly open/cutoff: the meeting_sessions row's own times (Express order; the monthly type's
+  defaults are not consulted in the Express route and are not consulted here either).
+
+Known differences / items for later decision
+--------------------------------------------
+1. GET /api/meeting/overview/pending does NOT return employeeId in pending items — matches the
+   Express route. Draft flagged this as pending a decision; flagged here the same way.
+2. The draft's overview note mentions auto-absent may be triggered from GET /api/meeting/overview
+   (draft 3.9 drives it from the Express server). Per the task, Phase 2d GET routes carry no
+   auto-absent trigger: overview/pending here have zero side effects (a test asserts no
+   auto-absent helper is called and no DB write occurs). Whether Workers needs a cron/queue
+   trigger in Phase 4 stays open.
+3. Roster count: Express uses a PostgREST head count (Prefer: count=exact); the worker reads the
+   active employee_id list and returns its length. Same number, different query shape.
+4. Pending strict-query check parses the raw URL explicitly because this Hono version leaves
+   query values undecoded (same pattern as the roster search route in 2c).
+5. findTypes reads both type rows with two single-row selects (same pattern as the other
+   meeting routes) instead of one list query; same observable result.
+
+Tests
+-----
+- tests/meeting-overview.test.js: countByStatus per status and total == row count (including an
+  unknown code row and an empty-code row); sessionPhase before open / between / at cutoff /
+  no session / missing times; formatDateText exact Bangkok Thai text (asserted against a
+  computed Intl value at a fixed instant); weekdayOf; findPending excludes any attendance row
+  (including not_attended), Thai sort.
+- tests/meeting-overview-routes.test.js (fake fetch + Hono app.request, frozen Bangkok clock):
+  * sup.hasSession true on the matching weekday with no session row (zero counts); false on a
+    non-matching weekday.
+  * monthly.hasSession only with a session row.
+  * defaults-first time source (session row ignored when a default exists) and session fallback
+    when a default is missing; phase from the frozen clock.
+  * pending: invalid code -> 400; extra/missing query keys -> 400; no session -> sessionDate
+    null and pending []; with session -> sorted Thai, excludes attendees with any status;
+    response contains no employeeId, no national-ID-like fields, no token fields.
+  * overview and pending read failure -> 500 with the overview message.
+  * no side effects: asserts zero db write calls (update/upsert/insert/delete) and no
+    auto-absent helper invocation on both GET routes.
+  * auth: 401 without a cookie; 403 with a wrong session role; on both routes.
+
+Verification (from worker/)
+---------------------------
+- npm run typecheck  -> exit 0
+- npm test           -> exit 0, 249 passing / 0 failing (all suites, fake fetch only)
+- npx wrangler dev --port 8787 (smoke only): routes load under workerd.
+  GET /api/meeting/overview and GET /api/meeting/overview/pending?code=sup answer 401 without a
+  cookie, with Cache-Control: no-store present. /api/meeting/dashboard* answers 404 (not
+  mounted). Server then stopped: the wrangler dev parent node process and its workerd children
+  were terminated by their exact PIDs only (no pattern-based kills); port 8787 shows no
+  LISTENING entry afterwards and curl gets no connection. The Express server on port 3001 was
+  confirmed LISTENING and untouched before, during and after the smoke check.
+
+Cost
+----
+No new dependencies, no paid services added. Bangkok time uses built-in Intl; sorting uses
+String.localeCompare; all locally available for free.
+
+Stopping here — Phase 3 not started.

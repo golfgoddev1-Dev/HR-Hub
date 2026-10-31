@@ -1,0 +1,154 @@
+DEPLOY.md cleanup: Render and Vercel removed
+============================================
+Oct 31, 2026. Scope: DEPLOY.md only. No code, server/, worker/, vercel.json or
+other document was edited. Nothing was deployed, no wrangler command was run and
+no Supabase connection was made. No secret, PIN, token, cookie value or national
+ID appears in this report or in the rewritten DEPLOY.md.
+
+1. Search performed (step 1)
+---------------------------
+Command: grep -rniI -E "render|vercel" over D:\HR Hub\my-vue-app, excluding
+node_modules, dist and .git (the three exclusions the task names). Two further
+directories are reported separately below because they are generated or
+imported, not documentation: worker/.wrangler (Wrangler build output) and
+.cloud-attachments (an imported chat transcript).
+
+Matches in DEPLOY.md before the edit: 8, all "Vercel", no "Render" (the provider
+"Render" never appeared in this document - its Node-host sections described that
+kind of host without naming it).
+
+  DEPLOY.md:1   # Deployment (frontend on Vercel + API on a Node host)
+  DEPLOY.md:9   2. แทนที่ `REPLACE-WITH-API-HOST` ใน `vercel.json` ด้วยโดเมนของ API ที่ได้จริง
+  DEPLOY.md:10  3. จึง deploy frontend บน Vercel
+  DEPLOY.md:12  ## 2. Vercel (frontend)
+  DEPLOY.md:18  - Environment variable ...: `APP_ORIGIN` = โดเมนของ Vercel นี้
+  DEPLOY.md:20  - `vercel.json` มี rewrite:
+  DEPLOY.md:23  - ไม่มีการเพิ่ม header ที่ลดความปลอดภัยใน `vercel.json`
+  DEPLOY.md:32  `PIN_RESET_SECRET`, `APP_ORIGIN` (โดเมน Vercel),
+
+Matches elsewhere (listed only; nothing outside DEPLOY.md was touched):
+
+  provider references
+  worker/README.md:86                  "`vite.config`, `vercel.json` and `DEPLOY.md` are unchanged."
+  worker/reports/phase2-spec-draft.md:492  "ถ้า Worker อยู่คนละโดเมนกับ Vercel ต้องตั้งค่าให้ถูก..."
+  .cloud-attachments/imported-conversation-*.json:1   20 occurrences of the
+      render/vercel word family on a single line (imported chat text, includes
+      this task's own wording); not documentation, not edited
+
+  the word "render" used technically, not as a provider
+  package-lock.json:727, 729, 3333      @vue/server-renderer (4 occurrences)
+  src/pages/ControllerQrPage.vue:71, 289, 292   renderQr() (3)
+  src/style.css:24, src/styles.css:6    text-rendering (1 each)
+  worker/tests/meeting-dashboard-routes.test.js:405   "render zero counts" (1)
+  worker/tests/meeting-dashboard.test.js:283          "renders in.(...)" (1)
+  worker/tests/meeting-overview.test.js:126           "renders the Thai ... date" (1)
+  worker/reports/phase3a-dashboard-reads.txt:37       "rendered" (1)
+  reports/phase5-pages-report.txt:149                 "SPA rendering" in a docs quote (1)
+  reports/auto-absent.txt:45, auto-absent-fix.txt:45, auto-absent-throttle.txt:47,
+  controller-dashboard.txt:44, controller-overview.txt:43, controller-qr.txt:66,
+  controller-roster.txt:34, controller-theme.txt:43, dashboard-fix.txt:44,
+  dashboard-fix2.txt:44, dashboard-mobile.txt:46, deploy-prep.txt:47, logout.txt:44,
+  pin-verify.txt:40, rate-limit.txt:46, rate-limit-tune.txt:46, register-fix.txt:41,
+  register-scan.txt:35, register-status-map.txt:42, registrants-list.txt:46,
+  require-role.txt:32, roster-shared.txt:34             "rendering chunks..." (22 files)
+
+  generated build output (Wrangler bundles, not documentation)
+  worker/.wrangler/tmp/dev-*/index.js     13 files, 16 matches each (hono's render API)
+  worker/.wrangler/tmp/dev-*/index.js.map 13 files, 1 match each
+
+  related file that still exists and cannot be edited in this phase
+  vercel.json (repo root)               contains the old /api rewrite placeholder and
+                                        the SPA rewrite; no document references it any
+                                        more, but the file itself remains
+
+2. What was removed from DEPLOY.md (step 2)
+-------------------------------------------
+Title and intro
+  - "# Deployment (frontend on Vercel + API on a Node host)" replaced with a title
+    naming Cloudflare Workers, Cloudflare Pages and Supabase.
+  - The "no real values in this file / never commit .env.local" note was kept.
+
+Old section 1 (order of work)
+  - Removed "replace REPLACE-WITH-API-HOST in vercel.json" and "deploy the
+    frontend on Vercel". Replaced by a six-step order for Worker then Pages.
+
+Old section 2 (Vercel frontend) - removed entirely
+  - Root directory, install command, build command, output directory.
+  - "APP_ORIGIN = this Vercel domain".
+  - The vercel.json rewrites (/api proxy with the API host placeholder, and the
+    SPA rewrite).
+  - The "no security-lowering headers in vercel.json" line.
+  Replaced by section 3 (Cloudflare Pages): build command `npm run build`,
+  output `dist`, the service binding `WORKER`, what functions/api/[[path]].js
+  does, how Vue deep links are served, and the APP_ORIGIN/domain TODO.
+
+Old section 3 (API host, Node web service, always-on) - removed entirely
+  - Build/start commands and the host-assigned PORT.
+  - The dashboard-of-the-host instruction and the env var list, including
+    APP_ORIGIN = Vercel domain and TRUST_PROXY_HOPS (a Node-proxy setting the
+    Worker does not have).
+  Replaced by section 2 (Cloudflare Worker): wrangler.toml/entry, deploy command,
+  secret names only, APP_ORIGIN and COOKIE_SECURE, the cron list exactly as it
+  appears in wrangler.toml, and the Durable Object rate limiters.
+
+Old section 4 (free plan, not always-on) - removed entirely
+  - External scheduler pinging /api/health every 10 minutes, cold-start advice,
+    "health touches no database" note, and the auto-absent trigger note tied to
+    logged-in page calls. All of it exists only to keep a third-party Node host
+    awake; the Worker has a cron trigger instead and no /api/health route.
+
+Old section 5 (checklist)
+  - Removed "confirm the health ping arrives every 10 minutes from the
+    scheduler".
+  - Kept and still relevant: change the ADM001 PIN, rate-limit test from two
+    devices, auto-absent audit check. Added one same-origin cookie check.
+
+Section that was kept, now marked as temporary
+  - The local Express instructions (section 5): npm install, npm run dev or
+    dev:api/dev:web, the Vite proxy to localhost:3001, and the env file rule.
+    Headed "การรัน Express ในเครื่อง (จนกว่าจะ cutover)" with a line saying to
+    delete it after cutover, as instructed.
+
+3. Content that was added, and where it comes from
+--------------------------------------------------
+Nothing in the new DEPLOY.md is invented; each fact traces to a file in the repo:
+  - Worker name, entry, compatibility date, cron list, Durable Object bindings:
+    worker/wrangler.toml (crons = ["0 1,9,17 * * *"] is quoted verbatim; the
+    every-minute "* * * * *" is described as not yet in the config, which is what
+    the file's cutover comment says).
+  - Secret names (names only): getRequiredEnv calls in worker/src plus
+    env.TURNSTILE_SECRET_KEY and env.COOKIE_SECURE.
+  - APP_ORIGIN semantics and COOKIE_SECURE default: worker/src/routes/meeting.js,
+    worker/src/cookie.js, worker/src/routes/auth.js.
+  - Pages build/output, service binding name WORKER, functions proxy behaviour,
+    SPA default, same-origin cookie requirement: functions/api/[[path]].js and
+    reports/phase5-pages-report.txt.
+  - Supabase as the only database: worker/src/db.js (PostgREST over SUPABASE_URL)
+    and worker/src/session.js.
+  - Express local run commands: package.json scripts and vite.config.js.
+
+4. TODO items written into DEPLOY.md (step 4)
+---------------------------------------------
+  1. Supabase: which project (name/region) is the real one, and where the schema
+     comes from.
+  2. Worker: final Worker name (currently `hr-workers-spike` in wrangler.toml);
+     renaming it also changes the Pages service binding target.
+  3. Pages: project name, real domain, and upload method (Git integration or
+     direct upload); a custom domain also requires updating APP_ORIGIN.
+  4. Rollback procedure and who is responsible for deploys.
+No value, URL or credential was guessed anywhere.
+
+5. Search re-run after the edit (step 5)
+----------------------------------------
+  grep -ciE "vercel|render" DEPLOY.md  ->  0
+
+DEPLOY.md now contains zero matches for either word. The remaining matches are
+the ones listed in section 1 and were left untouched, as required: worker/README.md,
+worker/reports/phase2-spec-draft.md, the imported chat attachment, vercel.json,
+dependency names in package-lock.json, and ordinary English uses of "render" in
+source, tests, styles and past build logs.
+
+6. State after this phase
+-------------------------
+Edited: DEPLOY.md only. Added: this report. Deleted: nothing.
+No deploy, no wrangler command, no Supabase connection, no git commit or push.

@@ -1,0 +1,50 @@
+Phase 1 step 3 - Auth routes (login, me, logout, set-pin)
+Date: 2026-10-30
+Scope: worker/ only. No deploy, no real network, no real Supabase calls.
+
+Files created
+- src/routes/auth.js   POST /login, GET /me, POST /logout, POST /set-pin
+- src/app.js           Hono entry mounting the routes under /api/auth
+- tests/auth-routes.test.js
+
+Files updated
+- src/session.js       session table aligned to auth_sessions (logout and set-pin
+                       revoke there; step 2 used a placeholder name)
+- tests/session.test.js URL expectations for the renamed table
+- package.json         typecheck now syntax-checks the new files
+
+Left untouched
+- src/index.js, src/pin.js (spike files, kept as-is)
+- .dev.vars
+- Everything outside worker/
+
+Commands (run from worker/)
+npm run typecheck -> exit 0
+npm test          -> exit 0
+
+Test results
+tests 75, pass 75, fail 0, cancelled 0, skipped 0, todo 0
+(28 new auth-route tests + 47 earlier helper/session/spike tests)
+
+Coverage notes
+- login: strict body, national ID and PIN format, generic 401s without counting,
+  423 while locked, failed-attempt increments, 5th failure lock + reset,
+  wrong role counted as failure, bcrypt-style hash rejected, success cookie
+  flags, pending-approval redirect, COOKIE_SECURE handling, 500 path.
+- me: 401 without cookie, success returns role and redirectTo only.
+- logout: no-store, revoke + audit, clear cookie, audit failure still 200,
+  revoke failure 500 with cleared cookie.
+- set-pin: every branch (simple PIN, mismatch, shape, unknown/inactive employee,
+  no code, wrong code increment, 5th wrong code used_at, success writes,
+  revoke sessions, audit, 500).
+- Leak check: response bodies and audit rows never contain PINs, reset codes,
+  tokens or the national ID.
+
+Assumptions
+- Reset code table name is pin_reset_codes and audit table name is audit_logs.
+  Both are single constants at the top of src/routes/auth.js for easy correction.
+- Audit rows carry entity, entity_id and detail only, as specified.
+
+Notes
+- No secrets, PINs, tokens, hashes, reset codes or response bodies are recorded here.
+- Fake fetch only; no request left the test process.

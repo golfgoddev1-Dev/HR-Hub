@@ -1,0 +1,45 @@
+# Phase 2b — QR and session settings (controller)
+
+Date: 2026-10-31
+Scope: worker/ only. Spec: reports/phase2-spec-draft.md sections 2.2, 3.1, 3.2, 3.3, 3.5, 3.7 and chunk 2b.
+Express contract reference: server/routes/meeting.js, server/routes/meeting-monthly.js, server/meeting-window.js.
+
+## Files created
+
+- src/meeting-window.js — validateWindow (HH:mm regex, open < cutoff), buildRegisterUrl (trim, strip trailing slash, encodeURIComponent token), newQrToken (32 random bytes via crypto.getRandomValues as 64 lowercase hex). bangkokToday is not duplicated here; the monthly route reuses it from src/register-window.js.
+- src/routes/meeting.js — GET /types, POST /qr/rotate, PUT /window (mounted at /api/meeting).
+- src/routes/meeting-monthly.js — GET /, PUT / (mounted at /api/meeting/monthly-session).
+- tests/meeting-window.test.js — helper tests (validateWindow, buildRegisterUrl, newQrToken).
+- tests/meeting-qr-routes.test.js — types / rotate / window route tests with fake fetch and Hono app.request.
+- tests/meeting-monthly-routes.test.js — monthly GET/PUT route tests with fake fetch and Hono app.request.
+
+## Files modified
+
+- src/app.js — mounted the two new routers at /api/meeting/monthly-session and /api/meeting. /api/meeting/roster and /api/meeting/overview are NOT mounted (later chunks).
+- src/db.js — added an upsert(table, row, { conflict, columns }) helper: POST with Prefer return=representation,resolution=merge-duplicates and the onConflict query parameter, returning { data, error }. Makes the composite conflict target (meeting_type_id,session_date) possible from a Workers route; register/auth flows unchanged.
+- package.json — typecheck list now includes the new src and test files.
+
+## Route list (exact paths, as mounted)
+
+1. GET /api/meeting/types — meeting_controller session; reads meeting_types ordered by code asc; builds registerUrl from APP_ORIGIN (trailing slash removed) + /meeting/register?t=<encoded qr_token>; APP_ORIGIN missing -> 500. weekly/type reads that fail -> 500 with the save message.
+2. POST /api/meeting/qr/rotate — strict body { code: 'sup' | 'monthly' } else 400 ข้อมูลไม่ถูกต้อง; unknown code value -> 400 ข้อมูลไม่ถูกต้อง; missing type row -> 400 ไม่พบประเภทการประชุม; writes a fresh 64 lowercase-hex qr_token, then audits meeting_qr_rotated (entity meeting_type, entity_id = type id, detail null); responds 200 { ok:true, registerUrl }.
+3. PUT /api/meeting/window — strict body { openTime, cutoffTime, code? }; code present and not 'sup' -> 400 แก้ไขได้เฉพาะการประชุมหัวหน้างาน; validateWindow errors -> 400 รูปแบบเวลาไม่ถูกต้อง / เวลาเปิดรับต้องก่อนเวลาปิดรับ; unknown sup row -> 400 ไม่พบประเภทการประชุม; updates default_open_time/default_cutoff_time and audits meeting_window_updated with detail {old:{openTime,cutoffTime}, new:{...}}.
+4. GET /api/meeting/monthly-session — monthly type only; missing -> 400 ประเภทการประชุมไม่ถูกต้อง; sessions with session_date >= bangkokToday(), ascending, limit 12, mapped {id, sessionDate, openTime, cutoffTime} (HH:mm or null); read failure -> 500 ไม่สามารถบันทึกได้ กรุณาลองใหม่.
+5. PUT /api/meeting/monthly-session — strict body { sessionDate, openTime, cutoffTime }; ^\d{4}-\d{2}-\d{2}$ and real calendar date (UTC round-trip), else 400 ข้อมูลไม่ถูกต้อง; validateWindow; sessionDate < bangkokToday() -> 400 เลือกวันที่ตั้งแต่วันนี้เป็นต้นไป; missing monthly type -> 400 ประเภทการประชุมไม่ถูกต้อง; upsert on conflict (meeting_type_id, session_date) with cycle_key = monthly-<sessionDate>; audits meeting_monthly_session_set (entity meeting_session, detail JSON {sessionDate, openTime, cutoffTime}).
+
+Common: every route sets Cache-Control: no-store and requires a valid meeting_controller hr_session cookie; 401 ไม่ได้เข้าสู่ระบบ without a usable session, 403 ไม่มีสิทธิ์เข้าถึงส่วนนี้ for the wrong role. Timezone logic uses Asia/Bangkok via bangkokToday from register-window.js. No rate limit on controller routes. Logs write only { name, code } from errors; no bodies, tokens, hashes or secrets are logged or returned beyond the designed contract (the rotate/types registerUrl carries the token by contract; session cookie values never appear in responses or logs).
+
+## Test counts
+
+- Total: 193 tests. Pass: 193. Fail: 0.
+
+## Verification exit codes (from worker/)
+
+- npm run typecheck -> exit 0
+- npm test -> exit 0 (193 pass / 0 fail)
+- npx wrangler dev --port 8787 (smoke only) — /api/meeting/types, /api/meeting/qr/rotate, /api/meeting/window, /api/meeting/monthly-session all answered 401 without a cookie when loaded in workerd, confirming the routes mount and the guard runs. Server stopped afterwards; port 8787 confirmed free (no LISTENING entry, curl connection refused).
+- Prohibited operations were not run: no wrangler deploy/login/secret/delete, no writes to any live database, only fake fetch in tests.
+
+## Cost concerns
+
+- None. Everything used is already in the project (Hono, wrangler, PostgREST client against the existing Supabase instance, Durable Object rate limiters untouched). No new paid service was added.

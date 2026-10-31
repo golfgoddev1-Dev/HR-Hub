@@ -1,0 +1,76 @@
+Phase 3a — dashboard reads (GET x5)
+===============================================
+Date: 2026-10-31
+Scope: worker/ only. Spec: worker/reports/phase3-spec-draft.md sections 1, 2.1-2.5, 3, 4, 6, 7, 9 (chunk 3a), 10 (approved decisions). Contract reference: server/routes/meeting-dashboard.js + server/meeting-dashboard.js (read, not modified).
+Not touched: server/, root src/, root .env.local, .dev.vars, .test-account.env. No deploy, no wrangler login/secrets/delete, no database writes, no real network calls outside the local wrangler smoke check.
+
+Step 0 — draft fix
+------------------
+Checked the draft for the two flagged phrases before starting. Both are already fixed: the draft's own revision section (13) records the round that rewrote the HMAC/brute-force trade-off statement (topic 5 item 2, now pointing at the owner's approval in topic 10 item 3) and clarified the Intl label guidance (topic 8, self-written formatter fallback if workerd differs from Node). Status header reads "approved for 3a". No edit to the draft was needed; anything found was left as-is.
+
+Files changed (worker/)
+-----------------------
+- src/db.js                      additive `in(...)` operator in buildFilters: column=in.(v1,v2,...) with each value passed through encodeURIComponent; eq/is/gte/lt/order/limit/single/extra behavior unchanged.
+- src/meeting-dashboard.js       pure helpers, no I/O: bangkokDayKey, timeOfDay (en-GB, hourCycle h23, Asia/Bangkok), thaiDateLabel, thaiShortDateLabel, thaiMonthLabel (th-TH, Buddhist year), latestPerEmployee, sortByRegisteredAt (unparseable time weighs 0, input array never mutated), countByStatus, rateOf (total <= 0 -> 0, clamped 0..1), historyKeys (exact draft section 3 rules, Date.UTC only), deptSummary, topAbsentPerDept, plus STATUS_LABELS/codes and the code-to-label map identical to Phase 2 (meeting-overview.js).
+- src/routes/meeting-dashboard.js  five GET routes under /api/meeting/dashboard, each with requireRole('meeting_controller') and Cache-Control: no-store; Cache-Control header set on every response including auth failures. Non-strict query validation (unknown fields ignored) matching draft section 2 regexes and enums; raw URL query string read, not Hono decoders. No auto-absent helper reachable from any GET; no side effects. Thai error messages exactly: 'ข้อมูลไม่ถูกต้อง' (400 validation), 'ประเภทการประชุมไม่ถูกต้อง' (400 type), 'ระบบขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้ง' (500, error name/code only in the log line). periodLabel is the fixed Express string (decision 4): 'รายสัปดาห์ · ทุกวันอังคาร' for sup, 'รายเดือน' for monthly. session_id in(...) and employees in(...) chunked at 100; meeting_sessions limited to 400.
+- src/app.js                     mounted the new routes at /api/meeting/dashboard.
+- package.json                   added src/meeting-dashboard.js, src/routes/meeting-dashboard.js, tests/meeting-dashboard.test.js, tests/meeting-dashboard-routes.test.js to the typecheck list.
+- reports/phase3a-dashboard-reads.txt  this report.
+
+Routes
+------
+GET /api/meeting/dashboard                 code enum required; mode/value optional
+GET /api/meeting/dashboard/cycles          code enum required
+GET /api/meeting/dashboard/dept            code + cycle (^\\d{4}-\\d{2}(-\\d{2})?$) + dept (1-200)
+GET /api/meeting/dashboard/registrants     code + cycle
+GET /api/meeting/dashboard/monthly-summary month (^\\d{4}-\\d{2}$)
+POST /api/meeting/dashboard/reason         NOT mounted (404) — Phase 3b.
+
+Decision-coverage notes
+-----------------------
+- Decision 2 kept as specified: today.registered counts all latest-per-employee rows (unfiltered, can exceed the roster), notYet counts roster members without a latest row; a dedicated test drives the two values apart and asserts them exactly.
+- Decision 1 kept as specified: /monthly-summary counts every attendance row of the month; GET / and /dept use latest-per-employee. A test asserts the disagreement on the same fake data (2 vs 3 rows).
+- availableKeys (cycles/options/dept-cycle data) come from attendance rows mapped to sessions, exactly as the Express loadContext builds them; sessions without registrants are not available keys.
+
+Tests
+-----
+- tests/meeting-dashboard.test.js: 20 tests, 20 pass, 0 fail. Covers every helper against the Express cases, the fixed Thai labels ('วันอังคาร 3 พ.ย. 2569', 'พ.ย. 2569'), auth order, historyKeys for sup/day, monthly/day, monthly/month, year, and empty data; plus the db.js in(...) encoding: comma-free UUID list rendered as in.(...) with an assertion that every value appears URL-encoded, and a comma-bearing value stays split-safe.
+- tests/meeting-dashboard-routes.test.js: 16 tests, 16 pass, 0 fail (node:test, fake fetch only, Hono app.request, frozen Bangkok clock at 2026-11-10T03:00Z). Each route: success shape plus every error status and message; 401 (no/unknown cookie) and 403 (employee session) on all five routes; non-strict query acceptance; the 500 path through a failing fake table. Also asserts: no POST/PATCH/DELETE fetch outside the central auth_sessions last_active update owned by Phase 1, zero audit_logs calls from GETs, no auto-absent helper reachable from any GET, tokens not spread into any captured request URL, and POST /reason 404.
+- Whole suite from worker/: 283 tests, 283 pass, 0 fail (249 before this chunk + 34 here).
+- Follow-up round (top = Express runtime): the monthly-summary change adds the two top tests above, so the suite is now 285 tests, 285 pass, 0 fail (typecheck exit 0, npm test exit 0).
+
+Corrections made this round (to the new test file only; route/db/helper source untouched by them)
+--------------------------------------------------------
+1. The fake session backend now returns a meeting_admins row only after an auth_sessions lookup for the controller token, so a plain-employee session gets 403 (it previously answered 401 because the fake backend could not tell the two tokens apart).
+2. The "missing meeting type" fake backend returned a 500 response for meeting_types; that path is now an empty list, matching what the routes must answer (exact 400 Thai type message) — the 500 test still runs through a real failing table.
+3. The history.options expectation on GET / listed all fake sessions, but the Express loadContext makes options list only the keys with attendance rows; the expectation was corrected accordingly.
+
+ความต่างที่รู้แล้ว: top (GET /api/meeting/dashboard/monthly-summary)
+--------------------------------------------------------
+- Express runtime behavior: top เป็น [] เสมอ ทั้งเดือนที่มีข้อมูลและเดือนที่ไม่มี เพราะ Express
+  คีย์ personCounts ด้วยป้ายไทย (เช่น 'ไม่เข้าร่วม') แต่ topAbsentPerDept กรองด้วยรหัสอังกฤษ
+  ['not_attended','urgent_busy','leave'] แถวใดไม่ตรงเงื่อนไขจึงตอบแถวไม่ได้เลย
+- Workers ทำตาม runtime ของ Express อย่างตรงตัว (การตัดสินของเจ้าของ: คงตาม Express —
+  คำดังกล่าวถูกหมายเหตุไว้ใต้บรรทัด top ใน reports/phase3-spec-draft.md 2.5 แล้ว) ไม่
+  "แก้" คู่ป้ายไทย-versus-ป้ายอังกฤษ ตัวที่ต่างอยู่ แผนก prompt ของ top จึงไม่เคยมีข้อมูลจริง
+  ตามที่ร่าง 2.5 อธิบายไว้ (เต็มตัว) และคงอยู่แบบว่างเสมอ
+ เทสต์ที่ครอบคลุมใน tests/meeting-dashboard-routes.test.js:
+  - 'GET /monthly-summary: counts every row (decision 1) with pct' (top เป็น [])
+  - 'top: Express runtime call path replicated step by step (top is always [])' (แผนกมีข้อมูล 2026-11 และเดือนว่าง 2026-12 ตอบ [] เหมือนกัน)
+  - 'top: the draft-intended populated output never appears' (ป้องกันให้ผู้อ่านต่อไปเห็นว่าถ้าคีย์ด้วยรหัส ตามร่างจะได้แถวตัวเลขยอดสูง — ยังไม่มีทางออกถึงหน้า client เลย)
+
+Verification
+------------
+- npm run typecheck (worker/): exit code 0.
+- npm test (worker/): exit code 0 (283/283).
+- npx wrangler dev --port 8787: all five GET routes loaded and answered 401 without a cookie; POST /api/meeting/dashboard/reason answered 404 (not mounted).
+- Stopped only the wrangler tree started for the smoke test (killed by PID from the process listing, not by a name pattern); port 8787 confirmed free afterwards.
+- Port 3001 (Express reference server) was not running before the smoke test and was untouched afterwards.
+- No secrets/PINs/tokens/hashes/national IDs/request or response bodies printed anywhere; the wrangler dev output masks variable values ("(hidden)").
+- No real network calls were made: unit/route tests use fake fetch only, and the smoke test is the local workerd instance on the loopback port.
+
+Cost
+----
+No cost concern. The chunk uses only the existing free stack: the project's PostgREST/Supabase client code (already in place, no extra service), Web Crypto, built-in Intl on workerd, Hono (already a dependency). No new dependency, no paid service encountered, nothing deferred behind a paid flag.
+
+Stop here per instructions: Phase 3b (POST /reason) not started.

@@ -1,0 +1,42 @@
+name = "hr-hub-api"
+main = "src/index.js"
+
+# At least one month old at time of writing (2026-10-30).
+compatibility_date = "2026-09-01"
+
+# Workers Free allows 5 cron triggers per account. This is the pre-cutover set.
+#   0 1,9,17 * * *   keep-alive (Phase 4b), 00:00 / 08:00 / 16:00 Asia/Bangkok
+#
+# CUTOVER: add "* * * * *" here only after the Express auto-absent job is off,
+# then deploy. The every-minute dispatch already exists in src/index.js and its
+# constant is AUTO_ABSENT_CRON in src/auto-absent.js, so cutover is adding the
+# trigger below; it is left out until then because both writers would run.
+# The expected list is pinned by tests/wrangler-crons.test.js.
+[triggers]
+crons = ["0 1,9,17 * * *"]
+
+# Rate limiters: SQLite-backed Durable Objects. Workers Free only supports the
+# SQLite storage backend, confirmed at
+# https://developers.cloudflare.com/durable-objects/platform/pricing
+[[durable_objects.bindings]]
+name = "RL_CONTEXT_IP"
+class_name = "ContextRateLimiter"
+
+[[durable_objects.bindings]]
+name = "RL_SUBMIT_IP"
+class_name = "SubmitIpRateLimiter"
+
+[[durable_objects.bindings]]
+name = "RL_SUBMIT_TOKEN"
+class_name = "SubmitTokenRateLimiter"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = [
+  "ContextRateLimiter",
+  "SubmitIpRateLimiter",
+  "SubmitTokenRateLimiter",
+]
+
+[vars]
+APP_ORIGIN = "https://hr-hub.pages.dev"

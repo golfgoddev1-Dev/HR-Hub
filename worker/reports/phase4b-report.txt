@@ -1,0 +1,157 @@
+Phase 4b report: Part A review follow-up and the Supabase keep-alive
+======================================================================
+
+Date: 2026-10-31
+Scope: worker/ only. No deploy, no wrangler secret, no live Supabase call, no
+secret/PIN/token/national-id read or written. Nothing committed.
+
+Part A results
+==============
+
+A1. Express vs Worker write parity
+----------------------------------
+Same fixture, same frozen clock (2026-01-05T05:30:00Z, Monday 12:30 Bangkok),
+Express server/auto-absent-job.js vs Worker src/auto-absent.js, each writing to
+its own in-memory store through a fake client/fetch. Full detail is in
+worker/reports/phase4a-review.txt.
+
+Scenario 1 (3 sessions, 8 roster rows, 2 pre-existing attendance rows):
+
+  table               Express   Worker   identical
+  meeting_attendance  8 rows    8 rows   yes
+  audit_logs          2 rows    2 rows   yes
+  meeting_sessions    3 rows    3 rows   yes
+
+  Compared fields: attendance session_id, employee_id, status_code, reason,
+  shift, department_id, position_id, registered_at; audit actor_id, action,
+  entity, entity_id, detail; sessions meeting_type_id, session_date, cycle_key,
+  open_time, cutoff_time. Every value matches, including registered_at and the
+  detail JSON ({"count":4} and {"count":2} on the same sessions).
+
+Scenario 2 (sup-session creation path, weekday Monday after the cutoff):
+
+  table               Express   Worker   identical
+  meeting_sessions    1 row     1 row    yes (sup-2026-01-05, 09:00 / 12:00)
+  meeting_attendance  2 rows    2 rows   yes
+  audit_logs          1 row     1 row    yes (detail {"count":2})
+
+Only difference, allowed by the task: insertion order inside a batch. Express
+writes per session in database order, so its audit rows are count 4 then count 2;
+the Worker sorts due sessions oldest first, so the same two rows arrive in the
+reverse order. No column, reader or API depends on audit_logs insertion order.
+
+Result: no difference in written rows or audit output. No stop condition.
+The Phase 4a implementation was not changed.
+
+A2. Cron vs the Express throttle
+--------------------------------
+Express (server/index.js 54-60, server/auto-absent-job.js):
+- On boot, unless AUTO_ABSENT_ENABLED is exactly "false", startAutoAbsentJob()
+  schedules one run 60 s later (FIRST_RUN_DELAY_MS) and then one every 10 minutes
+  (RUN_INTERVAL_MS); both timers are unref'd.
+- Each tick calls triggerAutoAbsentIfDue(), which asks shouldStartRun(): false if
+  runInProgress, false if now - lastStartedAt < 10 min, otherwise it stamps
+  lastStartedAt, sets runInProgress, runs, and clears the flag in finally.
+- Three read routes also nudge it opportunistically: GET /api/meeting/dashboard,
+  GET /api/meeting/overview, GET /api/register/context.
+
+The throttle controlled only whether a run may start now. runAutoAbsentOnce()
+takes no throttle input and touches neither variable, so no query, row or audit
+value ever depended on it.
+
+Why cron does not change behaviour: one cron event is one run, spaced exactly 10
+minutes, the same cadence the interval asked for, and there is no in-memory state
+left to guard. Two timing nuances, neither a behaviour change:
+- Express also ran once ~60 s after boot; the Worker first runs at the next
+  10-minute boundary. Runs are idempotent, so only the start time moves.
+- The request nudges disappear, so a session that becomes due just after a tick
+  is picked up to one interval (<= 10 min) later than a request would have
+  triggered it. The rows written are identical.
+The throttle never protected a critical section beyond suppressing a redundant
+run; even overlapping runs would store the same result because of the audit
+marker and ignoreDuplicates.
+
+A3. Status
+----------
+Part A passed and is recorded in worker/reports/phase4a-review.txt. One Phase 4a
+test needed an update: its "unknown cron" case used "0 1,9,17 * * *", which is
+now a real trigger, so it uses "5 5 * * *" instead. That is a test fixture
+change only; the dispatch behaviour it checks is unchanged and the new branch has
+its own tests.
+
+Part B: keep-alive
+==================
+
+Files changed
+-------------
+Added
+  worker/src/keep-alive.js          runKeepAlive(env): one db.select on
+                                    meeting_types with columns id, limit 1.
+                                    Errors caught, logged as "keep-alive failed"
+                                    plus " status=<code>" when the error carries
+                                    an HTTP status; never a body, header or key.
+                                    No writes, no audit row, no alerting, no
+                                    rethrow. Exports KEEP_ALIVE_CRON.
+  worker/tests/keep-alive.test.js   7 node:test cases, fake fetch only.
+  worker/reports/phase4b-report.txt this file.
+Edited
+  worker/src/index.js               scheduled() now dispatches two crons:
+                                    */10 * * * * -> auto-absent (unchanged),
+                                    0 1,9,17 * * * -> ctx.waitUntil(runKeepAlive),
+                                    anything else -> return, no effect.
+  worker/wrangler.toml              crons = ["*/10 * * * *", "0 1,9,17 * * *"]
+                                    (2 of the 5 free triggers per account).
+  worker/package.json               typecheck list covers the two new files.
+  worker/tests/auto-absent.test.js  unknown-cron fixture changed as described in A3.
+  worker/reports/phase4a-review.txt Part A record.
+
+Verification
+------------
+npm test:          before 320 pass / 320 tests -> after 327 pass / 327 tests,
+                   0 fail, 0 skipped, exit 0.
+npm run typecheck: exit 0.
+
+New tests cover: exactly one GET to meeting_types with select=id&limit=1 and no
+other request, and no write; a 503 read caught with the log exactly
+"keep-alive failed status=503"; a transport failure caught with the log exactly
+"keep-alive failed"; a healthy run logging nothing; the 0 1,9,17 cron reaching
+keep-alive only; the */10 cron reaching auto-absent only; an unknown cron making
+no request and scheduling no work. The failure tests also assert that the
+response body marker, the fake service key and the project URL never appear in
+the captured logs.
+
+Subrequests per cron
+--------------------
+  */10 * * * *      8 per run for N = 1..10 pending sessions, or 9 when the run
+                    also creates the sup session (Phase 4a calculation).
+  0 1,9,17 * * *    1 per run: GET meeting_types?select=id&limit=1.
+Both are far below the free-plan ceiling of 50 subrequests per invocation.
+
+Local workerd check (no live data)
+----------------------------------
+Sandbox copy of worker/src in worker/.tmp-cron-check (deleted after the run) with
+its own wrangler.toml, fake [vars] and a loopback fake PostgREST on
+127.0.0.1:8799. No .dev.vars or real credential existed in that directory.
+wrangler 4.156.0, local workerd, --test-scheduled:
+  GET /cdn-cgi/handler/scheduled?cron=0+1,9,17+*+*+*   -> 200
+    fake backend received exactly 1 request:
+      GET meeting_types rows=0 ?select=id&limit=1
+  GET /cdn-cgi/handler/scheduled?cron=*/10+*+*+*+*     -> 200
+    fake backend received exactly 8 requests (types, skip dates, sessions,
+    markers, roster, attendance read, attendance upsert rows=1, audit rows=1).
+
+Deviations and open questions
+-----------------------------
+a. KEEP_ALIVE_CRON is exported from src/keep-alive.js, not src/index.js: the
+   Workers module runtime rejects a non-function named export from the entry
+   module (same constraint found in Phase 4a).
+b. The error log is one fixed string with an optional HTTP status; the error code
+   is deliberately not logged, matching the task's "fixed message" wording.
+c. Whether these reads actually count as Supabase activity is still unconfirmed
+   (spec section 5). The owner has to check Dashboard -> Reports after a day of
+   runs; no tool in this run may call the live project.
+d. Deploying starts both triggers at once (approved decision 4). Phase 4b adds no
+   flag, no alerting and no dashboard change.
+e. workerd CPU for keep-alive was not measured: it is a single GET, and wrangler
+   dev does not report CPU time. The auto-absent CPU numbers in
+   phase4a-report.txt still stand as a Node proxy only.

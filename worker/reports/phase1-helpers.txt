@@ -1,0 +1,32 @@
+Phase 1 step 1 - Workers helpers (no endpoints)
+Date: 2026-10-30
+Scope: worker/ only. No routes, no database access, no network calls, no deploy.
+
+Files created
+- src/crypto.js        sha256Hex, hmacSha256Hex, timingSafeEqualHex
+- src/cookie.js        parseCookies, sessionCookieName, sessionCookieOptions, serializeCookie
+- src/national-id.js   normalizeNationalId, nationalIdHash
+- src/pin-rules.js     validatePin, pinHash
+- src/env.js           getRequiredEnv
+- tests/helpers.test.js
+
+Files updated
+- package.json (typecheck script now syntax-checks the new source and test files)
+
+Left untouched
+- src/index.js, src/pin.js (spike files, kept as-is)
+- .dev.vars
+- Everything outside worker/
+
+Commands (run from worker/)
+npm run typecheck -> exit 0
+npm test          -> exit 0
+
+Test results
+tests 29, pass 29, fail 0, cancelled 0, skipped 0, todo 0
+(25 new helper tests + 4 existing spike HMAC tests)
+
+Notes
+- Helpers are pure: Web Crypto and string handling only. Env is passed in as a parameter; process.env is not used.
+- No secrets, PIN values, national IDs, tokens, hashes or request bodies are recorded in this report.
+- No deploy, login or delete command was run.

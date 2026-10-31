@@ -1,0 +1,101 @@
+PIN RESET GUARD (PART A) AND BATCH ISSUANCE DESIGN (PART B) - REPORT
+Date: 2026-10-31
+No secrets, PINs, reset codes, tokens, cookie values, national IDs or database passwords
+were read, printed, or written. Nothing was deployed. No SQL ran. No Supabase connection
+was made. Nothing was committed or pushed.
+
+===============================================================================
+PART A - FAILED-ATTEMPT UPDATE GUARD IN THE WORKER RESET PATH
+===============================================================================
+
+Files changed (both inside worker/):
+- worker/src/routes/auth.js - POST /set-pin failed-attempt update
+- worker/tests/auth-routes.test.js - one assertion added to an existing test, one new test,
+  and the fake's pin_reset_codes GET now applies the used_at filter like PostgREST
+
+Behaviour contract read only from server/routes/auth.js:77-126 (not modified). Express
+already guards its attempt increment with .is('used_at', null); the Worker did not.
+
+Change (single block, nothing else in the handler touched):
+
+    ensureOk(
+      await db.update(RESET_CODES_TABLE, patch, [
+        ["id", "eq", resetCode.id],
+        ["used_at", "is", null],
+      ])
+    );
+
+The existing db.update helper already expresses this: db.js buildFilters handles the "is"
+operator and renders "used_at=is.null", the same style used elsewhere in the file for
+session revocation ("revoked_at" is null). No raw query strings were built and no helper
+was changed, so the STOP condition for an inexpressible filter did not apply.
+
+Tests:
+- Existing test "set-pin: a wrong code increments attempts" now also asserts the PATCH URL
+  contains id=eq.reset-1 and used_at=is.null, alongside the unchanged body assertion
+  { attempts: 1 }.
+- New test "set-pin: a code that is already used is not incremented": the fake returns the
+  row with used_at set, PostgREST-style filtering on the GET hides it, the handler answers
+  401 and issues zero PATCH requests to pin_reset_codes.
+- The fake's pin_reset_codes GET previously returned the fixture rows unfiltered; it now
+  filters on used_at (matchesEq) so an already-used row is genuinely unselectable. No
+  existing fixture used a non-null used_at, so no other test changed behaviour.
+
+Results:
+- cd worker && npm test        -> tests 365, pass 365, fail 0 (previously 364; +1 new test)
+- cd worker && npm run typecheck -> exit 0 (includes node --check on the edited source and
+  test files)
+
+No test needed a live database or live secret; everything runs against the fake fetch.
+
+===============================================================================
+PART B - BATCH RESET-CODE ISSUANCE DESIGN (document only, no code)
+===============================================================================
+
+Document: reports/batch-reset-code-design.md
+
+Current behaviour summarised there from scripts/issue-reset-code.js: one employee per run,
+voids that employee's unused codes (lines 51-57), inserts one row with a 60-minute expiry
+(lines 59-75), writes audit action pin_reset_code_issued with actor ADM001 (lines 77-86),
+and prints the code once to the terminal (lines 88-97). Nothing is written to disk.
+
+Constraint that shapes every option: the script runs on the owner's machine, needs Supabase
+service credentials and the same PIN_RESET_SECRET as the Worker, and a reset code is itself
+a credential, so no log or shared file may contain one.
+
+Recommendation: Option 1 (loop over the employee codes, one run per employee, codes read
+from the terminal). It needs no code, adds no route that creates credentials, and cannot
+leave a file of live codes behind. Option 2 (list file with optional encrypted export) is
+worth it only for large batches and brings key management plus a deletion step; Option 3
+(HR issues from a Worker page) is not recommended before cutover because it adds a
+credential-creating route, needs its own authorization/rate-limit/audit design, and puts
+codes through the browser and the Pages proxy.
+
+Also documented: the audit identity gap (ADM001 is hardcoded in every option except the
+new route, so no option records the real operator), the voiding rule (the batch must run
+once per employee; a re-run silently kills the code already handed out), and six owner
+decisions (who runs it, how codes reach staff, whether ADM001 stays the actor, batch scope,
+whether file output is allowed, and whether a dry-run mode is added first).
+
+===============================================================================
+OPEN QUESTIONS
+===============================================================================
+
+1. How many employees need a code at cutover; whether a batch is needed at all.
+2. Whether the owner's machine has a working .env.local for the issuing script (not read).
+3. Whether 60 minutes is enough for distribution, or the expiry should change.
+4. Whether to add a --dry-run/count-only preflight before the first real batch, to make the
+   voiding rule harder to trip.
+5. Whether any file output is permitted at all, and if so the encryption method, key holder,
+   and deletion rule.
+6. Whether ADM001 should remain the hardcoded audit actor or the tooling should record the
+   real operator.
+
+===============================================================================
+VERIFICATION
+===============================================================================
+
+- Only the two worker/ files above were modified; server/ was read but not changed, and no
+  batch script was written.
+- No wrangler command was run, no Supabase connection was made, no SQL was executed.
+- Nothing committed or pushed.
