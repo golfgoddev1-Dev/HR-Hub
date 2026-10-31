@@ -2,3 +2,4 @@
 .test-account.env
 .wrangler-dev.log
 node_modules
+.wrangler/

@@ -1,5 +1,7 @@
 name = "hr-hub-api"
 main = "src/index.js"
+workers_dev = false
+preview_urls = false
 
 # At least one month old at time of writing (2026-10-30).
 compatibility_date = "2026-09-01"
@@ -39,4 +41,4 @@ new_sqlite_classes = [
 ]
 
 [vars]
-APP_ORIGIN = "https://hr-hub.pages.dev"
+APP_ORIGIN = "https://hr-hub-3yr.pages.dev"
