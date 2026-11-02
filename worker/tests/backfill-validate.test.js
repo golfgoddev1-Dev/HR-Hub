@@ -279,3 +279,25 @@ test("the type comparison ignores whitespace around the value", () => {
     assert.equal(result.ok, true, JSON.stringify(label));
   }
 });
+
+test("HH:mm, HH:mm:ss and the Excel fraction all become HH:mm", () => {
+  const accepted = {
+    "09:00": "09:00",
+    "9:05": "09:05",
+    "13:45:00": "13:45",
+    "09:30:59": "09:30",
+    "0.375": "09:00",
+    ".5208333333": "12:30",
+    " 08:15 ": "08:15",
+  };
+  for (const [input, expected] of Object.entries(accepted)) {
+    assert.deepEqual(parseTimeCell(input), { ok: true, hhmm: expected }, input);
+  }
+});
+
+test("times that are not valid are still refused", () => {
+  assert.deepEqual(parseTimeCell(""), { ok: false, reason: REASONS.timeEmpty });
+  for (const input of ["25:00", "abc", "09:60", "09:00:99", "9.30", "-0.375", "1.5"]) {
+    assert.deepEqual(parseTimeCell(input), { ok: false, reason: REASONS.timeInvalid }, input);
+  }
+});

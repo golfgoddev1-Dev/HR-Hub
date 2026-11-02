@@ -76,7 +76,8 @@ function readWorkbook(buffer) {
     const cells = []
     for (let column = 0; column <= lastColumn; column += 1) {
       const cell = sheet[XLSX.utils.encode_cell({ r: rowIndex, c: column })]
-      cells.push(cell ? cellText(cell.v) : '')
+      const text = cell ? cellText(cell.v) : ''
+      cells.push(column === 2 ? toHhmm(text) : text)
     }
     return cells
   }
@@ -96,6 +97,30 @@ function readWorkbook(buffer) {
   }
   if (rows.length === 0) return { error: 'ไม่พบแถวข้อมูลในไฟล์' }
   return { rows }
+}
+
+// Mirrors the Worker time reader: HH:mm, HH:mm:ss and the Excel day fraction
+// (0.375) all become HH:mm. Anything else is left as typed so the Worker can
+// refuse the row with its own reason.
+function toHhmm(value) {
+  const text = String(value ?? '').trim()
+  if (text === '') return ''
+  const clock = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(text)
+  if (clock) {
+    const hour = Number(clock[1])
+    const minute = Number(clock[2])
+    const second = clock[3] === undefined ? 0 : Number(clock[3])
+    if (hour <= 23 && minute <= 59 && second <= 59) {
+      return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
+    }
+    return text
+  }
+  const fraction = /^(?:0)?\.(\d{1,15})$/.exec(text)
+  if (fraction) {
+    const minutes = Math.round(Number(`0.${fraction[1]}`) * 1440) % 1440
+    return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`
+  }
+  return text
 }
 
 function batchOf(rows, index) {

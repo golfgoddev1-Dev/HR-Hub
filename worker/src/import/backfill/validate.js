@@ -143,18 +143,19 @@ export function parseDateCell(value) {
 }
 
 /**
- * Accepts HH:mm (or H:mm[:ss]) and the Excel time fraction in [0,1), e.g.
- * 0.375 -> 09:00. Returns HH:mm.
+ * Accepts HH:mm, HH:mm:ss and the Excel day fraction (0.375 -> 09:00).
+ * Every accepted form is returned as HH:mm; anything else is refused.
  */
 export function parseTimeCell(value) {
   const text = asText(value);
   if (text === "") return { ok: false, reason: REASONS.timeEmpty };
 
-  const clock = /^(\d{1,2}):(\d{2})(?::\d{2})?$/.exec(text);
+  const clock = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(text);
   if (clock) {
     const hour = Number(clock[1]);
     const minute = Number(clock[2]);
-    if (hour > 23 || minute > 59) return { ok: false, reason: REASONS.timeInvalid };
+    const second = clock[3] === undefined ? 0 : Number(clock[3]);
+    if (hour > 23 || minute > 59 || second > 59) return { ok: false, reason: REASONS.timeInvalid };
     return { ok: true, hhmm: `${pad(hour)}:${pad(minute)}` };
   }
 
