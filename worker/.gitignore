@@ -3,3 +3,4 @@
 .wrangler-dev.log
 node_modules
 .wrangler/
+.hr-import-fixtures/

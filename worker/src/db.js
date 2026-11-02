@@ -182,5 +182,69 @@ export function createDb(env) {
     };
   }
 
-  return { select, insert, update, upsert };
+
+  /**
+   * POST an array of rows in one request. With `returning: true` every
+   * inserted row comes back, which the employee import needs to map new
+   * employee codes to the ids the database generated.
+   */
+  async function insertMany(table, rows, { returning = false } = {}) {
+    const requestHeaders = headers();
+    if (returning) requestHeaders.Prefer = "return=representation";
+
+    const response = await fetch(url(table), {
+      method: "POST",
+      headers: requestHeaders,
+      body: JSON.stringify(rows),
+    });
+    if (!response.ok) return { data: null, error: await readError(response) };
+    if (!returning) return { data: [], error: null };
+
+    const data = await response.json().catch(() => null);
+    return { data: Array.isArray(data) ? data : [], error: null };
+  }
+
+  /**
+   * Upserts an array of rows in one request and returns every affected row.
+   * A batch import therefore needs one round trip per table, not one per row.
+   */
+  async function upsertMany(table, rows, { conflict, columns = null } = {}) {
+    const requestHeaders = headers();
+    const resolution = "resolution=merge-duplicates";
+    requestHeaders.Prefer = columns
+      ? `return=representation,${resolution}`
+      : resolution;
+
+    const queryParts = [];
+    if (conflict) queryParts.push(`on_conflict=${encodeURIComponent(conflict)}`);
+    if (columns) queryParts.push(`select=${columns}`);
+
+    const response = await fetch(url(table, queryParts), {
+      method: "POST",
+      headers: requestHeaders,
+      body: JSON.stringify(rows),
+    });
+    if (!response.ok) return { data: null, error: await readError(response) };
+    if (!columns) return { data: [], error: null };
+
+    const data = await response.json().catch(() => null);
+    return { data: Array.isArray(data) ? data : [], error: null };
+  }
+
+  /**
+   * Calls a PostgREST RPC function. Used for the daily view counter, which has
+   * to increment inside the database in a single statement.
+   */
+  async function rpc(name, args) {
+    const response = await fetch(`${baseUrl}/rest/v1/rpc/${encodeURIComponent(name)}`, {
+      method: "POST",
+      headers: headers(),
+      body: JSON.stringify(args ?? {}),
+    });
+    if (!response.ok) return { data: null, error: await readError(response) };
+    const data = await response.json().catch(() => null);
+    return { data, error: null };
+  }
+
+  return { select, insert, insertMany, update, upsert, upsertMany, rpc };
 }

@@ -12,6 +12,7 @@ import meetingOverview from "./routes/meeting-overview.js";
 import monthlySession from "./routes/meeting-monthly.js";
 import meetingDashboard from "./routes/meeting-dashboard.js";
 import dashboardReason from "./routes/dashboard-reason.js";
+import hrEmployees from "./routes/hr-employees.js";
 
 const app = new Hono();
 
@@ -23,5 +24,6 @@ app.route("/api/meeting/overview", meetingOverview);
 app.route("/api/meeting/dashboard", meetingDashboard);
 app.route("/api/meeting/dashboard", dashboardReason);
 app.route("/api/meeting", meeting);
+app.route("/api/hr/employees", hrEmployees);
 
 export default app;
