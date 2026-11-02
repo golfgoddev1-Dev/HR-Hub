@@ -206,3 +206,21 @@ test("the shift is refused for a status that is not ลาประชุม", (
   assert.equal(result.summary.writeRows, 0);
   assert.match(result.skipped[0].reason, /ไม่ต้องระบุกะ/);
 });
+
+test("the accepted type aliases import into the stored meeting type", () => {
+  const sup = plan([row(2, HEAD({ type: "หัวหน้างาน" }))]);
+  assert.equal(sup.summary.writeRows, 1);
+  assert.equal(sup.rounds[0].typeCode, "sup");
+  assert.equal(sup.rounds[0].typeName, "ประชุมหัวหน้างาน");
+
+  const monthly = plan([row(2, HEAD({ type: "Monthly" }))]);
+  assert.equal(monthly.summary.writeRows, 1);
+  assert.equal(monthly.rounds[0].typeCode, "monthly");
+  assert.equal(monthly.rounds[0].typeName, "ประชุม Monthly");
+});
+
+test("a name outside the accepted table is still skipped", () => {
+  const result = plan([row(2, HEAD({ type: "ประชุมพิเศษ" }))]);
+  assert.equal(result.summary.writeRows, 0);
+  assert.match(result.skipped[0].reason, /ไม่พบประเภทการประชุม/);
+});

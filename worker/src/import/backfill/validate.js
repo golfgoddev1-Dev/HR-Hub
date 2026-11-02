@@ -24,6 +24,16 @@ export const BACKFILL_HEADERS = [
 ];
 
 export const STATUS_LABELS = ["เข้าร่วมประชุม", "ลาประชุม", "ไม่เข้าร่วม", "ติดงานด่วน"];
+
+// ชื่อเรียกเพิ่มเติมที่ยอมรับได้ในคอลัมน์ประเภทการประชุม ค่าคือ code ใน
+// meeting_types การเทียบตัดช่องว่างหัว-ท้าย (และยุบช่องว่างซ้ำ) เท่านั้น
+// ชื่อที่ไม่อยู่ในตารางนี้ยังถูกข้ามพร้อมเหตุผลเดิม
+const MEETING_TYPE_ALIASES = {
+  "หัวหน้างาน": "sup",
+  "ประชุมหัวหน้างาน": "sup",
+  Monthly: "monthly",
+  "ประชุม Monthly": "monthly",
+};
 export const LEAVE_LABEL = "ลาประชุม";
 
 // The database stores "กะ A"/"กะ B"; the file may carry A, B, กะ A or กะ B.
@@ -165,6 +175,37 @@ export function normalizeShift(value) {
   return null;
 }
 
+/**
+ * Resolves the type column to a stored meeting type. An exact meeting_types
+ * name wins; otherwise the alias table maps the value to a type code.
+ * Whitespace around the value is ignored. Returns { name, code } (code is
+ * null when only names were supplied) or null when nothing matches: never a
+ * guess.
+ * @param {string} value
+ * @param {Array<{code:string, name:string}>} [meetingTypes]
+ * @param {string[]} [meetingTypeNames]
+ */
+export function matchMeetingType(value, meetingTypes = [], meetingTypeNames = []) {
+  const name = collapseWhitespace(value).trim();
+  if (name === "") return null;
+
+  const types = (Array.isArray(meetingTypes) ? meetingTypes : []).filter(
+    (type) => type && typeof type.code === "string" && typeof type.name === "string"
+  );
+  const exact = types.find((type) => collapseWhitespace(type.name) === name);
+  if (exact) return { name: collapseWhitespace(exact.name), code: exact.code };
+
+  const names = Array.isArray(meetingTypeNames) ? meetingTypeNames : [];
+  if (names.some((candidate) => collapseWhitespace(candidate) === name)) {
+    return { name, code: null };
+  }
+
+  if (!Object.prototype.hasOwnProperty.call(MEETING_TYPE_ALIASES, name)) return null;
+  const aliasCode = MEETING_TYPE_ALIASES[name];
+  const aliased = types.find((type) => type.code === aliasCode);
+  return aliased ? { name: collapseWhitespace(aliased.name), code: aliasCode } : null;
+}
+
 function stripPrefix(name, namePrefix = "") {
   const prefix = collapseWhitespace(namePrefix);
   if (prefix !== "" && name.startsWith(`${prefix} `)) {
@@ -205,9 +246,10 @@ export function matchEmployees(refName, employees) {
  * Validates one data row. Returns { ok: true, row } or { ok: false, reason }.
  * Columns H (แผนก), I (ระดับ), J (รหัสการประชุม) and K (ตรวจสอบ) are ignored:
  * the department and position always come from employees at read time.
- * `meetingTypeNames` is the list of names from meeting_types.
+ * `meetingTypes` is the list of rows from meeting_types ({ code, name });
+ * `meetingTypeNames` is still accepted for callers that only have the names.
  */
-export function validateBackfillRow(cells, { meetingTypeNames = [] } = {}) {
+export function validateBackfillRow(cells, { meetingTypes = [], meetingTypeNames = [] } = {}) {
   const values = Array.isArray(cells) ? cells : [];
   const type = collapseWhitespace(values[0]);
   const date = asText(values[1]);
@@ -236,7 +278,8 @@ export function validateBackfillRow(cells, { meetingTypeNames = [] } = {}) {
 
   if (type === "") return { ok: false, reason: REASONS.typeEmpty };
   if (type.length > MAX_TYPE_LENGTH) return { ok: false, reason: REASONS.typeTooLong };
-  if (!meetingTypeNames.includes(type)) return { ok: false, reason: REASONS.typeUnknown(type) };
+  const meetingType = matchMeetingType(type, meetingTypes, meetingTypeNames);
+  if (meetingType === null) return { ok: false, reason: REASONS.typeUnknown(type) };
 
   const parsedDate = parseDateCell(date);
   if (!parsedDate.ok) return { ok: false, reason: parsedDate.reason };
@@ -268,7 +311,7 @@ export function validateBackfillRow(cells, { meetingTypeNames = [] } = {}) {
   return {
     ok: true,
     row: {
-      meetingTypeName: type,
+      meetingTypeName: meetingType.name,
       dateIso: parsedDate.iso,
       timeHhmm: parsedTime.hhmm,
       location,

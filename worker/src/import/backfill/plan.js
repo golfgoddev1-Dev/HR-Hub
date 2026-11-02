@@ -59,8 +59,7 @@ export function buildBackfillPlan(input) {
   } = input;
 
   const types = meetingTypes.filter((type) => type && type.id && type.name);
-  const typeByName = new Map(types.map((type) => [type.name, type]));
-  const typeNames = [...typeByName.keys()];
+  const typeByName = new Map(types.map((type) => [collapseWhitespace(type.name), type]));
   const employeeById = new Map(employees.filter((row) => row && row.id).map((row) => [row.id, row]));
 
   const skipped = [];
@@ -68,7 +67,7 @@ export function buildBackfillPlan(input) {
 
   for (const row of rows) {
     const cells = Array.isArray(row.cells) ? row.cells : [];
-    const result = validateBackfillRow(cells, { meetingTypeNames: typeNames });
+    const result = validateBackfillRow(cells, { meetingTypes: types });
     if (!result.ok) {
       skipped.push({
         row: row.rowNumber,

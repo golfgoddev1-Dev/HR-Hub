@@ -241,3 +241,41 @@ test("unknown and ambiguous names are refused, never guessed", () => {
   assert.equal(ambiguous.ok, false);
   assert.match(ambiguous.reason, /มากกว่า 1 คน/);
 });
+
+/* meeting type names                                                  */
+
+const TYPES_WITH_CODES = [
+  { id: "type-sup", code: "sup", name: "ประชุมหัวหน้างาน" },
+  { id: "type-monthly", code: "monthly", name: "ประชุม Monthly" },
+];
+
+test("the four accepted type names resolve to their meeting type", () => {
+  const accepted = {
+    "หัวหน้างาน": "ประชุมหัวหน้างาน",
+    "ประชุมหัวหน้างาน": "ประชุมหัวหน้างาน",
+    Monthly: "ประชุม Monthly",
+    "ประชุม Monthly": "ประชุม Monthly",
+  };
+  for (const [label, canonical] of Object.entries(accepted)) {
+    const result = validateBackfillRow(cells({ type: label }), { meetingTypes: TYPES_WITH_CODES });
+    assert.equal(result.ok, true, label);
+    assert.equal(result.row.meetingTypeName, canonical, label);
+  }
+});
+
+test("other meeting type names are still skipped", () => {
+  for (const label of ["ประชุมอื่น", "หัวหน้า", "monthly", "Monthly ประชุม"]) {
+    assert.deepEqual(
+      validateBackfillRow(cells({ type: label }), { meetingTypes: TYPES_WITH_CODES }),
+      { ok: false, reason: REASONS.typeUnknown(label) },
+      label
+    );
+  }
+});
+
+test("the type comparison ignores whitespace around the value", () => {
+  for (const label of ["  หัวหน้างาน ", "  ประชุม Monthly  ", "   Monthly"]) {
+    const result = validateBackfillRow(cells({ type: label }), { meetingTypes: TYPES_WITH_CODES });
+    assert.equal(result.ok, true, JSON.stringify(label));
+  }
+});
