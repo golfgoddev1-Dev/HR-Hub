@@ -12,6 +12,8 @@ import RegistrantsPage from './pages/RegistrantsPage.vue'
 import HrEmployeeImportPage from './pages/HrEmployeeImportPage.vue'
 import HrEmployeeDetailPage from './pages/HrEmployeeDetailPage.vue'
 import HrEmployeesPage from './pages/HrEmployeesPage.vue'
+import HrEmployeeDataPage from './pages/HrEmployeeDataPage.vue'
+import ControllerEmployeeDataPage from './pages/ControllerEmployeeDataPage.vue'
 
 const allowedPathsByRole = {
   employee: ['/leave', '/leave/approvals'],
@@ -23,6 +25,7 @@ const allowedPathsByRole = {
     '/meeting/controller/roster',
     '/meeting/controller/dashboard',
     '/meeting/controller/registrants',
+    '/meeting/controller/employees',
   ],
   system_admin: ['/admin'],
 }
@@ -44,8 +47,10 @@ export const router = createRouter({
     { path: '/meeting/controller/roster', component: ControllerRosterPage, meta: { requiresAuth: true } },
     { path: '/meeting/controller/dashboard', component: ControllerDashboardPage, meta: { requiresAuth: true } },
     { path: '/meeting/controller/registrants', component: RegistrantsPage, meta: { requiresAuth: true } },
+    { path: '/meeting/controller/employees', component: ControllerEmployeeDataPage, meta: { requiresAuth: true } },
     { path: '/meeting/register', component: RegisterPage },
     { path: '/hr/employees', component: HrEmployeesPage, meta: { requiresAuth: true } },
+    { path: '/hr/employees/manage', component: HrEmployeeDataPage, meta: { requiresAuth: true } },
     { path: '/hr/employees/import', component: HrEmployeeImportPage, meta: { requiresAuth: true } },
     { path: '/hr/employees/:id', component: HrEmployeeDetailPage, meta: { requiresAuth: true } },
     { path: '/:pathMatch(.*)*', component: PendingPage, meta: { requiresAuth: true, catchAll: true } },

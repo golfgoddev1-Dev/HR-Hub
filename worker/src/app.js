@@ -13,6 +13,7 @@ import monthlySession from "./routes/meeting-monthly.js";
 import meetingDashboard from "./routes/meeting-dashboard.js";
 import dashboardReason from "./routes/dashboard-reason.js";
 import hrEmployees from "./routes/hr-employees.js";
+import { createEmployeeDirectoryRoutes } from "./routes/employee-directory.js";
 
 const app = new Hono();
 
@@ -25,5 +26,20 @@ app.route("/api/meeting/dashboard", meetingDashboard);
 app.route("/api/meeting/dashboard", dashboardReason);
 app.route("/api/meeting", meeting);
 app.route("/api/hr/employees", hrEmployees);
+
+// The same handlers serve both roles: /api/hr/directory for HR and
+// /api/meeting/directory for meeting controllers. Each mount re-checks its
+// own login role and its own membership table.
+app.route(
+  "/api/hr/directory",
+  createEmployeeDirectoryRoutes({ role: "hr", adminTable: "hr_admins" })
+);
+app.route(
+  "/api/meeting/directory",
+  createEmployeeDirectoryRoutes({
+    role: "meeting_controller",
+    adminTable: "meeting_admins",
+  })
+);
 
 export default app;
