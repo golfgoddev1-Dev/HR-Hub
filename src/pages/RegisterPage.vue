@@ -2,6 +2,17 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
+// Fonts ship with the project (no CDN). Thai glyphs come from IBM Plex Sans Thai,
+// Latin/digits from IBM Plex Sans.
+import '@fontsource/ibm-plex-sans-thai/thai-400.css'
+import '@fontsource/ibm-plex-sans-thai/thai-500.css'
+import '@fontsource/ibm-plex-sans-thai/thai-600.css'
+import '@fontsource/ibm-plex-sans-thai/thai-700.css'
+import '@fontsource/ibm-plex-sans/latin-400.css'
+import '@fontsource/ibm-plex-sans/latin-500.css'
+import '@fontsource/ibm-plex-sans/latin-600.css'
+import '@fontsource/ibm-plex-sans/latin-700.css'
+
 const LINK_ERROR_MESSAGE = 'ลิงก์ไม่ถูกต้อง กรุณาสแกน QR ใหม่อีกครั้ง'
 const LOAD_ERROR_MESSAGE = 'โหลดข้อมูลการลงทะเบียนไม่สำเร็จ กรุณาลองใหม่'
 const SERVER_ERROR_MESSAGE = 'ระบบขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้ง'
@@ -39,6 +50,7 @@ const leaveStatus = computed(() => context.value?.leaveStatus ?? 'ลาปร�
 const selectedEmployee = computed(() => employees.value.find((item) => item.employeeId === selectedEmployeeId.value) ?? null)
 const needsShift = computed(() => statusCode.value === leaveStatus.value)
 const needsReason = computed(() => reasonStatuses.value.includes(statusCode.value))
+const reasonHint = computed(() => (needsReason.value ? '(จำเป็นต้องระบุเหตุผล)' : '(กรณีไม่สะดวกเข้าร่วม)'))
 const windowText = computed(() => {
   const open = context.value?.openTime
   const cutoff = context.value?.cutoffTime
@@ -171,47 +183,43 @@ onMounted(loadContext)
   <div class="page">
     <main class="shell">
       <header class="brand">
-        <div class="brand-mark">HR</div>
-        <span class="brand-label">ลงทะเบียนเข้าประชุม</span>
+        <div class="brand-mark" aria-hidden="true">HR</div>
+        <div class="brand-copy">
+          <span class="brand-label">ลงทะเบียนเข้าประชุม</span>
+          <span class="brand-sub">แบบฟอร์มสำหรับพนักงาน</span>
+        </div>
       </header>
 
-      <div v-if="loading" class="card state-card">
-        <v-progress-circular indeterminate color="#e7752e" size="36" width="3" />
+      <section v-if="loading" class="card state-card" aria-live="polite">
+        <v-progress-circular indeterminate color="#00203b" size="32" width="3" />
         <span class="state-card__loading-text">กำลังโหลดข้อมูล…</span>
-      </div>
+      </section>
 
-      <div v-else-if="loadError" class="card state-card">
-        <div class="state-icon error-icon">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      <section v-else-if="loadError" class="card state-card" role="alert">
+        <div class="state-icon state-icon--error">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
         </div>
         <h1 class="card-title">ไม่สามารถเปิดแบบฟอร์มได้</h1>
         <p class="card-text">{{ loadError }}</p>
-      </div>
+      </section>
 
       <template v-else>
-        <section class="card hero-card">
-          <div class="meeting-head">
-            <h1 class="meeting-name">{{ context?.meetingName }}</h1>
-            <div class="window-row">
-              <span class="window-label">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="window-icon"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                วัน-เวลาลงทะเบียน
-              </span>
-              <span class="window-value">{{ windowLine }}</span>
-            </div>
+        <section class="meeting-card">
+          <p class="meeting-eyebrow">รอบประชุม</p>
+          <h1 class="meeting-name">{{ context?.meetingName }}</h1>
+          <div class="meeting-meta">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="3"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            <span class="meeting-meta__label">วัน-เวลาลงทะเบียน</span>
+            <span class="meeting-meta__value">{{ windowLine }}</span>
           </div>
         </section>
 
-        <!-- Dynamic Transition Between Receipt and Form -->
         <transition name="fade-slide" mode="out-in">
           <section v-if="receipt" key="receipt-section" class="card receipt-card">
-            <div class="receipt-success-badge-wrap">
-              <div class="badge-pulse-ring"></div>
-              <div class="receipt-success-badge">
-                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" class="check-svg"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-              </div>
+            <div class="receipt-badge" aria-hidden="true">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
             </div>
-            <h2 class="card-title text-center">ลงทะเบียนเรียบร้อย</h2>
+            <h2 class="card-title card-title--center">ลงทะเบียนเรียบร้อย</h2>
             <dl class="receipt-list">
               <div class="receipt-row">
                 <dt>ชื่อ-นามสกุล</dt>
@@ -227,7 +235,7 @@ onMounted(loadContext)
               </div>
               <div class="receipt-row">
                 <dt>สถานะ</dt>
-                <dd class="status-highlight">{{ receipt.status }}</dd>
+                <dd class="receipt-status">{{ receipt.status }}</dd>
               </div>
               <div v-if="receipt.shift" class="receipt-row">
                 <dt>กะที่ลา</dt>
@@ -251,94 +259,112 @@ onMounted(loadContext)
               <v-select
                 id="employee"
                 v-model="selectedEmployeeId"
+                class="register-select"
                 :items="employees"
                 item-title="fullName"
                 item-value="employeeId"
-                placeholder="เลือกชื่อของท่าน"
+                placeholder="พิมพ์ชื่อเพื่อค้นหา"
                 variant="outlined"
                 density="comfortable"
                 hide-details
                 no-data-text="ไม่พบรายชื่อ"
               />
+              <p class="field-hint">เลือกชื่อของท่านจากรายการ</p>
             </div>
 
-            <div v-if="selectedEmployee" class="readonly-grid">
-              <v-text-field
-                :model-value="selectedEmployee.departmentName"
-                label="แผนก"
-                variant="outlined"
-                density="comfortable"
-                hide-details
-                readonly
-              />
-              <v-text-field
-                :model-value="selectedEmployee.positionName"
-                label="ตำแหน่ง"
-                variant="outlined"
-                density="comfortable"
-                hide-details
-                readonly
-              />
+            <div v-if="selectedEmployee" class="readout">
+              <div class="readout-item">
+                <span class="readout-label">แผนก</span>
+                <span class="readout-value">{{ selectedEmployee.departmentName }}</span>
+              </div>
+              <div class="readout-item">
+                <span class="readout-label">ตำแหน่ง</span>
+                <span class="readout-value">{{ selectedEmployee.positionName }}</span>
+              </div>
             </div>
 
-            <div class="field">
-              <span class="field-label">สถานะการเข้าร่วม</span>
-              <v-radio-group v-model="statusCode" class="status-group" hide-details>
-                <v-radio
+            <fieldset class="field fieldset">
+              <legend class="field-label">สถานะการเข้าร่วม</legend>
+              <div class="status-list">
+                <label
                   v-for="status in statuses"
                   :key="status"
-                  :value="status"
-                  :color="STATUS_COLORS[status] ?? 'primary'"
-                  class="status-option"
-                  :class="{ 'status-option--active': statusCode === status }"
+                  class="status-card"
+                  :class="{ 'status-card--active': statusCode === status }"
                 >
-                  <template #label>
-                    <span class="status-label">{{ status }}</span>
-                  </template>
-                </v-radio>
-              </v-radio-group>
-            </div>
+                  <input
+                    v-model="statusCode"
+                    class="status-input"
+                    type="radio"
+                    name="attendance-status"
+                    :value="status"
+                  />
+                  <span class="status-radio" aria-hidden="true"></span>
+                  <span class="status-text">
+                    <span
+                      class="status-dot"
+                      :class="`status-dot--${STATUS_COLORS[status] ?? 'grey'}`"
+                      aria-hidden="true"
+                    ></span>
+                    {{ status }}
+                  </span>
+                </label>
+              </div>
+            </fieldset>
 
-            <div v-if="needsShift" class="field shift-container">
-              <span class="field-label">กะที่ลา</span>
-              <v-radio-group v-model="shift" class="shift-group" inline hide-details>
-                <v-radio v-for="item in shifts" :key="item" :value="item" :label="item" color="primary" class="shift-chip" />
-              </v-radio-group>
-            </div>
+            <fieldset v-if="needsShift" class="field fieldset">
+              <legend class="field-label">กะที่ลา</legend>
+              <div class="shift-list">
+                <label
+                  v-for="item in shifts"
+                  :key="item"
+                  class="shift-chip"
+                  :class="{ 'shift-chip--active': shift === item }"
+                >
+                  <input
+                    v-model="shift"
+                    class="shift-input"
+                    type="radio"
+                    name="leave-shift"
+                    :value="item"
+                  />
+                  <span>{{ item }}</span>
+                </label>
+              </div>
+            </fieldset>
 
             <div v-if="needsReason" class="field">
-              <span class="field-label">เหตุผล</span>
-              <v-text-field
+              <div class="field-head">
+                <label class="field-label" for="reason">เหตุผล</label>
+                <span class="field-hint field-hint--inline">{{ reasonHint }}</span>
+              </div>
+              <textarea
+                id="reason"
                 v-model="reason"
-                type="textarea"
+                class="reason-input"
                 :maxlength="REASON_MAX_LENGTH"
-                counter
                 rows="3"
                 placeholder="ระบุเหตุผลสั้น ๆ"
-                variant="outlined"
-                density="comfortable"
-                hide-details="auto"
-              />
+              ></textarea>
+              <div class="reason-count">{{ reason.length }}/{{ REASON_MAX_LENGTH }}</div>
             </div>
 
             <p v-if="submitError" class="error-text" role="alert">{{ submitError }}</p>
 
-            <v-btn
-              color="primary"
-              block
+            <button
+              type="button"
               class="submit-btn"
-              :class="{ 'submit-btn--loading': submitting }"
               :disabled="!canSubmit"
-              :loading="submitting"
               @click="submitRegistration"
             >
-              ยืนยันการลงทะเบียน
-            </v-btn>
+              <span v-if="submitting" class="submit-spinner" aria-hidden="true"></span>
+              {{ submitting ? 'กำลังบันทึก…' : 'ยืนยันการลงทะเบียน' }}
+            </button>
           </section>
 
           <section v-else key="other-state-section" class="card state-card">
-            <div class="state-icon warning-icon">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/></svg>
+            <div class="state-icon state-icon--warning">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
             </div>
             <h2 class="card-title">{{ stateTitle }}</h2>
             <p class="card-text">{{ context?.message }}</p>
@@ -349,12 +375,12 @@ onMounted(loadContext)
     </main>
 
     <v-dialog :model-value="dialogOpen" max-width="420" persistent>
-      <div class="dialog-card">
+      <div class="dialog-card" role="dialog" aria-modal="true">
         <h2 class="dialog-title">{{ stateTitle }}</h2>
         <p class="dialog-text">{{ context?.message }}</p>
         <p v-if="state === 'before' && windowText" class="dialog-window">{{ windowText }}</p>
         <div class="dialog-actions">
-          <v-btn color="primary" class="dialog-btn" @click="dialogOpen = false">ตกลง</v-btn>
+          <button type="button" class="dialog-btn" @click="dialogOpen = false">ตกลง</button>
         </div>
       </div>
     </v-dialog>
@@ -362,20 +388,28 @@ onMounted(loadContext)
 </template>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap');
-
 .page {
+  --primary: #00203b;
+  --primary-container: #183553;
+  --secondary-container: #fc853d;
+  --secondary: #9d4400;
+  --surface: #f7f9fb;
+  --surface-lowest: #ffffff;
+  --surface-low: #f2f4f6;
+  --surface-container: #eceef0;
+  --on-surface: #191c1e;
+  --on-surface-variant: #43474d;
+  --outline-variant: #c3c6ce;
+  --error: #ba1a1a;
+
   width: 100%;
   max-width: 100%;
   min-height: 100vh;
   overflow-x: hidden;
-  padding: 24px 16px 48px;
-  background: #f8fafc;
-  background-image: 
-    radial-gradient(at 0% 0%, rgba(231, 117, 46, 0.05) 0px, transparent 50%),
-    radial-gradient(at 100% 100%, rgba(24, 53, 83, 0.04) 0px, transparent 50%);
-  color: #1e293b;
-  font-family: 'IBM Plex Sans Thai', -apple-system, BlinkMacSystemFont, sans-serif;
+  padding: 20px 16px 40px;
+  background: var(--surface);
+  color: var(--on-surface);
+  font-family: 'IBM Plex Sans Thai', 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -385,77 +419,114 @@ onMounted(loadContext)
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
+  min-width: 0;
 }
 
-/* Brand header */
+/* Header */
 .brand {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 4px 6px 8px;
+  padding: 2px 2px 6px;
 }
 
 .brand-mark {
-  width: 36px;
-  height: 36px;
-  flex: 0 0 36px;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
   display: grid;
   place-items: center;
-  border-radius: 10px;
-  background: linear-gradient(135deg, #183553 0%, #0d2137 100%);
-  color: #ffffff;
-  font-weight: 700;
+  border-radius: 11px;
+  background: var(--primary);
+  color: var(--surface-lowest);
   font-size: 13px;
+  font-weight: 700;
   letter-spacing: 0.5px;
-  box-shadow: 0 2px 6px rgba(24, 53, 83, 0.2);
+}
+
+.brand-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
 }
 
 .brand-label {
   font-size: 15px;
   font-weight: 600;
-  color: #183553;
+  color: var(--primary);
   letter-spacing: -0.2px;
+}
+
+.brand-sub {
+  font-size: 12px;
+  color: var(--on-surface-variant);
 }
 
 /* Cards */
 .card {
   width: 100%;
-  padding: 22px;
-  border-radius: 20px;
-  background: #ffffff;
-  border: 1px solid rgba(226, 232, 240, 0.8);
-  box-shadow: 0 4px 20px -2px rgba(24, 53, 83, 0.05), 0 2px 6px -1px rgba(24, 53, 83, 0.03);
+  min-width: 0;
+  padding: 20px;
+  border-radius: 18px;
+  background: var(--surface-lowest);
+  border: 1px solid var(--surface-container);
 }
 
-.hero-card {
-  border-top: 3px solid #e7752e;
+/* Meeting header */
+.meeting-card {
+  width: 100%;
+  min-width: 0;
+  padding: 20px;
+  border-radius: 18px;
+  background: var(--primary);
+  color: #ffffff;
 }
 
-.card-title {
+.meeting-eyebrow {
   margin: 0 0 6px;
-  font-size: 18px;
-  font-weight: 700;
-  color: #183553;
-  letter-spacing: -0.3px;
-}
-
-.card-text {
-  margin: 0;
-  font-size: 14px;
-  line-height: 1.6;
-  color: #64748b;
-}
-
-.card-text.strong {
-  margin-top: 10px;
+  font-size: 11.5px;
   font-weight: 600;
-  color: #cb5d1c;
-  display: inline-block;
-  padding: 4px 12px;
-  background: #fff7ed;
-  border-radius: 8px;
-  border: 1px solid #ffedd5;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: #a8bdd4;
+}
+
+.meeting-name {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.35;
+  letter-spacing: -0.3px;
+  color: #ffffff;
+  overflow-wrap: anywhere;
+}
+
+.meeting-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--primary-container);
+  color: #d7e4f0;
+}
+
+.meeting-meta__label {
+  font-size: 12px;
+  font-weight: 500;
+  color: #a8bdd4;
+}
+
+.meeting-meta__value {
+  flex: 1 1 100%;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #ffffff;
+  overflow-wrap: anywhere;
 }
 
 /* State cards */
@@ -464,87 +535,81 @@ onMounted(loadContext)
   flex-direction: column;
   align-items: center;
   gap: 12px;
-  padding: 36px 24px;
+  padding: 32px 20px;
   text-align: center;
 }
 
 .state-card__loading-text {
   font-size: 14px;
   font-weight: 500;
-  color: #64748b;
+  color: var(--on-surface-variant);
 }
 
 .state-icon {
-  width: 48px;
-  height: 48px;
+  width: 46px;
+  height: 46px;
   border-radius: 50%;
   display: grid;
   place-items: center;
-  margin-bottom: 4px;
 }
 
-.error-icon {
-  background: #fef2f2;
-  color: #ef4444;
+.state-icon--error {
+  background: #fdecec;
+  color: var(--error);
 }
 
-.warning-icon {
-  background: #fff7ed;
-  color: #ea580c;
+.state-icon--warning {
+  background: var(--surface-low);
+  color: var(--primary-container);
 }
 
-/* Meeting Head */
-.meeting-head {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.meeting-name {
-  margin: 0;
-  font-size: 20px;
+.card-title {
+  margin: 0 0 6px;
+  font-size: 18px;
   font-weight: 700;
-  line-height: 1.35;
-  color: #183553;
-  letter-spacing: -0.4px;
-  overflow-wrap: anywhere;
+  color: var(--primary);
+  letter-spacing: -0.2px;
 }
 
-.window-row {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 12px 14px;
-  border-radius: 12px;
-  background: #fff8f2;
-  border: 1px solid #fed7aa;
+.card-title--center {
+  text-align: center;
+  margin-top: 4px;
 }
 
-.window-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
+.card-text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--on-surface-variant);
+}
+
+.card-text.strong {
+  margin-top: 8px;
+  padding: 6px 12px;
+  border-radius: 10px;
+  background: var(--surface-low);
   font-weight: 600;
-  color: #c2410c;
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
+  color: var(--primary-container);
 }
 
-.window-icon {
-  flex-shrink: 0;
-}
-
-.window-value {
-  font-size: 13.5px;
-  font-weight: 600;
-  color: #183553;
-  overflow-wrap: anywhere;
-}
-
-/* Form Styles */
+/* Form fields */
 .field {
   margin-bottom: 20px;
+  min-width: 0;
+}
+
+.field:last-of-type {
+  margin-bottom: 16px;
+}
+
+.fieldset {
+  margin: 0 0 20px;
+  padding: 0;
+  border: 0;
+}
+
+.fieldset legend {
+  padding: 0;
 }
 
 .field-label {
@@ -552,186 +617,364 @@ onMounted(loadContext)
   margin-bottom: 8px;
   font-size: 13.5px;
   font-weight: 600;
-  color: #334155;
+  color: var(--on-surface);
 }
 
-.readonly-grid {
+.field-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 10px;
+}
+
+.field-head .field-label {
+  margin-bottom: 8px;
+}
+
+.field-hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--on-surface-variant);
+}
+
+.field-hint--inline {
+  margin: 0 0 8px;
+}
+
+/* Employee select (Vuetify) */
+.register-select :deep(.v-field) {
+  border-radius: 12px;
+  background: var(--surface-lowest);
+  font-size: 14.5px;
+}
+
+.register-select :deep(.v-field__outline) {
+  color: var(--outline-variant);
+}
+
+.register-select :deep(.v-field--focused .v-field__outline) {
+  color: var(--primary);
+}
+
+.register-select :deep(.v-label) {
+  font-size: 14px;
+  color: var(--on-surface-variant);
+}
+
+.register-select :deep(.v-select__selection-text),
+.register-select :deep(input) {
+  color: var(--on-surface);
+}
+
+/* Read-only employee details */
+.readout {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 12px;
+  gap: 10px;
   margin: -8px 0 20px;
-  padding: 12px;
-  background: #f8fafc;
+  padding: 14px;
   border-radius: 14px;
-  border: 1px dashed #cbd5e1;
+  background: var(--surface-low);
 }
 
-/* Radio status items */
-.status-group {
+.readout-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.readout-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  color: var(--on-surface-variant);
+}
+
+.readout-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--on-surface);
+  overflow-wrap: anywhere;
+}
+
+/* Status cards with real radio inputs */
+.status-list {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.status-option {
-  margin: 0;
-  padding: 8px 12px;
-  border: 1.5px solid #e2e8f0;
-  border-radius: 12px;
-  background: #ffffff;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+.status-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 12px 14px;
+  border: 1.5px solid var(--outline-variant);
+  border-radius: 14px;
+  background: var(--surface-lowest);
   cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-.status-option:hover {
-  border-color: #cbd5e1;
-  background: #f8fafc;
-  transform: translateY(-1px);
+.status-card:hover {
+  border-color: var(--primary-container);
+  background: var(--surface-low);
 }
 
-.status-option--active {
-  border-color: #e7752e !important;
-  background: #fff8f2 !important;
-  box-shadow: 0 3px 10px rgba(231, 117, 46, 0.12);
-  transform: translateY(-1px);
+.status-card--active {
+  border-color: var(--primary);
+  background: var(--surface-low);
+  box-shadow: inset 0 0 0 1px var(--primary);
 }
 
-.status-label {
-  font-size: 14px;
+.status-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.status-radio {
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--outline-variant);
+  border-radius: 50%;
+  background: var(--surface-lowest);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.status-card--active .status-radio {
+  border-color: var(--primary);
+  box-shadow: inset 0 0 0 4px var(--surface-lowest), inset 0 0 0 12px var(--primary);
+}
+
+.status-card:focus-within {
+  outline: 3px solid rgba(252, 133, 61, 0.55);
+  outline-offset: 2px;
+}
+
+.status-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 14.5px;
   font-weight: 500;
-  color: #1e293b;
+  color: var(--on-surface);
+  overflow-wrap: anywhere;
 }
 
-.shift-container {
-  padding: 12px;
-  background: #f8fafc;
-  border-radius: 12px;
-  border: 1px solid #e2e8f0;
+.status-dot {
+  flex: 0 0 8px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--outline-variant);
 }
 
-.shift-group {
+.status-dot--success {
+  background: #2f7d5d;
+}
+
+.status-dot--grey {
+  background: #8a8f96;
+}
+
+.status-dot--orange {
+  background: var(--secondary);
+}
+
+.status-dot--blue {
+  background: var(--primary-container);
+}
+
+/* Shift chips */
+.shift-list {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
 }
 
 .shift-chip {
-  margin-right: 8px;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 10px 16px;
+  border: 1.5px solid var(--outline-variant);
+  border-radius: 999px;
+  background: var(--surface-lowest);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--on-surface);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
 }
 
+.shift-chip:hover {
+  border-color: var(--primary-container);
+  background: var(--surface-low);
+}
+
+.shift-chip--active {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: #ffffff;
+}
+
+.shift-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.shift-chip:focus-within {
+  outline: 3px solid rgba(252, 133, 61, 0.55);
+  outline-offset: 2px;
+}
+
+/* Reason */
+.reason-input {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1.5px solid var(--outline-variant);
+  border-radius: 12px;
+  background: var(--surface-lowest);
+  color: var(--on-surface);
+  font-family: inherit;
+  font-size: 14.5px;
+  line-height: 1.6;
+  resize: vertical;
+}
+
+.reason-input::placeholder {
+  color: #8a9099;
+}
+
+.reason-input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(0, 32, 59, 0.12);
+}
+
+.reason-count {
+  margin-top: 6px;
+  text-align: right;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--on-surface-variant);
+}
+
+/* Error */
 .error-text {
   margin: 0 0 16px;
   padding: 12px 14px;
   border-radius: 12px;
-  background: #fef2f2;
-  border: 1px solid #fecaca;
-  color: #dc2626;
+  background: #fdecec;
+  border: 1px solid #f3c6c6;
+  color: var(--error);
   font-size: 13px;
   font-weight: 500;
   line-height: 1.5;
-  animation: shake 0.35s ease;
 }
 
-/* ----------------------------------------------------
-   SUBMIT BUTTON ANIMATIONS & MICRO-INTERACTIONS
----------------------------------------------------- */
+/* Submit */
 .submit-btn {
-  margin-top: 8px;
-  height: 48px !important;
-  border-radius: 12px !important;
-  font-size: 15px !important;
-  font-weight: 600 !important;
-  letter-spacing: 0.2px !important;
-  background: linear-gradient(135deg, #e7752e 0%, #cb5d1c 100%) !important;
-  color: #ffffff !important;
-  box-shadow: 0 4px 14px rgba(231, 117, 46, 0.3) !important;
-  position: relative;
-  overflow: hidden;
-  transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s ease, opacity 0.2s ease !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 50px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--secondary-container);
+  color: var(--on-surface);
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.1px;
+  cursor: pointer;
+  transition: filter 0.15s ease, transform 0.12s ease;
 }
 
 .submit-btn:hover:not(:disabled) {
-  transform: translateY(-1.5px);
-  box-shadow: 0 6px 20px rgba(231, 117, 46, 0.4) !important;
+  filter: brightness(1.04);
 }
 
 .submit-btn:active:not(:disabled) {
-  transform: scale(0.97) translateY(0);
-  box-shadow: 0 2px 8px rgba(231, 117, 46, 0.25) !important;
+  transform: scale(0.99);
+}
+
+.submit-btn:focus-visible {
+  outline: 3px solid rgba(0, 32, 59, 0.45);
+  outline-offset: 2px;
 }
 
 .submit-btn:disabled {
-  opacity: 0.6;
-  box-shadow: none !important;
+  background: var(--surface-container);
+  color: #8a9099;
   cursor: not-allowed;
 }
 
-/* Pulsing aura when submitting */
-.submit-btn--loading {
-  animation: pulse-aura 1.5s infinite;
+.submit-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(25, 28, 30, 0.25);
+  border-top-color: var(--on-surface);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
 }
 
-@keyframes pulse-aura {
-  0% { box-shadow: 0 0 0 0 rgba(231, 117, 46, 0.5); }
-  70% { box-shadow: 0 0 0 10px rgba(231, 117, 46, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(231, 117, 46, 0); }
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
-@keyframes shake {
-  0%, 100% { transform: translateX(0); }
-  25% { transform: translateX(-4px); }
-  75% { transform: translateX(4px); }
-}
-
-/* ----------------------------------------------------
-   RECEIPT CARD ANIMATIONS & DETAILS
----------------------------------------------------- */
+/* Receipt */
 .receipt-card {
-  border-top: 4px solid #16a34a;
-  padding: 30px 22px 24px;
-  animation: receipt-pop 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  padding: 24px 20px 20px;
+  border-color: #cfe3d8;
 }
 
-.receipt-success-badge-wrap {
-  position: relative;
-  width: 58px;
-  height: 58px;
-  margin: 0 auto 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.receipt-success-badge {
+.receipt-badge {
   width: 52px;
   height: 52px;
-  border-radius: 50%;
-  background: #dcfce7;
-  color: #16a34a;
+  margin: 0 auto 12px;
   display: grid;
   place-items: center;
-  position: relative;
-  z-index: 2;
-  box-shadow: 0 4px 12px rgba(22, 163, 74, 0.2);
-  animation: check-bounce 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) 0.15s both;
-}
-
-.check-svg {
-  stroke-dasharray: 50;
-  stroke-dashoffset: 50;
-  animation: draw-check 0.5s ease-out 0.35s forwards;
-}
-
-.badge-pulse-ring {
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 52px;
-  height: 52px;
   border-radius: 50%;
-  background: rgba(22, 163, 74, 0.25);
-  animation: pulse-ring 1.8s cubic-bezier(0.24, 0, 0.38, 1) infinite;
-  z-index: 1;
+  background: var(--primary);
+  color: #ffffff;
+  animation: badge-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+@keyframes badge-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 .receipt-list {
@@ -740,9 +983,8 @@ onMounted(loadContext)
   gap: 10px;
   margin: 18px 0 0;
   padding: 16px;
-  background: #f8fafc;
   border-radius: 14px;
-  border: 1px solid #e2e8f0;
+  background: var(--surface-low);
 }
 
 .receipt-row {
@@ -751,28 +993,18 @@ onMounted(loadContext)
   justify-content: space-between;
   gap: 12px;
   padding-bottom: 8px;
-  border-bottom: 1px solid #f1f5f9;
-  animation: row-fade-in 0.4s ease both;
+  border-bottom: 1px solid var(--surface-container);
 }
 
-/* Stagger effect for rows */
-.receipt-row:nth-child(1) { animation-delay: 0.1s; }
-.receipt-row:nth-child(2) { animation-delay: 0.15s; }
-.receipt-row:nth-child(3) { animation-delay: 0.2s; }
-.receipt-row:nth-child(4) { animation-delay: 0.25s; }
-.receipt-row:nth-child(5) { animation-delay: 0.3s; }
-.receipt-row:nth-child(6) { animation-delay: 0.35s; }
-.receipt-row:nth-child(7) { animation-delay: 0.4s; }
-
 .receipt-row:last-child {
-  border-bottom: none;
   padding-bottom: 0;
+  border-bottom: none;
 }
 
 .receipt-row dt {
+  flex: 0 0 auto;
   font-size: 13px;
-  color: #64748b;
-  font-weight: 500;
+  color: var(--on-surface-variant);
 }
 
 .receipt-row dd {
@@ -780,123 +1012,68 @@ onMounted(loadContext)
   font-size: 14px;
   font-weight: 600;
   text-align: right;
-  color: #0f172a;
+  color: var(--on-surface);
   overflow-wrap: anywhere;
 }
 
-.status-highlight {
-  color: #e7752e !important;
-  font-weight: 700 !important;
+.receipt-status {
+  color: var(--secondary);
+  font-weight: 700;
 }
 
 .receipt-note {
-  margin: 18px 0 0;
+  margin: 16px 0 0;
   font-size: 13px;
   font-weight: 500;
-  color: #16a34a;
   text-align: center;
-  animation: row-fade-in 0.4s ease 0.45s both;
+  color: var(--on-surface-variant);
 }
 
-/* Keyframes */
-@keyframes receipt-pop {
-  0% {
-    opacity: 0;
-    transform: scale(0.96) translateY(12px);
-  }
-  100% {
-    opacity: 1;
-    transform: scale(1) translateY(0);
-  }
-}
-
-@keyframes check-bounce {
-  0% {
-    transform: scale(0);
-  }
-  70% {
-    transform: scale(1.15);
-  }
-  100% {
-    transform: scale(1);
-  }
-}
-
-@keyframes draw-check {
-  to {
-    stroke-dashoffset: 0;
-  }
-}
-
-@keyframes pulse-ring {
-  0% {
-    transform: scale(0.9);
-    opacity: 0.8;
-  }
-  80%, 100% {
-    transform: scale(1.45);
-    opacity: 0;
-  }
-}
-
-@keyframes row-fade-in {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-/* Vue Transition (fade-slide) */
+/* Transition */
 .fade-slide-enter-active,
 .fade-slide-leave-active {
-  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 0.2s ease, transform 0.2s ease;
 }
 
-.fade-slide-enter-from {
-  opacity: 0;
-  transform: translateY(12px);
-}
-
+.fade-slide-enter-from,
 .fade-slide-leave-to {
   opacity: 0;
-  transform: translateY(-8px);
+  transform: translateY(8px);
 }
 
-/* Dialog */
+/* Dialog (teleported outside .page, so colours and font are set here) */
 .dialog-card {
   padding: 24px;
   border-radius: 20px;
   background: #ffffff;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+  color: #191c1e;
+  font-family: 'IBM Plex Sans Thai', 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  box-shadow: 0 18px 40px rgba(0, 32, 59, 0.18);
 }
 
 .dialog-title {
   margin: 0 0 10px;
   font-size: 18px;
   font-weight: 700;
-  color: #183553;
+  color: #00203b;
 }
 
 .dialog-text {
   margin: 0;
   font-size: 14px;
   line-height: 1.6;
-  color: #475569;
+  color: #43474d;
 }
 
 .dialog-window {
+  display: inline-block;
   margin: 12px 0 0;
-  font-size: 13.5px;
-  font-weight: 600;
-  color: #c2410c;
-  background: #fff8f2;
   padding: 6px 12px;
   border-radius: 8px;
-  display: inline-block;
+  background: #f2f4f6;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #183553;
 }
 
 .dialog-actions {
@@ -906,20 +1083,26 @@ onMounted(loadContext)
 }
 
 .dialog-btn {
-  border-radius: 10px !important;
-  font-weight: 600 !important;
-  padding: 0 20px !important;
+  min-height: 44px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: 12px;
+  background: #00203b;
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 14.5px;
+  font-weight: 600;
+  cursor: pointer;
 }
 
-/* Responsiveness */
-@media (min-width: 480px) {
-  .page { padding: 32px 20px 56px; }
-  .card { padding: 26px; }
-  .meeting-name { font-size: 22px; }
+.dialog-btn:focus-visible {
+  outline: 3px solid rgba(252, 133, 61, 0.65);
+  outline-offset: 2px;
 }
 
 @media (min-width: 600px) {
-  .readonly-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-  .window-row { flex-direction: row; align-items: center; justify-content: space-between; }
+  .readout {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
 }
 </style>
