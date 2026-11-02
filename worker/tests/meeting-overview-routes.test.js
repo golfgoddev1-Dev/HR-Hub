@@ -195,6 +195,7 @@ function sessionRowOption(label, extra = {}) {
     id: label,
     meeting_type_id: extra.typeId ?? SUP_TYPE_ID,
     session_date: TODAY,
+    session_time: "",
     cycle_key: "sup-2026-01-05",
     open_time: extra.open ?? "10:00",
     cutoff_time: extra.cutoff ?? "13:00",

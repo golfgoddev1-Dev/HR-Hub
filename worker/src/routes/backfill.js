@@ -446,8 +446,8 @@ function previewPayload(fileName, plan) {
 async function applyPlan(db, plan, { fileName, actorId, totals = null }) {
   const writable = plan.rounds.filter((round) => round.mode !== "conflict" && round.entries.length > 0);
 
-  // 1. New rounds: one upsert. The unique key is (meeting_type_id,
-  //    session_date), so a round that raced into existence is reused instead of
+  // 1. New rounds: one upsert. The unique key is (meeting_type_id, session_date,
+  //    session_time), so a round that raced into existence is reused instead of
   //    duplicated. open_time/cutoff_time describe a registration window that is
   //    irrelevant for a past date and are set to a closed full day.
   const newRounds = writable.filter((round) => round.mode === "new");
@@ -468,16 +468,16 @@ async function applyPlan(db, plan, { fileName, actorId, totals = null }) {
 
     const created = ensureOk(
       await db.upsertMany(SESSIONS_TABLE, sessionRows, {
-        conflict: "meeting_type_id,session_date",
-        columns: "id,meeting_type_id,session_date",
+        conflict: "meeting_type_id,session_date,session_time",
+        columns: "id,meeting_type_id,session_date,session_time",
       })
     );
 
     for (const row of created.data ?? []) {
-      sessionIdByRound.set(`${row.meeting_type_id}|${row.session_date}`, row.id);
+      sessionIdByRound.set(`${row.meeting_type_id}|${row.session_date}|${row.session_time ?? ""}`, row.id);
     }
     for (const round of newRounds) {
-      const id = sessionIdByRound.get(`${round.typeId}|${round.dateIso}`) ?? null;
+      const id = sessionIdByRound.get(`${round.typeId}|${round.dateIso}|${round.time}`) ?? null;
       if (id) sessionIdByRound.set(round.key, id);
     }
   }
@@ -486,7 +486,9 @@ async function applyPlan(db, plan, { fileName, actorId, totals = null }) {
   //    untouched instead of overwriting status, reason or registered_at.
   const attendanceRows = [];
   for (const round of writable) {
-    const sessionId = sessionIdByRound.get(round.key) ?? sessionIdByRound.get(`${round.typeId}|${round.dateIso}`);
+    const sessionId =
+      sessionIdByRound.get(round.key) ??
+      sessionIdByRound.get(`${round.typeId}|${round.dateIso}|${round.time}`);
     if (!sessionId) continue;
     for (const entry of round.entries) {
       attendanceRows.push({

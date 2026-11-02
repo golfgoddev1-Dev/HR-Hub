@@ -18,7 +18,7 @@ const PAST_DATE_MESSAGE = "เลือกวันที่ตั้งแต�
 const TYPES_TABLE = "meeting_types";
 const SESSIONS_TABLE = "meeting_sessions";
 const AUDIT_TABLE = "audit_logs";
-const SESSION_CONFLICT = "meeting_type_id,session_date";
+const SESSION_CONFLICT = "meeting_type_id,session_date,session_time";
 const LIST_LIMIT = 12;
 const MAX_BODY_BYTES = 4 * 1024;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -147,6 +147,7 @@ monthlySession.get("/", async (c) => {
       filters: [
         ["meeting_type_id", "eq", typeId],
         ["session_date", "gte", bangkokToday()],
+        ["session_time", "eq", ""],
       ],
       order: "session_date.asc",
       limit: LIST_LIMIT,
@@ -197,6 +198,7 @@ monthlySession.put("/", async (c) => {
         {
           meeting_type_id: typeId,
           session_date: body.sessionDate,
+          session_time: "",
           cycle_key: `monthly-${body.sessionDate}`,
           open_time: body.openTime,
           cutoff_time: body.cutoffTime,

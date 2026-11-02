@@ -184,6 +184,7 @@ function monthlySessionRow(overrides = {}) {
     id: "session-a",
     meeting_type_id: MONTHLY_TYPE_ID,
     session_date: "2026-01-06",
+    session_time: "",
     cycle_key: "monthly-2026-01-06",
     open_time: "09:00:00",
     cutoff_time: "12:00:00",
@@ -473,13 +474,14 @@ test("monthly PUT: upserts with the composite conflict target and audit row", as
   assert.equal(fake.state.sessionUpserts.length, 1);
   const upsert = fake.state.sessionUpserts[0];
   const params = new URL(upsert.url).searchParams;
-  assert.equal(params.get("on_conflict"), "meeting_type_id,session_date");
-  assert.equal(new URL(upsert.url).search, "?on_conflict=meeting_type_id%2Csession_date&select=id");
+  assert.equal(params.get("on_conflict"), "meeting_type_id,session_date,session_time");
+  assert.equal(new URL(upsert.url).search, "?on_conflict=meeting_type_id%2Csession_date%2Csession_time&select=id");
   assert.equal(params.get("select"), "id");
   assert.equal((upsert.init.headers.Prefer ?? "").includes("resolution=merge-duplicates"), true);
   assert.deepEqual(upsert.body, {
     meeting_type_id: MONTHLY_TYPE_ID,
     session_date: "2026-03-10",
+    session_time: "",
     cycle_key: "monthly-2026-03-10",
     open_time: "09:00",
     cutoff_time: "12:00",

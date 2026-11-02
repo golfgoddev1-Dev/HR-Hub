@@ -389,6 +389,7 @@ test("context: monthly reads only today's session", async (t) => {
         id: "old",
         meeting_type_id: "type-monthly",
         session_date: "2026-01-04",
+        session_time: "",
         open_time: "01:00:00",
         cutoff_time: "02:00:00",
       },
@@ -396,6 +397,7 @@ test("context: monthly reads only today's session", async (t) => {
         id: "today",
         meeting_type_id: "type-monthly",
         session_date: "2026-01-05",
+        session_time: "",
         open_time: "09:00:00",
         cutoff_time: "12:00:00",
       },
@@ -728,6 +730,7 @@ test("submit: an existing attendance row is 409 without an insert", async (t) =>
         id: "session-1",
         meeting_type_id: "type-sup",
         session_date: "2026-01-05",
+        session_time: "",
         open_time: "09:00",
         cutoff_time: "12:00",
       },
@@ -751,6 +754,7 @@ test("submit: a unique violation on insert is 409", async (t) => {
         id: "session-1",
         meeting_type_id: "type-sup",
         session_date: "2026-01-05",
+        session_time: "",
         open_time: "09:00",
         cutoff_time: "12:00",
       },
@@ -798,6 +802,7 @@ test("submit: sup creates the day's session and writes attendance", async (t) =>
   assert.deepEqual(JSON.parse(sessionInserts[0].init.body), {
     meeting_type_id: "type-sup",
     session_date: "2026-01-05",
+    session_time: "",
     cycle_key: "sup-2026-01-05",
     open_time: "09:00",
     cutoff_time: "12:00",
@@ -913,6 +918,7 @@ test("submit: Turnstile off skips Siteverify and keeps the old body shape", asyn
         id: "session-1",
         meeting_type_id: "type-sup",
         session_date: "2026-01-05",
+        session_time: "",
         open_time: "09:00",
         cutoff_time: "12:00",
       },
@@ -998,6 +1004,7 @@ test("submit: Turnstile success proceeds to the database", async (t) => {
         id: "session-1",
         meeting_type_id: "type-sup",
         session_date: "2026-01-05",
+        session_time: "",
         open_time: "09:00",
         cutoff_time: "12:00",
       },
@@ -1055,6 +1062,7 @@ test("no response or write contains the QR token or Turnstile token", async (t) 
         id: "session-1",
         meeting_type_id: "type-sup",
         session_date: "2026-01-05",
+        session_time: "",
         open_time: "09:00",
         cutoff_time: "12:00",
       },
@@ -1086,4 +1094,34 @@ test("no response or write contains the QR token or Turnstile token", async (t) 
   } finally {
     fake.restore();
   }
+});
+
+test("submit: sup ignores a same-day backfill round and matches only the day round", async (t) => {
+  freeze(t);
+  const fake = createFakeDb({
+    sessions: [
+      {
+        id: "session-backfill",
+        meeting_type_id: "type-sup",
+        session_date: "2026-01-05",
+        session_time: "09:00",
+        open_time: "09:00",
+        cutoff_time: "12:00",
+      },
+    ],
+    roster: [rosterRow()],
+    nextSessionId: "session-new",
+  });
+  t.after(() => fake.restore());
+
+  const res = await submit(validBody(), makeEnv());
+  assert.equal(res.status, 200);
+  assert.equal((await res.json()).ok, true);
+
+  const lookups = callsTo(fake, "meeting_sessions");
+  assert.equal(lookups.length, 1);
+  assert.match(lookups[0].url, /session_time=eq./);
+  const inserts = callsTo(fake, "meeting_sessions", "POST");
+  assert.equal(inserts.length, 1);
+  assert.equal(JSON.parse(inserts[0].init.body).session_time, "");
 });

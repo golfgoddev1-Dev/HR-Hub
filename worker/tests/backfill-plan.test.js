@@ -108,7 +108,7 @@ test("an existing session with the same time and location is reused", () => {
   assert.equal(result.rounds[0].sessionId, "session-1");
 });
 
-test("a different time is a conflict that is skipped unless HR joins", () => {
+test("a file round at another time becomes its own round on the same day", () => {
   const sessions = [
     {
       id: "session-1",
@@ -119,20 +119,12 @@ test("a different time is a conflict that is skipped unless HR joins", () => {
     },
   ];
 
-  const skipped = plan([row(2, HEAD())], { sessions });
-  assert.equal(skipped.rounds[0].mode, "conflict");
-  assert.equal(skipped.rounds[0].rows, 0);
-  assert.equal(skipped.summary.needsDecision, 1);
-  assert.equal(skipped.summary.writeRows, 0);
-
-  const joined = plan([row(2, HEAD())], {
-    sessions,
-    decisions: new Map([[roundKeyOf("type-sup", "2026-10-01", "09:00", "ห้องประชุม A"), DECISION_JOIN]]),
-  });
-  assert.equal(joined.rounds[0].mode, "joined");
-  assert.equal(joined.rounds[0].sessionId, "session-1");
-  assert.equal(joined.summary.joinedRounds, 1);
-  assert.equal(joined.summary.writeRows, 1);
+  const result = plan([row(2, HEAD())], { sessions });
+  assert.equal(result.rounds.length, 1);
+  assert.equal(result.rounds[0].mode, "new");
+  assert.equal(result.summary.newRounds, 1);
+  assert.equal(result.summary.needsDecision, 0);
+  assert.equal(result.summary.writeRows, 1);
 });
 
 test("a different location alone is a conflict", () => {
@@ -169,16 +161,17 @@ test("a person already recorded in the reused session is skipped", () => {
   assert.match(result.skipped[0].reason, /มีข้อมูลของคนนี้ในรอบนี้แล้ว/);
 });
 
-test("a second round of the same type and date is reported, not merged", () => {
+test("several times on the same type and date yield several rounds", () => {
   const result = plan([
     row(2, HEAD({ time: "09:00" })),
     row(3, HEAD({ time: "13:00" })),
   ]);
 
   assert.equal(result.summary.rounds, 2);
-  assert.equal(result.rounds.filter((round) => round.mode === "new").length, 1);
-  assert.equal(result.rounds.filter((round) => round.mode === "conflict").length, 1);
-  assert.equal(result.summary.writeRows, 1);
+  assert.equal(result.summary.newRounds, 2);
+  assert.equal(result.summary.writeRows, 2);
+  assert.equal(result.summary.needsDecision, 0);
+  assert.deepEqual(result.rounds.map((round) => round.time), ["09:00", "13:00"]);
 });
 
 test("unknown meeting type, unknown name and ambiguous name are skipped", () => {

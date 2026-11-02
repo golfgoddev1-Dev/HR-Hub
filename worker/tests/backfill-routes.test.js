@@ -178,16 +178,24 @@ async function createFake(options = {}) {
         const out = rows.map((row) => {
           const existing = state.meetings.find(
             (item) =>
-              item.meeting_type_id === row.meeting_type_id && item.session_date === row.session_date
+              item.meeting_type_id === row.meeting_type_id &&
+              item.session_date === row.session_date &&
+              (item.session_time ?? "") === (row.session_time ?? "")
           );
+          const pick = (item) => ({
+            id: item.id,
+            meeting_type_id: item.meeting_type_id,
+            session_date: item.session_date,
+            session_time: item.session_time ?? "",
+          });
           if (existing) {
             Object.assign(existing, row);
-            return { id: existing.id, meeting_type_id: existing.meeting_type_id, session_date: existing.session_date };
+            return pick(existing);
           }
           const created = { id: `session-${state.nextSessionId}`, ...row };
           state.nextSessionId += 1;
           state.meetings.push(created);
-          return { id: created.id, meeting_type_id: created.meeting_type_id, session_date: created.session_date };
+          return pick(created);
         });
         return jsonResponse(out, 201);
       }
@@ -304,8 +312,8 @@ test("preview reports new rounds, skips and conflicts without writing", async ()
         id: "session-old",
         meeting_type_id: "type-sup",
         session_date: "2026-10-01",
-        session_time: "10:00",
-        location: "ห้องประชุม A",
+        session_time: "09:00",
+        location: "ห้องประชุม B",
       },
     ],
   });
@@ -354,6 +362,13 @@ test("confirm creates the round, writes attendance and one audit row", async () 
     assert.equal(fake.state.meetings.length, 1);
     assert.equal(fake.state.meetings[0].cycle_key, "sup-2026-10-01");
     assert.equal(fake.state.meetings[0].session_time, "09:00");
+    const sessionUpsert = fake.calls.find(
+      (call) => call.method === "POST" && call.url.includes("meeting_sessions")
+    );
+    assert.equal(
+      new URL(sessionUpsert.url).searchParams.get("on_conflict"),
+      "meeting_type_id,session_date,session_time"
+    );
     assert.equal(fake.state.attendance.length, 2);
     assert.equal(fake.state.attendance[1].shift, "กะ B");
     assert.equal(fake.state.attendance[1].status_code, "leave");
@@ -374,8 +389,8 @@ test("choosing join writes into the existing round and creates no session", asyn
         id: "session-old",
         meeting_type_id: "type-sup",
         session_date: "2026-10-01",
-        session_time: "10:00",
-        location: "ห้องประชุม A",
+        session_time: "09:00",
+        location: "ห้องประชุม B",
       },
     ],
   });

@@ -110,6 +110,7 @@ async function loadMonthlySessions(db, typeId) {
     filters: [
       ["meeting_type_id", "eq", typeId],
       ["session_date", "eq", today],
+      ["session_time", "eq", ""],
     ],
   });
   return rows.map((row) => ({
@@ -164,6 +165,7 @@ async function findSessionForDay(db, typeId, sessionDate) {
     filters: [
       ["meeting_type_id", "eq", typeId],
       ["session_date", "eq", sessionDate],
+      ["session_time", "eq", ""],
     ],
     single: true,
   });
@@ -180,6 +182,7 @@ async function ensureSession(db, type, sessions, state) {
       {
         meeting_type_id: type.id,
         session_date: today,
+        session_time: "",
         cycle_key: `sup-${today}`,
         open_time: toHm(type.default_open_time),
         cutoff_time: toHm(type.default_cutoff_time),

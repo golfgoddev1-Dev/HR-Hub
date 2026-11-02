@@ -209,7 +209,8 @@ function hasSupSession(sessions, supType, todayKey) {
       session !== null &&
       typeof session === "object" &&
       session.meeting_type_id === supType.id &&
-      session.session_date === todayKey,
+      session.session_date === todayKey &&
+      (session.session_time ?? "") === "",
   );
 }
 
@@ -269,7 +270,7 @@ async function gatherRunInputs(env, at, { write, gate }) {
   // 3. Sessions inside the window. Read before the sup write, because this read
   //    is what proves whether today's sup session is already there.
   const sessions = await db.select("meeting_sessions", {
-    columns: "id, meeting_type_id, session_date, cutoff_time",
+    columns: "id, meeting_type_id, session_date, session_time, cutoff_time",
     filters: [
       ["session_date", "gte", fromKey],
       ["session_date", "lte", todayKey],
@@ -290,12 +291,13 @@ async function gatherRunInputs(env, at, { write, gate }) {
           meeting_type_id: supType.id,
           session_date: todayKey,
           cycle_key: `sup-${todayKey}`,
+          session_time: "",
           open_time: normalizeTime(supType.default_open_time),
           cutoff_time: normalizeTime(supType.default_cutoff_time),
         },
         {
-          conflict: "meeting_type_id,session_date",
-          columns: "id, meeting_type_id, session_date, cutoff_time",
+          conflict: "meeting_type_id,session_date,session_time",
+          columns: "id, meeting_type_id, session_date, session_time, cutoff_time",
           ignoreDuplicates: true,
         },
       ),

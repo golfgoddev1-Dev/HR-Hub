@@ -449,10 +449,10 @@ test("creating the sup session costs one extra subrequest", async (t) => {
   assert.equal(fake.state.calls.length, subrequestBudget(1, { createsSupSession: true })); // 9
 
   const createWrite = fake.state.writes.find((write) => write.table === "meeting_sessions");
-  assert.equal(createWrite.onConflict, "meeting_type_id,session_date");
+  assert.equal(createWrite.onConflict, "meeting_type_id,session_date,session_time");
   assert.equal(
     createWrite.search,
-    "?on_conflict=meeting_type_id%2Csession_date&select=id,%20meeting_type_id,%20session_date,%20cutoff_time"
+    "?on_conflict=meeting_type_id%2Csession_date%2Csession_time&select=id,%20meeting_type_id,%20session_date,%20session_time,%20cutoff_time"
   );
   assert.equal(createWrite.prefer.includes("resolution=ignore-duplicates"), true);
   // The created row is requested back so this same run can mark it.
@@ -462,6 +462,7 @@ test("creating the sup session costs one extra subrequest", async (t) => {
     {
       meeting_type_id: SUP_TYPE.id,
       session_date: TODAY,
+      session_time: "",
       cycle_key: `sup-${TODAY}`,
       open_time: "09:00",
       cutoff_time: "12:00",

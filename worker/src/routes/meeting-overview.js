@@ -76,6 +76,7 @@ async function findSession(db, typeId, sessionDate) {
     filters: [
       ["meeting_type_id", "eq", typeId],
       ["session_date", "eq", sessionDate],
+      ["session_time", "eq", ""],
     ],
     single: true,
   });

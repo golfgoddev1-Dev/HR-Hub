@@ -133,10 +133,12 @@ export function buildBackfillPlan(input) {
     });
   }
 
-  const sessionByTypeDate = new Map();
+  // A round is keyed by type + date + time: one type can have several rounds a day.
+  const sessionByRoundKey = new Map();
   for (const session of sessions) {
     if (!session || !session.id) continue;
-    sessionByTypeDate.set(`${session.meeting_type_id}|${session.session_date}`, session);
+    const time = normalizeClock(session.session_time);
+    sessionByRoundKey.set(`${session.meeting_type_id}|${session.session_date}|${time}`, session);
   }
 
   const groups = new Map();
@@ -161,14 +163,10 @@ export function buildBackfillPlan(input) {
   let writtenRows = 0;
   let pendingRounds = 0;
   let pendingRows = 0;
-  // One round per type and date is all the current schema can hold.
-  const plannedDays = new Set();
 
   for (const group of groups.values()) {
-    const dayKey = `${group.typeId}|${group.dateIso}`;
-    const existing = sessionByTypeDate.get(dayKey) ?? null;
-    const alreadyPlanned = plannedDays.has(dayKey);
-    if (!existing && !alreadyPlanned) plannedDays.add(dayKey);
+    const lookupKey = `${group.typeId}|${group.dateIso}|${group.time}`;
+    const existing = sessionByRoundKey.get(lookupKey) ?? null;
     const existingTime = existing ? normalizeClock(existing.session_time) : "";
     const existingLocation = existing ? normalizeLocationValue(existing.location) : "";
 
@@ -176,13 +174,8 @@ export function buildBackfillPlan(input) {
     let sessionId = null;
     let decision = null;
 
-    if (!existing && alreadyPlanned) {
-      // A second round of the same type and date cannot be stored (the unique
-      // key is type + date), so it is reported, never merged into the first.
-      mode = "conflict";
-      decision = "skip";
-    } else if (existing) {
-      if (existingTime === group.time && existingLocation === group.location) {
+    if (existing) {
+      if (existingLocation === group.location) {
         mode = "existing";
         sessionId = existing.id;
       } else {
