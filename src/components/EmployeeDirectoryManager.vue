@@ -30,6 +30,7 @@ const catalog = ref({ departments: [], positions: [] })
 const catalogLoading = ref(true)
 const catalogError = ref('')
 
+const editorOpen = ref(false)
 const selected = ref(null)
 const form = ref({ departmentId: '', positionId: '' })
 const saving = ref(false)
@@ -170,14 +171,32 @@ function openEmployee(item) {
   }
   saveError.value = ''
   saveMessage.value = ''
+  editorOpen.value = true
 }
 
 function closeEditor() {
   if (saving.value) return
+  editorOpen.value = false
+}
+
+// The row is cleared only after the dialog has finished closing, so the card
+// does not vanish before the closing animation ends.
+function onDialogClosed() {
+  if (saving.value || editorOpen.value) return
   selected.value = null
   form.value = { departmentId: '', positionId: '' }
   saveError.value = ''
-  saveMessage.value = ''
+}
+
+// The dialog asks to close on the ×, Cancel, Esc and a scrim click. A save in
+// flight must never be abandoned half way, so those requests are ignored.
+function onDialogModel(value) {
+  if (!value) {
+    if (saving.value) return
+    closeEditor()
+    return
+  }
+  editorOpen.value = true
 }
 
 const canSave = computed(() => {
@@ -208,13 +227,9 @@ async function saveEmployee() {
     }
     const employee = data.employee
     if (employee) {
-      selected.value = employee
-      form.value = {
-        departmentId: employee.departmentId ?? '',
-        positionId: employee.positionId ?? '',
-      }
-      results.value = results.value.map((row) => (row.id === employee.id ? employee : row))
+      results.value = results.value.map((row) => (row.id === employee.id ? { ...row, ...employee } : row))
     }
+    editorOpen.value = false
     saveMessage.value = SAVED_TEXT
   } catch {
     saveError.value = SAVE_ERROR
@@ -327,6 +342,7 @@ onBeforeUnmount(() => {
       <p v-if="hint" class="hint">{{ hint }}</p>
       <p v-if="searching" class="hint">กำลังค้นหา…</p>
       <p v-if="searchError" class="inline-error" role="alert">{{ searchError }}</p>
+      <p v-if="saveMessage" class="inline-ok" role="status">{{ saveMessage }}</p>
     </section>
 
     <section v-if="results.length" class="card">
@@ -350,61 +366,6 @@ onBeforeUnmount(() => {
     </section>
 
     <p v-else-if="searched && !searching" class="empty">{{ EMPTY_TEXT }}</p>
-
-    <section v-if="selected" class="card">
-      <div class="card-head">
-        <h2 class="card-title">แก้ไขข้อมูลพนักงาน</h2>
-        <button type="button" class="btn btn-ghost" :disabled="saving" @click="closeEditor">ปิด</button>
-      </div>
-
-      <dl class="who">
-        <div class="who-row">
-          <dt>ชื่อ-สกุล</dt>
-          <dd>{{ displayName(selected) }}</dd>
-        </div>
-        <div class="who-row">
-          <dt>รหัสพนักงาน</dt>
-          <dd class="code">{{ selected.employeeCode || '—' }}</dd>
-        </div>
-      </dl>
-
-      <p v-if="catalogLoading" class="hint">กำลังโหลดรายการแผนกและตำแหน่ง…</p>
-      <p v-else-if="catalogError" class="inline-error" role="alert">{{ catalogError }}</p>
-
-      <div class="form-grid">
-        <label class="field">
-          <span class="field-label">แผนก</span>
-          <select v-model="form.departmentId" :disabled="saving || !hasCatalog">
-            <option value="" disabled>เลือกแผนก</option>
-            <option v-for="dept in catalog.departments" :key="dept.id" :value="dept.id">
-              {{ dept.name }}
-            </option>
-          </select>
-        </label>
-
-        <label class="field">
-          <span class="field-label">ตำแหน่ง <span class="field-hint">(ไม่บังคับ)</span></span>
-          <select v-model="form.positionId" :disabled="saving || !hasCatalog">
-            <option value="">— ไม่ระบุตำแหน่ง —</option>
-            <option v-for="pos in catalog.positions" :key="pos.id" :value="pos.id">
-              {{ pos.name }}
-            </option>
-          </select>
-        </label>
-      </div>
-
-      <p class="note">ระบบบันทึกเฉพาะแผนกและตำแหน่งของพนักงานคนนี้ ไม่แตะข้อมูลอื่น</p>
-
-      <p v-if="saveError" class="inline-error" role="alert">{{ saveError }}</p>
-      <p v-if="saveMessage" class="inline-ok" role="status">{{ saveMessage }}</p>
-
-      <div class="actions">
-        <button type="button" class="btn btn-primary" :disabled="!canSave" @click="saveEmployee">
-          {{ saving ? 'กำลังบันทึก…' : 'บันทึก' }}
-        </button>
-        <button type="button" class="btn btn-ghost" :disabled="saving" @click="closeEditor">ยกเลิก</button>
-      </div>
-    </section>
 
     <section class="card">
       <h2 class="card-title">รายการแผนกและตำแหน่ง</h2>
@@ -496,6 +457,85 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </section>
+
+    <v-dialog
+      :model-value="editorOpen"
+      max-width="560"
+      :persistent="saving"
+      @update:model-value="onDialogModel"
+      @after-leave="onDialogClosed"
+    >
+      <v-card v-if="selected" class="editor-card">
+        <div class="dialog-head">
+          <div class="dialog-head-text">
+            <h2 class="dialog-title">แก้ไขข้อมูลพนักงาน</h2>
+            <p class="dialog-sub">
+              {{ displayName(selected) }} · {{ selected.employeeCode || '—' }}
+            </p>
+          </div>
+          <button
+            type="button"
+            class="dialog-close"
+            :disabled="saving"
+            aria-label="ปิด"
+            @click="closeEditor"
+          >
+            ×
+          </button>
+        </div>
+
+        <div class="dialog-body">
+          <dl class="who">
+            <div class="who-row">
+              <dt>ชื่อ-สกุล</dt>
+              <dd>{{ displayName(selected) }}</dd>
+            </div>
+            <div class="who-row">
+              <dt>รหัสพนักงาน</dt>
+              <dd class="code">{{ selected.employeeCode || '—' }}</dd>
+            </div>
+          </dl>
+
+          <p v-if="catalogLoading" class="hint">กำลังโหลดรายการแผนกและตำแหน่ง…</p>
+          <p v-else-if="catalogError" class="inline-error" role="alert">{{ catalogError }}</p>
+
+          <div class="form-grid">
+            <label class="field">
+              <span class="field-label">แผนก</span>
+              <select v-model="form.departmentId" :disabled="saving || !hasCatalog">
+                <option value="" disabled>เลือกแผนก</option>
+                <option v-for="dept in catalog.departments" :key="dept.id" :value="dept.id">
+                  {{ dept.name }}
+                </option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span class="field-label">ตำแหน่ง <span class="field-hint">(ไม่บังคับ)</span></span>
+              <select v-model="form.positionId" :disabled="saving || !hasCatalog">
+                <option value="">— ไม่ระบุตำแหน่ง —</option>
+                <option v-for="pos in catalog.positions" :key="pos.id" :value="pos.id">
+                  {{ pos.name }}
+                </option>
+              </select>
+            </label>
+          </div>
+
+          <p class="note">ระบบบันทึกเฉพาะแผนกและตำแหน่งของพนักงานคนนี้ ไม่แตะข้อมูลอื่น</p>
+
+          <p v-if="saveError" class="inline-error" role="alert">{{ saveError }}</p>
+        </div>
+
+        <div class="dialog-actions">
+          <button type="button" class="btn btn-ghost" :disabled="saving" @click="closeEditor">
+            ยกเลิก
+          </button>
+          <button type="button" class="btn btn-primary" :disabled="!canSave" @click="saveEmployee">
+            {{ saving ? 'กำลังบันทึก…' : 'บันทึก' }}
+          </button>
+        </div>
+      </v-card>
+    </v-dialog>
   </div>
 </template>
 
@@ -513,23 +553,11 @@ onBeforeUnmount(() => {
   padding: 18px 20px;
 }
 
-.card-head {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  align-items: center;
-  justify-content: space-between;
-}
-
 .card-title {
   margin: 0 0 6px;
   font-size: 17px;
   font-weight: 700;
   color: #12343b;
-}
-
-.card-head .card-title {
-  margin: 0;
 }
 
 .card-sub {
@@ -639,8 +667,74 @@ onBeforeUnmount(() => {
   word-break: break-word;
 }
 
+/* --- edit dialog --------------------------------------------------------- */
+
+.editor-card {
+  width: 100%;
+  max-width: 560px;
+  border-radius: 14px;
+  background: #ffffff;
+}
+
+.dialog-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid #eef3f2;
+}
+
+.dialog-head-text {
+  min-width: 0;
+}
+
+.dialog-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: #12343b;
+}
+
+.dialog-sub {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: #5c7176;
+  word-break: break-word;
+}
+
+.dialog-close {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid #cfdcda;
+  background: #ffffff;
+  color: #3d4f49;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.dialog-close:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.dialog-body {
+  padding: 16px 20px 4px;
+}
+
+.dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 12px 20px 18px;
+}
+
 .who {
-  margin: 12px 0;
+  margin: 0 0 14px;
   padding: 12px 14px;
   border-radius: 12px;
   background: #f6faf8;
@@ -706,13 +800,6 @@ onBeforeUnmount(() => {
 .field select:disabled {
   background: #f2f4f6;
   color: #8a9793;
-}
-
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 14px;
 }
 
 .btn {
@@ -851,6 +938,19 @@ onBeforeUnmount(() => {
 
   .cell-action::before {
     content: none;
+  }
+}
+
+@media (max-width: 600px) {
+  .editor-card {
+    max-width: calc(100vw - 24px);
+  }
+
+  .dialog-body,
+  .dialog-head,
+  .dialog-actions {
+    padding-left: 14px;
+    padding-right: 14px;
   }
 }
 </style>
