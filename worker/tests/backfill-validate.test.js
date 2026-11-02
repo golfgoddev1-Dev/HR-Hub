@@ -301,3 +301,19 @@ test("times that are not valid are still refused", () => {
     assert.deepEqual(parseTimeCell(input), { ok: false, reason: REASONS.timeInvalid }, input);
   }
 });
+
+test("real Excel time fractions of any digit length are accepted", () => {
+  const accepted = {
+    "0.4166666666666667": "10:00",
+    "0.42569444444444443": "10:13",
+    "0.3958333333333333": "09:30",
+    "0.4375": "10:30",
+  };
+  for (const [input, expected] of Object.entries(accepted)) {
+    assert.deepEqual(parseTimeCell(input), { ok: true, hhmm: expected }, input);
+  }
+  assert.deepEqual(parseTimeCell(0.4166666666666667), { ok: true, hhmm: "10:00" });
+  for (const input of ["1", "1.5", "2.25", "-0.375", "-1"]) {
+    assert.deepEqual(parseTimeCell(input), { ok: false, reason: REASONS.timeInvalid }, input);
+  }
+});

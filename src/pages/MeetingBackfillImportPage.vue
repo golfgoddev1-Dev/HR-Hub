@@ -115,7 +115,7 @@ function toHhmm(value) {
     }
     return text
   }
-  const fraction = /^(?:0)?\.(\d{1,15})$/.exec(text)
+  const fraction = /^(?:0)?\.(\d+)$/.exec(text)
   if (fraction) {
     const minutes = Math.round(Number(`0.${fraction[1]}`) * 1440) % 1440
     return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`

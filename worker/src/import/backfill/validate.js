@@ -159,7 +159,7 @@ export function parseTimeCell(value) {
     return { ok: true, hhmm: `${pad(hour)}:${pad(minute)}` };
   }
 
-  const fraction = /^(?:0)?\.(\d{1,15})$/.exec(text);
+  const fraction = /^(?:0)?\.(\d+)$/.exec(text);
   if (fraction) {
     const minutes = Math.round(Number(`0.${fraction[1]}`) * 1440) % 1440;
     return { ok: true, hhmm: `${pad(Math.floor(minutes / 60))}:${pad(minutes % 60)}` };
