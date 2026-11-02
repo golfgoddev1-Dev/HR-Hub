@@ -3,19 +3,21 @@
 // sessions that already exist for the dates in the file and the
 // (session, employee) pairs that are already recorded.
 //
-// A round is identified by ประเภท + วันที่ + เวลา + สถานที่. When a session for
-// the same type and date already exists with a different time or location, the
-// round is a conflict: HR either joins the existing round ("join") or skips it.
-// Anything not chosen is skipped.
+// A round is identified by ประเภท + วันที่ only: every imported round is stored
+// with session_time = "". The time in column C belongs to the person, not to the
+// round, and becomes that row's registered_at (Asia/Bangkok). When a round for
+// the type and date already exists it is reused, never duplicated, so there is
+// no join/skip decision to make.
 
 import { REASONS, collapseWhitespace, matchEmployees, validateBackfillRow } from "./validate.js";
 
+// Still exported because the route validates the legacy `decisions` field of
+// older clients; planning itself ignores it now that a round is never a conflict.
 export const DECISION_JOIN = "join";
 export const DECISION_SKIP = "skip";
 
 export const REASON_DUPLICATE_IN_ROUND = "ชื่อพนักงานซ้ำในรอบเดียวกันของไฟล์";
 export const REASON_ALREADY_RECORDED = "มีข้อมูลของคนนี้ในรอบนี้แล้ว";
-export const REASON_CONFLICT_SKIPPED = "รอบนี้มีอยู่ในระบบด้วยเวลา/สถานที่ต่างกัน และเลือกข้าม";
 
 /** HH:mm from a text or time column value ("10:00", "10:00:00"). */
 export function normalizeClock(value) {
@@ -28,8 +30,22 @@ export function normalizeLocationValue(value) {
   return collapseWhitespace(value ?? "");
 }
 
-export function roundKeyOf(typeId, dateIso, time, location) {
-  return [typeId, dateIso, time, normalizeLocationValue(location)].join("|");
+/** A round is type + date; the time in the file is per person, not per round. */
+export function roundKeyOf(typeId, dateIso) {
+  return [typeId, dateIso].join("|");
+}
+
+/**
+ * The file time as a timestamptz in Asia/Bangkok. Thailand has no daylight
+ * saving, so the offset is always +07:00 and the value never depends on the
+ * clock or timezone of the machine that runs the Worker.
+ * Returns null for anything that is not a date + HH:mm.
+ */
+export function bangkokTimestamp(dateIso, hhmm) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateIso ?? ""))) return null;
+  if (!/^\d{2}:\d{2}$/.test(String(hhmm ?? ""))) return null;
+  const value = `${dateIso}T${hhmm}:00+07:00`;
+  return Number.isNaN(Date.parse(value)) ? null : value;
 }
 
 const EMPTY_COUNTS = () => ({
@@ -46,7 +62,7 @@ const EMPTY_COUNTS = () => ({
  * @param {Array<{id:string, full_name:string, name_prefix?:string}>} input.employees
  * @param {Array<{id:string, meeting_type_id:string, session_date:string, session_time?:string|null, location?:string|null}>} [input.sessions]
  * @param {Set<string>} [input.recorded]  "sessionId:employeeId" of existing rows
- * @param {Map<string, string>} [input.decisions]  round key -> "join" | "skip"
+ * @param {Map<string, string>} [input.decisions]  legacy field, ignored
  */
 export function buildBackfillPlan(input) {
   const {
@@ -55,7 +71,6 @@ export function buildBackfillPlan(input) {
     employees = [],
     sessions = [],
     recorded = new Set(),
-    decisions = new Map(),
   } = input;
 
   const types = meetingTypes.filter((type) => type && type.id && type.name);
@@ -81,6 +96,20 @@ export function buildBackfillPlan(input) {
 
     const data = result.row;
     const type = typeByName.get(data.meetingTypeName);
+
+    // The registration time comes from this row's own column C. A row without a
+    // usable time is reported and never given an invented value.
+    const registeredAt = bangkokTimestamp(data.dateIso, data.timeHhmm);
+    if (registeredAt === null) {
+      skipped.push({
+        row: row.rowNumber,
+        typeName: data.meetingTypeName,
+        dateIso: data.dateIso,
+        name: data.employeeName,
+        reason: REASONS.timeInvalid,
+      });
+      continue;
+    }
 
     // The browser matches the name against the employee list and sends the id,
     // so the Worker only checks that the id exists. A request without ids (the
@@ -126,6 +155,7 @@ export function buildBackfillPlan(input) {
       typeName: type.name,
       dateIso: data.dateIso,
       time: data.timeHhmm,
+      registeredAt,
       location: normalizeLocationValue(data.location),
       statusCode: data.statusCode,
       shift: data.shift,
@@ -133,17 +163,23 @@ export function buildBackfillPlan(input) {
     });
   }
 
-  // A round is keyed by type + date + time: one type can have several rounds a day.
+  // One round per type + date. When the database still holds more than one row
+  // for the pair (older data), the day round with session_time = "" wins so the
+  // import never creates a second round.
   const sessionByRoundKey = new Map();
   for (const session of sessions) {
     if (!session || !session.id) continue;
-    const time = normalizeClock(session.session_time);
-    sessionByRoundKey.set(`${session.meeting_type_id}|${session.session_date}|${time}`, session);
+    const key = roundKeyOf(session.meeting_type_id, session.session_date);
+    const current = sessionByRoundKey.get(key);
+    const blank = normalizeClock(session.session_time) === "";
+    if (!current || (blank && normalizeClock(current.session_time) !== "")) {
+      sessionByRoundKey.set(key, session);
+    }
   }
 
   const groups = new Map();
   for (const entry of valid) {
-    const key = roundKeyOf(entry.typeId, entry.dateIso, entry.time, entry.location);
+    const key = roundKeyOf(entry.typeId, entry.dateIso);
     if (!groups.has(key)) {
       groups.set(key, {
         key,
@@ -151,8 +187,6 @@ export function buildBackfillPlan(input) {
         typeCode: entry.typeCode,
         typeName: entry.typeName,
         dateIso: entry.dateIso,
-        time: entry.time,
-        location: entry.location,
         candidates: [],
       });
     }
@@ -161,45 +195,22 @@ export function buildBackfillPlan(input) {
 
   const rounds = [];
   let writtenRows = 0;
-  let pendingRounds = 0;
-  let pendingRows = 0;
 
   for (const group of groups.values()) {
-    const lookupKey = `${group.typeId}|${group.dateIso}|${group.time}`;
-    const existing = sessionByRoundKey.get(lookupKey) ?? null;
-    const existingTime = existing ? normalizeClock(existing.session_time) : "";
-    const existingLocation = existing ? normalizeLocationValue(existing.location) : "";
+    const existing = sessionByRoundKey.get(group.key) ?? null;
+    const mode = existing ? "existing" : "new";
+    const sessionId = existing ? existing.id : null;
 
-    let mode = "new";
-    let sessionId = null;
-    let decision = null;
-
-    if (existing) {
-      if (existingLocation === group.location) {
-        mode = "existing";
-        sessionId = existing.id;
-      } else {
-        decision = decisions.get(group.key) === DECISION_JOIN ? DECISION_JOIN : DECISION_SKIP;
-        if (decision === DECISION_JOIN) {
-          mode = "joined";
-          sessionId = existing.id;
-        } else {
-          mode = "conflict";
-        }
-      }
-    }
+    // An imported round never carries a location: the file column is ignored and
+    // null is stored, so several places in one round cannot pick one of them.
+    const times = [...new Set(group.candidates.map((candidate) => candidate.time))].sort();
 
     const statusCounts = EMPTY_COUNTS();
     const shiftCounts = { "กะ A": 0, "กะ B": 0 };
     const seen = new Set();
     const entries = [];
-    let roundSkipped = 0;
 
     for (const candidate of group.candidates) {
-      if (mode === "conflict") {
-        roundSkipped += 1;
-        continue;
-      }
       if (seen.has(candidate.employeeId)) {
         skipped.push({
           row: candidate.row,
@@ -227,6 +238,8 @@ export function buildBackfillPlan(input) {
         row: candidate.row,
         employeeId: candidate.employeeId,
         employeeName: candidate.employeeName,
+        time: candidate.time,
+        registeredAt: candidate.registeredAt,
         statusCode: candidate.statusCode,
         shift: candidate.shift,
         reason: candidate.reason,
@@ -235,53 +248,52 @@ export function buildBackfillPlan(input) {
       if (candidate.statusCode === "leave" && candidate.shift) shiftCounts[candidate.shift] += 1;
     }
 
-    const round = {
+    rounds.push({
       key: group.key,
       typeId: group.typeId,
       typeCode: group.typeCode,
       typeName: group.typeName,
       dateIso: group.dateIso,
-      time: group.time,
-      location: group.location,
+      // The stored round has no time of its own; `times` lists the file times of
+      // the people in it, for display only.
+      time: "",
+      times,
+      location: null,
       rows: entries.length,
       fileRows: group.candidates.length,
       mode,
-      decision,
+      decision: null,
       sessionId,
       existing: existing
-        ? { sessionId: existing.id, time: existingTime, location: existingLocation }
+        ? {
+            sessionId: existing.id,
+            time: normalizeClock(existing.session_time),
+            location: normalizeLocationValue(existing.location),
+          }
         : null,
       statusCounts,
       shiftCounts,
       entries,
-    };
+    });
 
-    if (mode === "conflict") {
-      pendingRounds += 1;
-      pendingRows += roundSkipped;
-    } else {
-      writtenRows += entries.length;
-    }
-
-    if (roundSkipped > 0 && mode === "conflict") {
-      round.skippedRows = roundSkipped;
-    }
-
-    rounds.push(round);
+    writtenRows += entries.length;
   }
 
-  rounds.sort((a, b) => (a.dateIso === b.dateIso ? a.time.localeCompare(b.time) : a.dateIso.localeCompare(b.dateIso)));
+  rounds.sort((a, b) =>
+    a.dateIso === b.dateIso ? a.typeCode.localeCompare(b.typeCode) : a.dateIso.localeCompare(b.dateIso)
+  );
 
   const summary = {
     dataRows: rows.length,
     rounds: rounds.length,
     newRounds: rounds.filter((round) => round.mode === "new").length,
     existingRounds: rounds.filter((round) => round.mode === "existing").length,
-    joinedRounds: rounds.filter((round) => round.mode === "joined").length,
-    conflictRounds: pendingRounds,
-    needsDecision: pendingRounds,
-    pendingRows,
-    writeRounds: rounds.filter((round) => round.mode !== "conflict").length,
+    // Kept so older clients keep working; a round is never a conflict now.
+    joinedRounds: 0,
+    conflictRounds: 0,
+    needsDecision: 0,
+    pendingRows: 0,
+    writeRounds: rounds.length,
     writeRows: writtenRows,
     skipped: skipped.length,
   };

@@ -32,7 +32,6 @@ const fileError = ref('')
 const selectedFile = ref(null)
 const preview = ref(null)
 const result = ref(null)
-const decisions = ref({})
 const batchCount = ref(0)
 const employees = ref([])
 const employeeError = ref('')
@@ -40,13 +39,11 @@ const prepared = ref(null)
 
 const summary = computed(() => preview.value?.summary ?? null)
 const rounds = computed(() => preview.value?.rounds ?? [])
-const conflicts = computed(() => rounds.value.filter((round) => round.mode === 'conflict' || round.mode === 'joined'))
 
 function reset() {
   stage.value = 'idle'
   preview.value = null
   result.value = null
-  decisions.value = {}
   errorMessage.value = ''
   fileError.value = ''
   selectedFile.value = null
@@ -198,25 +195,12 @@ function matchEmployee(rawName) {
   return { ok: false, reason: `ไม่พบชื่อพนักงานในระบบ (พบ: ${name})` }
 }
 
-function seedDecisions(data) {
-  const next = { ...decisions.value }
-  for (const round of data.rounds ?? []) {
-    if (next[round.key]) continue
-    next[round.key] = round.mode === 'joined' ? 'join' : 'skip'
-  }
-  decisions.value = next
-}
-
 function emptySummary() {
   return {
     dataRows: 0,
     rounds: 0,
     newRounds: 0,
     existingRounds: 0,
-    joinedRounds: 0,
-    conflictRounds: 0,
-    needsDecision: 0,
-    pendingRows: 0,
     writeRounds: 0,
     writeRows: 0,
     skipped: 0,
@@ -237,7 +221,8 @@ function mergeRounds(store, incoming) {
     }
     current.shiftCounts['กะ A'] += round.shiftCounts['กะ A']
     current.shiftCounts['กะ B'] += round.shiftCounts['กะ B']
-    if (round.mode === 'conflict' || current.mode !== 'conflict') current.mode = round.mode === 'conflict' ? 'conflict' : current.mode
+    current.times = [...new Set([...(current.times ?? []), ...(round.times ?? [])])].sort()
+    if (round.mode === 'existing') current.mode = 'existing'
   }
 }
 
@@ -248,7 +233,6 @@ async function onFileChange(event) {
   fileError.value = ''
   preview.value = null
   result.value = null
-  decisions.value = {}
 
   const problem = await checkFile(file)
   if (problem) {
@@ -323,7 +307,6 @@ async function onFileChange(event) {
       for (const item of data.skipped ?? []) {
         if (skipped.length < 500) skipped.push(item)
       }
-      seedDecisions(data)
     }
 
     totals.rounds = merged.size
@@ -332,7 +315,7 @@ async function onFileChange(event) {
     preview.value = {
       fileName: file.name,
       summary: totals,
-      rounds: [...merged.values()].sort((a, b) => (a.dateIso === b.dateIso ? a.time.localeCompare(b.time) : a.dateIso.localeCompare(b.dateIso))),
+      rounds: [...merged.values()].sort((a, b) => (a.dateIso === b.dateIso ? a.typeCode.localeCompare(b.typeCode) : a.dateIso.localeCompare(b.dateIso))),
       skipped,
     }
     stage.value = 'preview'
@@ -350,10 +333,6 @@ async function confirmImport() {
   try {
     const { matched, unmatched } = prepared.value
     const total = Math.ceil(matched.length / BATCH_ROWS)
-    const decisionList = Object.entries(decisions.value).map(([key, decision]) => ({
-      key,
-      decision: decision === 'join' ? 'join' : 'skip',
-    }))
     const aggregate = {
       sessionsCreated: 0,
       sessionsReused: 0,
@@ -372,16 +351,15 @@ async function confirmImport() {
         rowNumbers: batch.rowNumbers,
         rows: batch.rows,
         employeeIds: batch.employeeIds,
-        decisions: decisionList,
         final: last,
         totals: last
           ? {
               rounds: preview.value.summary.writeRounds,
               sessionsCreated: preview.value.summary.newRounds,
-              sessionsReused: preview.value.summary.existingRounds + preview.value.summary.joinedRounds,
+              sessionsReused: preview.value.summary.existingRounds,
               attendance: preview.value.summary.writeRows,
               skipped: preview.value.summary.skipped,
-              conflictsSkipped: preview.value.summary.conflictRounds,
+              conflictsSkipped: 0,
             }
           : undefined,
       })
@@ -408,8 +386,7 @@ async function confirmImport() {
   }
 }
 
-const modeLabel = (mode) =>
-  ({ new: 'รอบใหม่', existing: 'มีรอบอยู่แล้ว', joined: 'รวมเข้ารอบเดิม', conflict: 'รอบซ้ำ ต้องเลือก' })[mode] ?? mode
+const modeLabel = (mode) => ({ new: 'รอบใหม่', existing: 'ใช้รอบเดิม' })[mode] ?? mode
 </script>
 
 <template>
@@ -468,40 +445,8 @@ const modeLabel = (mode) =>
           <div class="stat"><span class="stat-value">{{ summary.rounds }}</span><span class="stat-label">รอบ</span></div>
           <div class="stat"><span class="stat-value">{{ summary.newRounds }}</span><span class="stat-label">รอบใหม่</span></div>
           <div class="stat"><span class="stat-value">{{ summary.existingRounds }}</span><span class="stat-label">รอบที่มีอยู่แล้ว</span></div>
-          <div class="stat"><span class="stat-value">{{ summary.conflictRounds }}</span><span class="stat-label">รอบซ้ำต้องเลือก</span></div>
           <div class="stat"><span class="stat-value">{{ summary.writeRows }}</span><span class="stat-label">แถวที่จะบันทึก</span></div>
           <div class="stat"><span class="stat-value">{{ summary.skipped }}</span><span class="stat-label">แถวที่ข้าม</span></div>
-        </div>
-
-        <v-alert v-if="summary.conflictRounds > 0" type="warning" variant="tonal" class="mb-4">
-          มี {{ summary.conflictRounds }} รอบที่ประเภทและวันเดียวกับรอบในระบบแต่เวลา/สถานที่ต่างกัน
-          เลือกได้ว่าจะเพิ่มคนเข้ารอบเดิมหรือข้ามรอบนี้ (ค่าเริ่มต้นคือข้าม)
-        </v-alert>
-
-        <div v-if="conflicts.length" class="block">
-          <h3 class="block-title">รอบที่ต้องเลือก</h3>
-          <div v-for="round in conflicts" :key="round.key" class="choice-row">
-            <div class="choice-info">
-              <div class="choice-main">
-                {{ round.typeName }} · {{ round.dateIso }} · ไฟล์ระบุ {{ round.time }} ·
-                {{ round.location || 'ไม่ระบุสถานที่' }}
-              </div>
-              <div class="choice-sub">
-                ในระบบ: {{ round.existing?.time || 'ไม่ระบุเวลา' }} ·
-                {{ round.existing?.location || 'ไม่ระบุสถานที่' }} · {{ round.fileRows }} แถวในไฟล์
-              </div>
-            </div>
-            <div class="choice-actions">
-              <label class="radio">
-                <input v-model="decisions[round.key]" type="radio" value="skip" />
-                <span>ข้ามรอบนี้</span>
-              </label>
-              <label class="radio">
-                <input v-model="decisions[round.key]" type="radio" value="join" />
-                <span>เพิ่มคนเข้ารอบเดิม</span>
-              </label>
-            </div>
-          </div>
         </div>
 
         <div class="block">
@@ -510,7 +455,7 @@ const modeLabel = (mode) =>
             <table class="table">
               <thead>
                 <tr>
-                  <th>วันที่</th><th>ประเภท</th><th>เวลา</th><th>สถานที่</th>
+                  <th>วันที่</th><th>ประเภท</th><th>เวลาในไฟล์</th>
                   <th>เข้าร่วม</th><th>ลา (A/B)</th><th>ไม่เข้าร่วม</th><th>ติดงานด่วน</th><th>สถานะรอบ</th>
                 </tr>
               </thead>
@@ -518,8 +463,7 @@ const modeLabel = (mode) =>
                 <tr v-for="round in rounds" :key="round.key">
                   <td>{{ round.dateIso }}</td>
                   <td>{{ round.typeName }}</td>
-                  <td>{{ round.time }}</td>
-                  <td>{{ round.location || '—' }}</td>
+                  <td>{{ round.times?.length ? round.times.join(', ') : '—' }}</td>
                   <td>{{ round.statusCounts.attended }}</td>
                   <td>{{ round.statusCounts.leave }} ({{ round.shiftCounts['กะ A'] }}/{{ round.shiftCounts['กะ B'] }})</td>
                   <td>{{ round.statusCounts.not_attended }}</td>
@@ -565,7 +509,6 @@ const modeLabel = (mode) =>
           <li>สร้างรอบใหม่ {{ result.summary.sessionsCreated }} รอบ</li>
           <li>ใช้รอบเดิม {{ result.summary.sessionsReused }} รอบ</li>
           <li>บันทึกสถานะ {{ result.summary.attendanceWritten }} แถว</li>
-          <li>ข้ามรอบซ้ำ {{ result.summary.conflictsSkipped }} รอบ</li>
           <li>ข้ามแถว {{ result.summary.skipped }} แถว</li>
         </ul>
 
@@ -796,56 +739,6 @@ const modeLabel = (mode) =>
 .badge-existing {
   background: #eaf0f7;
   color: #2c4f7c;
-}
-
-.badge-joined {
-  background: #fff4e0;
-  color: #8a5a12;
-}
-
-.badge-conflict {
-  background: #fdecec;
-  color: #9b2c2c;
-}
-
-.choice-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  justify-content: space-between;
-  align-items: center;
-  border: 1px solid #e6edeb;
-  border-radius: 10px;
-  padding: 12px;
-  margin-bottom: 8px;
-}
-
-.choice-main {
-  font-size: 14px;
-  font-weight: 600;
-  color: #12343b;
-}
-
-.choice-sub {
-  font-size: 12px;
-  color: #5c7176;
-  margin-top: 4px;
-  line-height: 1.6;
-}
-
-.choice-actions {
-  display: flex;
-  gap: 14px;
-  flex-wrap: wrap;
-}
-
-.radio {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: #29434a;
-  cursor: pointer;
 }
 
 .actions {

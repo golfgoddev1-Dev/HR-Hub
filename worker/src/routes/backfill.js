@@ -415,6 +415,7 @@ function publicRound(round) {
     typeName: round.typeName,
     dateIso: round.dateIso,
     time: round.time,
+    times: round.times,
     location: round.location,
     rows: round.rows,
     fileRows: round.fileRows,
@@ -448,8 +449,8 @@ async function applyPlan(db, plan, { fileName, actorId, totals = null }) {
 
   // 1. New rounds: one upsert. The unique key is (meeting_type_id, session_date,
   //    session_time), so a round that raced into existence is reused instead of
-  //    duplicated. open_time/cutoff_time describe a registration window that is
-  //    irrelevant for a past date and are set to a closed full day.
+  //    duplicated. A past round has no registration window, so open_time and
+  //    cutoff_time stay null (both columns accept null for historical rounds).
   const newRounds = writable.filter((round) => round.mode === "new");
   const sessionIdByRound = new Map(
     writable.filter((round) => round.sessionId).map((round) => [round.key, round.sessionId])
@@ -460,10 +461,10 @@ async function applyPlan(db, plan, { fileName, actorId, totals = null }) {
       meeting_type_id: round.typeId,
       session_date: round.dateIso,
       cycle_key: `${round.typeCode}-${round.dateIso}`,
-      session_time: round.time,
-      location: round.location === "" ? null : round.location,
-      open_time: "00:00",
-      cutoff_time: "23:59",
+      session_time: "",
+      location: null,
+      open_time: null,
+      cutoff_time: null,
     }));
 
     const created = ensureOk(
@@ -497,7 +498,7 @@ async function applyPlan(db, plan, { fileName, actorId, totals = null }) {
         status_code: entry.statusCode,
         reason: entry.reason,
         shift: entry.shift,
-        registered_at: new Date().toISOString(),
+        registered_at: entry.registeredAt,
       });
     }
   }
@@ -989,6 +990,17 @@ function historyFilters(filters, types, employeeId) {
   return parts;
 }
 
+/**
+ * HH:mm in Asia/Bangkok from a stored instant. Thailand is a fixed +07:00 with
+ * no daylight saving, so shifting the epoch is exact and needs no locale data.
+ */
+function bangkokHhmm(value) {
+  if (!value) return null;
+  const ms = Date.parse(String(value));
+  if (Number.isNaN(ms)) return null;
+  return new Date(ms + 7 * 60 * 60 * 1000).toISOString().slice(11, 16);
+}
+
 function mapHistoryRow(row) {
   const session = firstEmbedded(row.meeting_sessions);
   const type = session ? firstEmbedded(session.meeting_types) : null;
@@ -996,7 +1008,8 @@ function mapHistoryRow(row) {
   return {
     attendanceId: row.id,
     date: session?.session_date ?? null,
-    time: normalizeClock(session?.session_time) || null,
+    // The time of an imported round belongs to the person, not to the round.
+    time: bangkokHhmm(row.registered_at),
     location: normalizeLocationValue(session?.location) || null,
     cycleKey: session?.cycle_key ?? null,
     typeCode: type?.code ?? null,

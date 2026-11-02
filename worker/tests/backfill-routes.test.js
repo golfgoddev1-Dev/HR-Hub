@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import app from "../src/app.js";
 import { sha256Hex } from "../src/crypto.js";
-import { buildSheetXlsx } from "../src/import/xlsx.js";
+import { buildSheetXlsx, parseXlsx } from "../src/import/xlsx.js";
 import { BACKFILL_HEADERS } from "../src/import/backfill/validate.js";
 
 const TOKEN = "c".repeat(43);
@@ -305,14 +305,14 @@ test("the template download is an xlsx with the A-L headers", async () => {
   }
 });
 
-test("preview reports new rounds, skips and conflicts without writing", async () => {
+test("preview reuses the round of the same type and date and never asks for a decision", async () => {
   const fake = await createFake({
     meetings: [
       {
         id: "session-old",
         meeting_type_id: "type-sup",
         session_date: "2026-10-01",
-        session_time: "09:00",
+        session_time: "",
         location: "ห้องประชุม B",
       },
     ],
@@ -332,8 +332,11 @@ test("preview reports new rounds, skips and conflicts without writing", async ()
     const data = await response.json();
     assert.equal(data.ok, true);
     assert.equal(data.summary.dataRows, 3);
-    assert.equal(data.summary.conflictRounds, 1);
-    assert.equal(data.summary.needsDecision, 1);
+    assert.equal(data.summary.conflictRounds, 0);
+    assert.equal(data.summary.needsDecision, 0);
+    assert.equal(data.summary.existingRounds, 1);
+    assert.equal(data.rounds[0].mode, "existing");
+    assert.equal(data.rounds[0].sessionId, "session-old");
     assert.equal(data.summary.skipped, 2);
     assert.equal(fake.state.attendance.length, 0);
     assert.equal(fake.state.audits.length, 0);
@@ -361,7 +364,10 @@ test("confirm creates the round, writes attendance and one audit row", async () 
     assert.equal(data.summary.attendanceWritten, 2);
     assert.equal(fake.state.meetings.length, 1);
     assert.equal(fake.state.meetings[0].cycle_key, "sup-2026-10-01");
-    assert.equal(fake.state.meetings[0].session_time, "09:00");
+    assert.equal(fake.state.meetings[0].session_time, "");
+    assert.equal(fake.state.meetings[0].location, null);
+    assert.equal(fake.state.meetings[0].open_time, null);
+    assert.equal(fake.state.meetings[0].cutoff_time, null);
     const sessionUpsert = fake.calls.find(
       (call) => call.method === "POST" && call.url.includes("meeting_sessions")
     );
@@ -382,7 +388,7 @@ test("confirm creates the round, writes attendance and one audit row", async () 
   }
 });
 
-test("choosing join writes into the existing round and creates no session", async () => {
+test("an existing round for the type and date is reused without a decision", async () => {
   const fake = await createFake({
     meetings: [
       {
@@ -395,13 +401,10 @@ test("choosing join writes into the existing round and creates no session", asyn
     ],
   });
   try {
-    const decisions = [
-      { key: "type-sup|2026-10-01|09:00|ห้องประชุม A", decision: "join" },
-    ];
     const response = await request("/api/meeting/backfill/confirm", {
       method: "POST",
       headers: AUTH,
-      body: fileForm([row()], { decisions }),
+      body: fileForm([row()]),
     });
     assert.equal(response.status, 200);
     const data = await response.json();
@@ -410,6 +413,32 @@ test("choosing join writes into the existing round and creates no session", asyn
     assert.equal(fake.state.meetings.length, 1);
     assert.equal(fake.state.attendance.length, 1);
     assert.equal(fake.state.attendance[0].session_id, "session-old");
+  } finally {
+    fake.restore();
+  }
+});
+
+test("several file times in one day share one round and keep their own registered_at", async () => {
+  const fake = await createFake();
+  try {
+    const response = await request("/api/meeting/backfill/confirm", {
+      method: "POST",
+      headers: AUTH,
+      body: fileForm([
+        row({ time: "09:15" }),
+        row({ time: "14:40", name: "นาง สมหญิง ทดสอบ", status: "ไม่เข้าร่วม" }),
+      ]),
+    });
+    assert.equal(response.status, 200);
+    const data = await response.json();
+    assert.equal(data.summary.sessionsCreated, 1);
+    assert.equal(data.summary.attendanceWritten, 2);
+    assert.equal(fake.state.meetings.length, 1);
+    assert.equal(fake.state.meetings[0].session_time, "");
+    assert.deepEqual(
+      fake.state.attendance.map((entry) => entry.registered_at),
+      ["2026-10-01T09:15:00+07:00", "2026-10-01T14:40:00+07:00"]
+    );
   } finally {
     fake.restore();
   }
@@ -529,11 +558,11 @@ test("one person's history is paginated and refuses a non-uuid id", async () => 
         employee_id: EMPLOYEE_ID,
         status_code: "attended",
         shift: null,
-        registered_at: "2026-10-01T02:00:00.000Z",
+        registered_at: "2026-10-01T02:15:00.000Z",
         employees: { full_name: "นาย สมชาย ทดสอบ", departments: { name: "ฝ่ายบุคคล" }, positions: { name: "หัวหน้างาน" } },
         meeting_sessions: {
           session_date: "2026-10-01",
-          session_time: "09:00",
+          session_time: "",
           location: "ห้องประชุม A",
           cycle_key: "sup-2026-10-01",
           meeting_type_id: "type-sup",
@@ -553,7 +582,7 @@ test("one person's history is paginated and refuses a non-uuid id", async () => 
     const data = await response.json();
     assert.equal(data.items.length, 1);
     assert.equal(data.items[0].statusLabel, "เข้าร่วมประชุม");
-    assert.equal(data.items[0].time, "09:00");
+    assert.equal(data.items[0].time, "09:15", "the person's time comes from registered_at");
   } finally {
     fake.restore();
   }
@@ -798,5 +827,86 @@ test("a malformed employee id list is refused with 400", async () => {
     assert.equal(response.status, 400);
   } finally {
     fake.restore();
+  }
+});
+
+test("the export keeps the per-person time so it can be imported back unchanged", async () => {
+  const source = await createFake({
+    meetings: [
+      {
+        id: "session-1",
+        meeting_type_id: "type-sup",
+        session_date: "2026-10-01",
+        session_time: "",
+        location: null,
+        cycle_key: "sup-2026-10-01",
+      },
+    ],
+    attendance: [
+      {
+        id: "a1",
+        session_id: "session-1",
+        employee_id: EMPLOYEE_ID,
+        status_code: "attended",
+        shift: null,
+        reason: null,
+        registered_at: "2026-10-01T02:15:00.000Z",
+        employees: {
+          full_name: "นาย สมชาย ทดสอบ",
+          departments: { name: "ฝ่ายบุคคล" },
+          positions: { name: "หัวหน้างาน" },
+        },
+        meeting_sessions: {
+          session_date: "2026-10-01",
+          session_time: "",
+          location: null,
+          cycle_key: "sup-2026-10-01",
+          meeting_type_id: "type-sup",
+          meeting_types: { code: "sup", name: "ประชุมหัวหน้างาน" },
+        },
+      },
+    ],
+  });
+
+  let exported;
+  try {
+    const response = await request("/api/meeting/backfill/history/export", { headers: AUTH });
+    assert.equal(response.status, 200);
+    exported = parseXlsx(new Uint8Array(await response.arrayBuffer()));
+  } finally {
+    source.restore();
+  }
+
+  assert.equal(exported[0][2], "เวลา");
+  const dataRows = exported.slice(1).filter((cells) => cells.some((cell) => String(cell ?? "") !== ""));
+  assert.equal(dataRows.length, 1);
+  assert.equal(dataRows[0][2], "09:15", "column C holds the person's time");
+  assert.equal(dataRows[0][3], "", "an empty location stays empty");
+
+  const target = await createFake();
+  try {
+    const response = await request("/api/meeting/backfill/confirm-batch", {
+      method: "POST",
+      headers: jsonBody(),
+      body: JSON.stringify({
+        fileName: "reimport.xlsx",
+        startRow: 2,
+        rows: dataRows,
+        final: true,
+        totals: { rounds: 1, sessionsCreated: 1, sessionsReused: 0, attendance: 1, skipped: 0, conflictsSkipped: 0 },
+      }),
+    });
+    assert.equal(response.status, 200);
+    const data = await response.json();
+    assert.equal(data.summary.sessionsCreated, 1);
+    assert.equal(target.state.meetings.length, 1);
+    assert.equal(target.state.meetings[0].session_date, "2026-10-01");
+    assert.equal(target.state.meetings[0].session_time, "");
+    assert.equal(target.state.meetings[0].location, null);
+    assert.equal(target.state.attendance.length, 1);
+    assert.equal(target.state.attendance[0].registered_at, "2026-10-01T09:15:00+07:00");
+    assert.equal(target.state.attendance[0].status_code, "attended");
+  } finally {
+    target.restore();
   }
 });
