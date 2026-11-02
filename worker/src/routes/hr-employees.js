@@ -45,6 +45,7 @@ const SAVE_ERROR_MESSAGE = "ระบบขัดข้องชั่วคร�
 const NATIONAL_ID_UNAVAILABLE = "ไม่สามารถแสดงเลขบัตรประชาชนของรายการนี้ได้";
 const NO_PREFIXES_MESSAGE = "ยังไม่มีรายการคำนำหน้าในระบบ กรุณาแจ้งผู้ดูแล";
 const NO_DEPARTMENTS_MESSAGE = "ยังไม่มีรายการแผนกในระบบ กรุณาแจ้งผู้ดูแล";
+const DUPLICATE_ID_MESSAGE = "เลขบัตรประชาชนซ้ำกับพนักงานคนอื่นในระบบ";
 const FORBIDDEN_MESSAGE = "ไม่มีสิทธิ์เข้าถึงส่วนนี้";
 const SEARCH_TOO_SHORT_MESSAGE = "กรุณาพิมพ์อย่างน้อย 2 ตัวอักษรเพื่อค้นหา";
 
@@ -83,6 +84,30 @@ function ensureOk(result) {
     throw error;
   }
   return result;
+}
+
+/**
+ * The employee ids that already own each hash. Chunked because a 500-row file
+ * would otherwise put hundreds of 64-character values into one query string.
+ */
+const HASH_LOOKUP_CHUNK = 100;
+
+async function findHashOwners(db, hashes) {
+  const owners = new Map();
+  for (let index = 0; index < hashes.length; index += HASH_LOOKUP_CHUNK) {
+    const chunk = hashes.slice(index, index + HASH_LOOKUP_CHUNK);
+    const rows = await db.select(CREDENTIALS_TABLE, {
+      columns: "employee_id,national_id_hash",
+      filters: [["national_id_hash", "in", chunk]],
+    });
+    for (const row of rows) {
+      const hash = String(row.national_id_hash ?? "").toLowerCase();
+      if (hash.length === 0) continue;
+      if (!owners.has(hash)) owners.set(hash, new Set());
+      owners.get(hash).add(row.employee_id);
+    }
+  }
+  return owners;
 }
 
 async function guard(c) {
@@ -413,7 +438,58 @@ hrEmployees.post("/import/confirm", async (c) => {
     const session = c.get("hrSession");
     const nowIso = new Date().toISOString();
 
-    // 1. Employees: one upsert per group. New rows carry is_active=true;
+    // 1. Hashes and the duplicate check, before anything is written. A national
+    //    ID that already belongs to another employee is rejected with its row
+    //    number and employee code only; the file value is never echoed back.
+    const needsHash = [
+      ...plan.added.map((entry) => ({ entry })),
+      ...plan.updated.filter((entry) => entry.useFileId).map((entry) => ({ entry })),
+    ];
+
+    const hashByRow = new Map();
+    for (const item of needsHash) {
+      hashByRow.set(item.entry.row, await context.hashOf(item.entry.employee.nationalId));
+    }
+
+    const owners = await findHashOwners(db, [...new Set(hashByRow.values())]);
+    const claimants = new Map();
+    for (const item of needsHash) {
+      const hash = hashByRow.get(item.entry.row);
+      const list = claimants.get(hash) ?? [];
+      list.push(item);
+      claimants.set(hash, list);
+    }
+
+    const rejected = [];
+    const rejectedRows = new Set();
+    const rejectRow = (entry) => {
+      if (rejectedRows.has(entry.row)) return;
+      rejectedRows.add(entry.row);
+      rejected.push({
+        row: entry.row,
+        employeeCode: entry.employee.employeeCode,
+        name: entry.name,
+        reason: DUPLICATE_ID_MESSAGE,
+      });
+    };
+
+    for (const [hash, list] of claimants) {
+      // Two rows in one file claiming the same ID cannot both be right.
+      if (list.length > 1) {
+        for (const item of list) rejectRow(item.entry);
+        continue;
+      }
+      const only = list[0];
+      const ownerIds = owners.get(hash) ?? new Set();
+      const ownedByOther = [...ownerIds].some((id) => Boolean(id) && id !== only.entry.employeeId);
+      if (ownedByOther) rejectRow(only.entry);
+    }
+
+    plan.added = plan.added.filter((entry) => !rejectedRows.has(entry.row));
+    plan.updated = plan.updated.filter((entry) => !rejectedRows.has(entry.row));
+    const filledCount = plan.updated.filter((entry) => entry.fillsCredential === true).length;
+
+    // 2. Employees: one upsert per group. New rows carry is_active=true;
     //    updated rows deliberately omit it, so an inactive employee can never
     //    be reactivated or deleted by an import.
     const idByCode = new Map();
@@ -456,31 +532,26 @@ hrEmployees.post("/import/confirm", async (c) => {
       if (id) entry.employeeId = id;
     }
 
-    // 2. Credentials. New rows get the hash and the encrypted value; pin_hash
-    //    is written only for a brand-new credential. PINs, lock state and
-    //    session data are never part of these payloads.
-    const newCredentials = [];
-    for (const entry of plan.added) {
-      newCredentials.push({
+    // 3. Credentials. The payload carries employee_id, the hash, the encrypted
+    //    value and updated_at only. pin_hash, pin_set_at, failed_attempts and
+    //    locked_until are never sent, so an upsert merging into an existing row
+    //    cannot erase a PIN or a lock.
+    const credentialRow = async (entry) => {
+      if (!entry.employeeId) throw new Error("missing employee id");
+      return {
         employee_id: entry.employeeId,
-        national_id_hash: await context.hashOf(entry.employee.nationalId),
+        national_id_hash: hashByRow.get(entry.row),
         national_id_enc: await encryptNationalId(encKey(c.env), entry.employee.nationalId),
-        pin_hash: null,
-        created_at: nowIso,
         updated_at: nowIso,
-      });
-    }
+      };
+    };
+
+    const newCredentials = [];
+    for (const entry of plan.added) newCredentials.push(await credentialRow(entry));
 
     const changedIds = plan.updated.filter((entry) => entry.useFileId);
     const updatedCredentials = [];
-    for (const entry of changedIds) {
-      updatedCredentials.push({
-        employee_id: entry.employeeId,
-        national_id_hash: await context.hashOf(entry.employee.nationalId),
-        national_id_enc: await encryptNationalId(encKey(c.env), entry.employee.nationalId),
-        updated_at: nowIso,
-      });
-    }
+    for (const entry of changedIds) updatedCredentials.push(await credentialRow(entry));
 
     if (newCredentials.length > 0) {
       ensureOk(
@@ -510,7 +581,8 @@ hrEmployees.post("/import/confirm", async (c) => {
           updated: plan.updated.length,
           keptExisting: plan.keptExisting.length,
           skipped: plan.skipped.length,
-          rejected: 0,
+          rejected: rejected.length,
+          credentialsFilled: filledCount,
           usedFileValue: changedIds.length,
           adjusted: plan.adjustments.length,
         },
@@ -524,10 +596,12 @@ hrEmployees.post("/import/confirm", async (c) => {
           added: plan.added.length,
           updated: plan.updated.length,
           keptExisting: plan.keptExisting.length,
+          credentialsFilled: filledCount,
           skipped: plan.skipped.length,
-          rejected: 0,
+          rejected: rejected.length,
         },
         skipped: plan.skipped,
+        rejected,
         adjustments: plan.adjustments,
       },
       200

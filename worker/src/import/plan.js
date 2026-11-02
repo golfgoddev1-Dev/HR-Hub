@@ -73,6 +73,7 @@ export async function buildPlan(input) {
   const updated = [];
   const choices = [];
   const keptExisting = [];
+  let filledCredentialCount = 0;
 
   for (const entry of valid) {
     const { rowNumber, employee } = entry;
@@ -100,8 +101,29 @@ export async function buildPlan(input) {
     const fileHash = await hashOf(employee.nationalId);
     const credential = credentialByEmployeeId.get(existing.id) ?? null;
     const storedHash =
-      typeof credential?.national_id_hash === "string" ? credential.national_id_hash : null;
-    const idsMatch = storedHash !== null && storedHash.toLowerCase() === fileHash.toLowerCase();
+      typeof credential?.national_id_hash === "string" && credential.national_id_hash.length > 0
+        ? credential.national_id_hash
+        : null;
+
+    // No stored hash means there is nothing that could be overwritten, so the
+    // row simply gains its credentials. Without this branch every employee
+    // imported before the credentials step existed stays unable to log in, even
+    // after HR re-imports the same file.
+    if (storedHash === null) {
+      filledCredentialCount += 1;
+      updated.push({
+        row: rowNumber,
+        employee,
+        departmentId,
+        name,
+        employeeId: existing.id,
+        useFileId: true,
+        fillsCredential: true,
+      });
+      continue;
+    }
+
+    const idsMatch = storedHash.toLowerCase() === fileHash.toLowerCase();
 
     if (idsMatch) {
       updated.push({ row: rowNumber, employee, departmentId, name, employeeId: existing.id, useFileId: false });
@@ -144,6 +166,7 @@ export async function buildPlan(input) {
       updated: updated.length,
       needsChoice: choices.filter((choice) => !choice.applied).length,
       keptExisting: keptExisting.length,
+      credentialsFilled: filledCredentialCount,
       skipped: skipped.length,
       rejected: 0,
     },

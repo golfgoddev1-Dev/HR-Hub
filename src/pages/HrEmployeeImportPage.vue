@@ -304,7 +304,28 @@ const choiceLabel = (value) => (value === 'file' ? 'ใช้ค่าจาก�
           <li>อัปเดต {{ result.summary.updated }} คน</li>
           <li>คงค่าเดิม {{ result.summary.keptExisting }} แถว</li>
           <li>ข้าม {{ result.summary.skipped }} แถว</li>
+          <li>เติมข้อมูลเลขบัตรให้บัญชีเดิม {{ result.summary.credentialsFilled || 0 }} คน</li>
+          <li>ปฏิเสธ {{ result.summary.rejected || 0 }} แถว</li>
         </ul>
+
+        <div v-if="result.rejected?.length" class="block">
+          <h3 class="block-title">แถวที่ถูกปฏิเสธ (เลขบัตรซ้ำกับพนักงานคนอื่น)</h3>
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr><th>แถว</th><th>รหัสพนักงาน</th><th>ชื่อ-สกุล</th><th>เหตุผล</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="item in result.rejected" :key="`rej-${item.row}`">
+                  <td>{{ item.row }}</td>
+                  <td>{{ item.employeeCode || '—' }}</td>
+                  <td>{{ item.name || '—' }}</td>
+                  <td>{{ item.reason }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
 
         <div v-if="result.skipped?.length" class="block">
           <h3 class="block-title">แถวที่ไม่ได้บันทึก</h3>

@@ -435,6 +435,7 @@ test("confirm writes one batch, never a PIN, and one audit row", async (t) => {
     added: 2,
     updated: 1,
     keptExisting: 0,
+    credentialsFilled: 0,
     skipped: 0,
     rejected: 0,
     usedFileValue: 0,
@@ -451,9 +452,17 @@ test("confirm writes one batch, never a PIN, and one audit row", async (t) => {
   const newCredentialRows = credentialWrites[0].rows;
   assert.equal(newCredentialRows.length, 2);
   for (const credential of newCredentialRows) {
-    assert.equal(credential.pin_hash, null);
     assert.match(credential.national_id_hash, /^[0-9a-f]{64}$/);
     assert.match(credential.national_id_enc, /^v1\./);
+    assert.deepEqual(Object.keys(credential).sort(), [
+      "employee_id",
+      "national_id_enc",
+      "national_id_hash",
+      "updated_at",
+    ]);
+    assert.equal("pin_hash" in credential, false);
+    assert.equal("pin_set_at" in credential, false);
+    assert.equal("created_at" in credential, false);
     assert.equal("locked_until" in credential, false);
     assert.equal("failed_attempts" in credential, false);
   }
@@ -566,4 +575,131 @@ test("xlsm uploads are refused before parsing", async (t) => {
   });
   assert.equal(status, 400);
   assert.match(json.message, /xlsm/);
+});
+
+test("a re-import fills credentials for an employee that has no row yet", async (t) => {
+  const fake = await createFake();
+  t.after(() => fake.restore());
+  fake.state.credentials.length = 0;
+
+  const content = csv([`ABC-00220,นาย,สมชาย,เดิม,ฝ่ายบุคคล,${ID_MATCH}`]);
+  const { status, json, text } = await postFile("/api/hr/employees/import/confirm", {
+    content,
+    fileName: "employees.csv",
+    choices: [],
+  });
+
+  assert.equal(status, 200);
+  assert.equal(json.summary.added, 0);
+  assert.equal(json.summary.updated, 1);
+  assert.equal(json.summary.credentialsFilled, 1);
+  assert.equal(json.summary.rejected, 0);
+
+  const credential = fake.state.credentials.find((row) => row.employee_id === EXISTING_ID);
+  assert.ok(credential, "the employee gains a credential row");
+  assert.equal(credential.national_id_hash, await hmacSha256Hex(PEPPER, ID_MATCH));
+  assert.match(credential.national_id_enc, /^v1\./);
+  assert.equal("pin_hash" in credential, false);
+
+  assert.equal(fake.state.audits[0].detail.credentialsFilled, 1);
+  assert.equal(fake.state.audits[0].detail.rejected, 0);
+  assert.equal(/\d{13}/.test(text), false);
+  assert.equal(text.includes(ID_MATCH), false);
+});
+
+test("a credential refresh keeps the PIN and the lock state untouched", async (t) => {
+  const fake = await createFake();
+  t.after(() => fake.restore());
+
+  const PIN_HASH = "stored-pin-hash-for-test";
+  const PIN_SET_AT = "2026-10-01T00:00:00.000Z";
+  const LOCKED_UNTIL = "2026-11-01T00:00:00.000Z";
+  Object.assign(fake.state.credentials[0], {
+    pin_hash: PIN_HASH,
+    pin_set_at: PIN_SET_AT,
+    failed_attempts: 4,
+    locked_until: LOCKED_UNTIL,
+  });
+  const previousHash = await hmacSha256Hex(PEPPER, ID_MATCH);
+
+  const content = csv([`ABC-00220,นาย,สมชาย,ใหม่,ฝ่ายขาย,${ID_OTHER}`]);
+  const { status, json, text } = await postFile("/api/hr/employees/import/confirm", {
+    content,
+    fileName: "employees.csv",
+    choices: [{ row: 2, decision: "file" }],
+  });
+
+  assert.equal(status, 200);
+  assert.equal(json.summary.updated, 1);
+
+  const credential = fake.state.credentials.find((row) => row.employee_id === EXISTING_ID);
+  assert.equal(credential.national_id_hash, await hmacSha256Hex(PEPPER, ID_OTHER));
+  assert.notEqual(credential.national_id_hash, previousHash);
+  assert.match(credential.national_id_enc, /^v1\./);
+  assert.equal(credential.pin_hash, PIN_HASH);
+  assert.equal(credential.pin_set_at, PIN_SET_AT);
+  assert.equal(credential.failed_attempts, 4);
+  assert.equal(credential.locked_until, LOCKED_UNTIL);
+
+  const forbidden = ["pin_hash", "pin_set_at", "failed_attempts", "locked_until", "created_at"];
+  const writes = fake.state.writes.filter((write) => write.table === "employee_credentials");
+  assert.ok(writes.length > 0);
+  for (const write of writes) {
+    for (const row of write.rows) {
+      for (const key of forbidden) assert.equal(key in row, false, key);
+    }
+  }
+  assert.equal(text.includes(ID_OTHER), false);
+});
+
+test("an ID already stored for another employee is rejected before any write", async (t) => {
+  const fake = await createFake();
+  t.after(() => fake.restore());
+
+  const content = csv([`ABC-00900,นาย,ซ้ำ,บัตร,ฝ่ายบุคคล,${ID_MATCH}`]);
+  const { status, json, text } = await postFile("/api/hr/employees/import/confirm", {
+    content,
+    fileName: "employees.csv",
+    choices: [],
+  });
+
+  assert.equal(status, 200);
+  assert.equal(json.summary.added, 0);
+  assert.equal(json.summary.updated, 0);
+  assert.equal(json.summary.rejected, 1);
+  assert.equal(json.rejected.length, 1);
+  assert.equal(json.rejected[0].row, 2);
+  assert.equal(json.rejected[0].employeeCode, "ABC-00900");
+  assert.match(json.rejected[0].reason, /ซ้ำกับพนักงานคนอื่น/);
+
+  assert.equal(/\d{13}/.test(text), false);
+  assert.equal(text.includes(ID_MATCH), false);
+  assert.equal(fake.state.employees.some((row) => row.employee_code === "ABC-00900"), false);
+  assert.equal(fake.state.writes.some((write) => write.table === "employee_credentials"), false);
+  assert.equal(fake.state.audits[0].detail.rejected, 1);
+  assert.equal(JSON.stringify(fake.state.audits[0]).includes(ID_MATCH), false);
+});
+
+test("two rows in one file that claim the same ID are both rejected", async (t) => {
+  const fake = await createFake();
+  t.after(() => fake.restore());
+
+  const content = csv([
+    `ABC-00910,นาย,หนึ่ง,ทดสอบ,ฝ่ายบุคคล,${ID_NEW}`,
+    `ABC-00911,นาย,สอง,ทดสอบ,ฝ่ายขาย,${ID_NEW}`,
+  ]);
+  const { status, json } = await postFile("/api/hr/employees/import/confirm", {
+    content,
+    fileName: "employees.csv",
+    choices: [],
+  });
+
+  assert.equal(status, 200);
+  assert.equal(json.summary.added, 0);
+  assert.equal(json.summary.rejected, 2);
+  assert.deepEqual(json.rejected.map((item) => item.row).sort(), [2, 3]);
+
+  assert.equal(fake.state.employees.some((row) => row.employee_code === "ABC-00910"), false);
+  assert.equal(fake.state.employees.some((row) => row.employee_code === "ABC-00911"), false);
+  assert.equal(fake.state.writes.some((write) => write.table === "employee_credentials"), false);
 });

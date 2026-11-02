@@ -226,3 +226,42 @@ test("stored masked ID is shown when decryption succeeds and null otherwise", as
   const withoutStored = await planFor(rows, { existingByCode, credentialByEmployeeId });
   assert.equal(withoutStored.choices[0].storedIdMasked, null);
 });
+
+test("an employee with no stored hash gains credentials without asking HR", async () => {
+  const existingByCode = new Map([
+    ["ABC-00220", { id: "emp-1", employee_code: "ABC-00220", is_active: true }],
+  ]);
+  const rows = [{ rowNumber: 2, cells: row("ABC-00220", "นาย", "ก", "ข", "ฝ่ายขาย", ID_A) }];
+
+  const missingRow = await planFor(rows, { existingByCode, credentialByEmployeeId: new Map() });
+  assert.equal(missingRow.choices.length, 0);
+  assert.equal(missingRow.updated.length, 1);
+  assert.equal(missingRow.updated[0].fillsCredential, true);
+  assert.equal(missingRow.updated[0].useFileId, true);
+  assert.equal(missingRow.summary.credentialsFilled, 1);
+
+  // A credential row that exists but carries no hash can be filled the same
+  // way: there is still nothing that could be overwritten.
+  const emptyHash = new Map([
+    ["emp-1", { employee_id: "emp-1", national_id_hash: null, national_id_enc: null }],
+  ]);
+  const filled = await planFor(rows, { existingByCode, credentialByEmployeeId: emptyHash });
+  assert.equal(filled.choices.length, 0);
+  assert.equal(filled.updated[0].fillsCredential, true);
+  assert.equal(filled.summary.credentialsFilled, 1);
+});
+
+test("a differing stored hash still needs an HR decision", async () => {
+  const existingByCode = new Map([
+    ["ABC-00220", { id: "emp-1", employee_code: "ABC-00220", is_active: true }],
+  ]);
+  const credentialByEmployeeId = new Map([
+    ["emp-1", { employee_id: "emp-1", national_id_hash: "deadbeef", national_id_enc: "v1.zz" }],
+  ]);
+  const rows = [{ rowNumber: 2, cells: row("ABC-00220", "นาย", "ก", "ข", "ฝ่ายขาย", ID_A) }];
+
+  const plan = await planFor(rows, { existingByCode, credentialByEmployeeId });
+  assert.equal(plan.choices.length, 1);
+  assert.equal(plan.updated.length, 0);
+  assert.equal(plan.summary.credentialsFilled, 0);
+});
