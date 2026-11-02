@@ -16,7 +16,7 @@ function base64Url(bytes) {
 /** Base path per login role. Accepts the legacy aliases controller and system. */
 export function landingPathFor(loginRole, hasPending) {
   if (loginRole === "employee") return hasPending ? "/leave/approvals" : "/leave";
-  if (loginRole === "hr") return "/leave/hr";
+  if (loginRole === "hr") return "/hr/employees/import";
   if (loginRole === "meeting_controller" || loginRole === "controller") return "/meeting/controller";
   if (loginRole === "system_admin" || loginRole === "system") return "/admin";
   return "/login";

@@ -424,7 +424,7 @@ test("login: correct PIN sets the session cookie and clears the counters", async
 
   const res = await login({ loginType: "hr", nationalId: FAKE_NATIONAL_ID, pin: PIN });
   assert.equal(res.status, 200);
-  assert.deepEqual(await res.json(), { ok: true, redirectTo: "/leave/hr" });
+  assert.deepEqual(await res.json(), { ok: true, redirectTo: "/hr/employees/import" });
 
   const setCookie = res.headers.get("set-cookie");
   assert.match(setCookie, /HttpOnly/);

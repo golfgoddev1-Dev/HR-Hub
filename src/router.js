@@ -15,7 +15,8 @@ import HrEmployeesPage from './pages/HrEmployeesPage.vue'
 
 const allowedPathsByRole = {
   employee: ['/leave', '/leave/approvals'],
-  hr: ['/leave/hr', '/hr/employees', '/hr/employees/import'],
+  // HR lands on the employee import page: the HR leave page does not exist yet.
+  hr: ['/hr/employees', '/hr/employees/import'],
   meeting_controller: [
     '/meeting/controller',
     '/meeting/controller/qr',
@@ -51,20 +52,51 @@ export const router = createRouter({
   ],
 })
 
+// One session lookup is shared for a short window so a redirect cycle can never
+// call /api/auth/me in a tight loop.
+const SESSION_CACHE_MS = 3000
+let cachedSession = null
+let cachedAt = 0
+let pendingSession = null
+
+async function loadSession() {
+  if (cachedSession && Date.now() - cachedAt < SESSION_CACHE_MS) return cachedSession
+  if (!pendingSession) {
+    pendingSession = getSession()
+      .then((session) => {
+        if (session) {
+          cachedSession = session
+          cachedAt = Date.now()
+        }
+        return session
+      })
+      .finally(() => {
+        pendingSession = null
+      })
+  }
+  return pendingSession
+}
+
 router.beforeEach(async (to) => {
   if (!to.meta.requiresAuth) return true
 
-  const session = await getSession()
+  const session = await loadSession()
   if (!session) return '/login'
 
   const allowedPaths = allowedPathsByRole[session.role] ?? []
   const allowedPrefixes = allowedPrefixesByRole[session.role] ?? []
   const allowed =
     allowedPaths.includes(to.path) || allowedPrefixes.some((prefix) => to.path.startsWith(prefix))
-  if (session.redirectTo !== to.fullPath && !allowed) {
-    return session.redirectTo
-  }
 
-  if (to.meta.catchAll) return session.redirectTo
+  const redirectTo =
+    typeof session.redirectTo === 'string' && session.redirectTo.startsWith('/')
+      ? session.redirectTo
+      : ''
+  // Redirecting to the address we are already on never resolves, so stop and let
+  // the page show its message instead of looping.
+  const canRedirect = redirectTo !== '' && redirectTo !== to.fullPath
+
+  if (to.meta.catchAll) return canRedirect ? redirectTo : true
+  if (!allowed && canRedirect) return redirectTo
   return true
 })
