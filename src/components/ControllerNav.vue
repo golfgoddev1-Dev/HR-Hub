@@ -13,7 +13,8 @@ const items = [
   { label: 'รายชื่อประชุม', to: '/meeting/controller/roster', icon: 'groups', ready: true },
   { label: 'จัดการข้อมูลพนักงาน', to: '/meeting/controller/employees', icon: 'manage_accounts', ready: true },
   { label: 'ผู้เข้าร่วม', to: '/meeting/controller/registrants', icon: 'badge', ready: true },
-  { label: 'ข้อมูลย้อนหลัง', to: '', icon: 'history', ready: false },
+  { label: 'ข้อมูลย้อนหลัง', to: '/meeting/controller/backfill', icon: 'history', ready: true },
+  { label: 'นำเข้าข้อมูลย้อนหลัง', to: '/meeting/controller/backfill/import', icon: 'upload_file', ready: true },
   { label: 'แดชบอร์ด', to: '/meeting/controller/dashboard', icon: 'insights', ready: true },
 ]
 

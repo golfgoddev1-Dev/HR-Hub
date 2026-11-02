@@ -255,3 +255,65 @@ export function buildTemplateXlsx() {
     { level: 6 }
   );
 }
+
+/** 0 -> "A", 11 -> "L", 26 -> "AA". */
+function columnLetters(index) {
+  let remaining = index + 1;
+  let out = "";
+  while (remaining > 0) {
+    const digit = (remaining - 1) % 26;
+    out = String.fromCharCode(65 + digit) + out;
+    remaining = Math.floor((remaining - 1) / 26);
+  }
+  return out;
+}
+
+/**
+ * Builds a one-sheet workbook from plain rows: the first row is the header and
+ * every cell is written as inline text. Used by the historical attendance
+ * template and by the export that can be imported again.
+ */
+export function buildSheetXlsx({ sheetName = "Sheet1", headers = [], rows = [], widths = [] } = {}) {
+  const allRows = [headers, ...rows];
+  const rowsXml = allRows
+    .map((row, rowIndex) => {
+      const rowNumber = rowIndex + 1;
+      const cells = (Array.isArray(row) ? row : [])
+        .map((value, index) => cellXml(value, columnLetters(index), rowNumber))
+        .join("");
+      return `<row r="${rowNumber}">${cells}</row>`;
+    })
+    .join("");
+
+  const colsXml =
+    widths.length > 0
+      ? `<cols>${widths
+          .map(
+            (width, index) =>
+              `<col min="${index + 1}" max="${index + 1}" width="${
+                Number(width) || 12
+              }" customWidth="1"/>`
+          )
+          .join("")}</cols>`
+      : "";
+
+  const sheet = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${colsXml}<sheetData>${rowsXml}</sheetData></worksheet>`;
+
+  const workbook = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="${escapeXml(
+    sheetName
+  )}" sheetId="1" r:id="rId1"/></sheets></workbook>`;
+
+  return zipSync(
+    {
+      "[Content_Types].xml": strToU8(CONTENT_TYPES),
+      "_rels/.rels": strToU8(ROOT_RELS),
+      "xl/workbook.xml": strToU8(workbook),
+      "xl/_rels/workbook.xml.rels": strToU8(WORKBOOK_RELS),
+      "xl/styles.xml": strToU8(STYLES),
+      "xl/worksheets/sheet1.xml": strToU8(sheet),
+    },
+    { level: 6 }
+  );
+}

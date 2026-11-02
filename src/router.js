@@ -8,6 +8,8 @@ import ControllerRosterPage from './pages/ControllerRosterPage.vue'
 import RegisterPage from './pages/RegisterPage.vue'
 import ControllerOverviewPage from './pages/ControllerOverviewPage.vue'
 import ControllerDashboardPage from './pages/ControllerDashboardPage.vue'
+import MeetingBackfillHistoryPage from './pages/MeetingBackfillHistoryPage.vue'
+import MeetingBackfillImportPage from './pages/MeetingBackfillImportPage.vue'
 import RegistrantsPage from './pages/RegistrantsPage.vue'
 import HrEmployeeImportPage from './pages/HrEmployeeImportPage.vue'
 import HrEmployeeDetailPage from './pages/HrEmployeeDetailPage.vue'
@@ -26,6 +28,8 @@ const allowedPathsByRole = {
     '/meeting/controller/dashboard',
     '/meeting/controller/registrants',
     '/meeting/controller/employees',
+    '/meeting/controller/backfill',
+    '/meeting/controller/backfill/import',
   ],
   system_admin: ['/admin'],
 }
@@ -48,6 +52,8 @@ export const router = createRouter({
     { path: '/meeting/controller/dashboard', component: ControllerDashboardPage, meta: { requiresAuth: true } },
     { path: '/meeting/controller/registrants', component: RegistrantsPage, meta: { requiresAuth: true } },
     { path: '/meeting/controller/employees', component: ControllerEmployeeDataPage, meta: { requiresAuth: true } },
+    { path: '/meeting/controller/backfill', component: MeetingBackfillHistoryPage, meta: { requiresAuth: true } },
+    { path: '/meeting/controller/backfill/import', component: MeetingBackfillImportPage, meta: { requiresAuth: true } },
     { path: '/meeting/register', component: RegisterPage },
     { path: '/hr/employees', component: HrEmployeesPage, meta: { requiresAuth: true } },
     { path: '/hr/employees/manage', component: HrEmployeeDataPage, meta: { requiresAuth: true } },
