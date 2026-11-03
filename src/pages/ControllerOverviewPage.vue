@@ -1,7 +1,6 @@
 <script setup>
 import { computed, reactive, ref } from 'vue'
-import ControllerNav from '../components/ControllerNav.vue'
-import ControllerTopbar from '../components/ControllerTopbar.vue'
+import ControllerLayout from '../components/ControllerLayout.vue'
 
 const LOAD_ERROR_MESSAGE = 'ไม่สามารถโหลดข้อมูลภาพรวมได้ กรุณาลองใหม่'
 const PENDING_ERROR_MESSAGE = 'ไม่สามารถโหลดรายชื่อที่ยังไม่ลงทะเบียนได้ กรุณาลองใหม่'
@@ -119,12 +118,7 @@ loadOverview()
 </script>
 
 <template>
-  <div class="page">
-    <ControllerTopbar />
-
-    <div class="shell">
-      <ControllerNav />
-
+  <ControllerLayout>
       <main class="page-main">
         <div class="page-head">
           <div>
@@ -274,31 +268,11 @@ loadOverview()
           </section>
         </template>
       </main>
-    </div>
-  </div>
+  </ControllerLayout>
 </template>
 
 <style scoped>
 @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap');
-
-.page {
-  width: 100%;
-  max-width: 100%;
-  min-height: 100vh;
-  overflow-x: hidden;
-  background: #f4f8f5;
-  font-family: 'Sarabun', 'IBM Plex Sans Thai', sans-serif;
-  color: #12251f;
-}
-
-.shell {
-  display: flex;
-  gap: 20px;
-  width: 100%;
-  max-width: 1120px;
-  margin: 0 auto;
-  padding: 22px;
-}
 
 .page-main {
   flex: 1;
@@ -318,7 +292,7 @@ loadOverview()
 
 .page-head h1 {
   margin: 0 0 6px;
-  font-size: 24px;
+  font-size: var(--controller-h1-size, 26px);
   font-weight: 600;
   color: #115447;
 }
@@ -541,12 +515,7 @@ loadOverview()
   gap: 10px;
 }
 
-@media (max-width: 900px) {
-  .shell {
-    flex-direction: column;
-    padding: 14px;
-  }
-
+@media (max-width: 1023px) {
   .count-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

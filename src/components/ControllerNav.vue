@@ -45,12 +45,12 @@ async function logout() {
           class="nav-link"
           :class="{ 'nav-link-active': isActive(item) }"
         >
-          <span class="material-symbols-outlined nav-icon">{{ item.icon }}</span>
+          <span class="material-symbols-outlined nav-icon" aria-hidden="true">{{ item.icon }}</span>
           <span class="nav-label">{{ item.label }}</span>
         </RouterLink>
 
         <span v-else class="nav-link nav-link-disabled" aria-disabled="true">
-          <span class="material-symbols-outlined nav-icon">{{ item.icon }}</span>
+          <span class="material-symbols-outlined nav-icon" aria-hidden="true">{{ item.icon }}</span>
           <span class="nav-label">{{ item.label }}</span>
           <span class="nav-chip">เร็ว ๆ นี้</span>
         </span>
@@ -63,7 +63,7 @@ async function logout() {
           :disabled="logoutBusy"
           @click="logout"
         >
-          <span class="material-symbols-outlined nav-icon">logout</span>
+          <span class="material-symbols-outlined nav-icon" aria-hidden="true">logout</span>
           <span class="nav-label">{{ logoutBusy ? 'กำลังออกจากระบบ…' : 'ออกจากระบบ' }}</span>
         </button>
       </li>
@@ -72,12 +72,22 @@ async function logout() {
 </template>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap');
 
+/* The nav no longer sizes itself: it fills the sidebar/drawer box that
+   ControllerLayout owns, and scrolls on its own when the list is taller
+   than the viewport. */
 .controller-nav {
-  flex: 0 0 252px;
-  width: 252px;
-  font-family: 'IBM Plex Sans Thai', sans-serif;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 12px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  font-family: 'Sarabun', sans-serif;
 }
 
 .nav-list {
@@ -85,12 +95,8 @@ async function logout() {
   flex-direction: column;
   gap: 4px;
   margin: 0;
-  padding: 10px;
+  padding: 0;
   list-style: none;
-  background: #ffffff;
-  border: 1px solid #e3e8e6;
-  border-radius: 18px;
-  box-shadow: 0 10px 24px rgba(16, 40, 35, 0.06);
 }
 
 .nav-item {
@@ -105,6 +111,7 @@ async function logout() {
   padding: 11px 12px;
   border-radius: 12px;
   color: #18564a;
+  font-family: 'Sarabun', sans-serif;
   font-size: 15px;
   font-weight: 500;
   text-decoration: none;
@@ -145,6 +152,7 @@ async function logout() {
 .nav-label {
   flex: 1;
   min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .nav-chip {
@@ -174,28 +182,5 @@ async function logout() {
   margin-top: 4px;
   padding-top: 6px;
   border-top: 1px solid #eef1ef;
-}
-
-@media (max-width: 900px) {
-  .controller-nav {
-    flex: 1 1 auto;
-    width: 100%;
-  }
-
-  .nav-list {
-    flex-direction: row;
-    flex-wrap: wrap;
-    padding: 8px;
-  }
-
-  .nav-item {
-    flex: 1 1 auto;
-  }
-
-  .nav-item-logout {
-    margin-top: 0;
-    padding-top: 0;
-    border-top: 0;
-  }
 }
 </style>

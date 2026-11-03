@@ -1,7 +1,6 @@
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import ControllerNav from '../components/ControllerNav.vue'
-import ControllerTopbar from '../components/ControllerTopbar.vue'
+import ControllerLayout from '../components/ControllerLayout.vue'
 
 const MIN_SEARCH_LENGTH = 2
 const SEARCH_DEBOUNCE_MS = 300
@@ -155,12 +154,7 @@ loadMembers()
 </script>
 
 <template>
-  <div class="page">
-    <ControllerTopbar />
-
-    <div class="shell">
-      <ControllerNav />
-
+  <ControllerLayout>
       <main class="page-main">
         <RouterLink to="/meeting/controller" class="back-link">
           <span class="material-symbols-outlined back-icon">arrow_back</span>
@@ -267,23 +261,12 @@ loadMembers()
         </section>
       </div>
       </main>
-    </div>
-  </div>
+  </ControllerLayout>
 </template>
 
 <style scoped>
 @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap');
-
-.page {
-  width: 100%;
-  max-width: 100%;
-  min-height: 100vh;
-  overflow-x: hidden;
-  background: #f4f8f5;
-  font-family: 'Sarabun', 'IBM Plex Sans Thai', sans-serif;
-  color: #12251f;
-}
 
 .material-symbols-outlined {
   font-family: 'Material Symbols Outlined', sans-serif;
@@ -295,15 +278,6 @@ loadMembers()
   text-transform: none;
   white-space: nowrap;
   font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
-}
-
-.shell {
-  display: flex;
-  gap: 20px;
-  width: 100%;
-  max-width: 1120px;
-  margin: 0 auto;
-  padding: 22px;
 }
 
 .page-main {
@@ -341,7 +315,7 @@ loadMembers()
 
 .page-head h1 {
   margin: 0 0 6px;
-  font-size: 24px;
+  font-size: var(--controller-h1-size, 26px);
   font-weight: 600;
   line-height: 1.35;
   color: #115447;
@@ -511,15 +485,16 @@ loadMembers()
   .card { padding: 22px; }
 }
 
-@media (min-width: 900px) {
-  .page-head h1 { font-size: 26px; }
+/* The paired cards stay stacked until the layout's desktop breakpoint. */
+@media (min-width: 1025px) {
   .panels { grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr); gap: 20px; }
 }
 
-@media (max-width: 899px) {
-  .shell { flex-direction: column; padding: 14px; }
-
+@media (max-width: 1024px) {
   .panels { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 899px) {
   .list { max-height: none; }
 }
 </style>

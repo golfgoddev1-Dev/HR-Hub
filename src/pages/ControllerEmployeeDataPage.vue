@@ -1,16 +1,10 @@
 <script setup>
-import ControllerNav from '../components/ControllerNav.vue'
-import ControllerTopbar from '../components/ControllerTopbar.vue'
+import ControllerLayout from '../components/ControllerLayout.vue'
 import EmployeeDirectoryManager from '../components/EmployeeDirectoryManager.vue'
 </script>
 
 <template>
-  <div class="page">
-    <ControllerTopbar />
-
-    <div class="shell">
-      <ControllerNav />
-
+  <ControllerLayout>
       <main class="page-main">
         <div class="page-head">
           <div>
@@ -25,29 +19,10 @@ import EmployeeDirectoryManager from '../components/EmployeeDirectoryManager.vue
 
         <EmployeeDirectoryManager base="/api/meeting/directory" />
       </main>
-    </div>
-  </div>
+  </ControllerLayout>
 </template>
 
 <style scoped>
-.page {
-  width: 100%;
-  max-width: 100%;
-  min-height: 100vh;
-  overflow-x: hidden;
-  background: #f4f8f5;
-  color: #12251f;
-}
-
-.shell {
-  display: flex;
-  gap: 20px;
-  width: 100%;
-  max-width: 1120px;
-  margin: 0 auto;
-  padding: 22px;
-}
-
 .page-main {
   flex: 1;
   min-width: 0;
@@ -66,7 +41,7 @@ import EmployeeDirectoryManager from '../components/EmployeeDirectoryManager.vue
 
 .page-head h1 {
   margin: 0 0 6px;
-  font-size: 24px;
+  font-size: var(--controller-h1-size, 26px);
   font-weight: 600;
   color: #115447;
 }
@@ -90,13 +65,5 @@ import EmployeeDirectoryManager from '../components/EmployeeDirectoryManager.vue
   font-size: 14px;
   font-weight: 600;
   text-decoration: none;
-}
-
-@media (max-width: 900px) {
-  .shell {
-    flex-direction: column;
-    padding: 14px;
-  }
-
 }
 </style>

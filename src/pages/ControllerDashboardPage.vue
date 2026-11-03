@@ -1,7 +1,6 @@
 <script setup>
 import { computed, reactive, ref } from 'vue'
-import ControllerNav from '../components/ControllerNav.vue'
-import ControllerTopbar from '../components/ControllerTopbar.vue'
+import ControllerLayout from '../components/ControllerLayout.vue'
 
 const LOAD_ERROR_MESSAGE = 'ไม่สามารถโหลดแดชบอร์ดได้ กรุณาลองใหม่'
 const DEPT_ERROR_MESSAGE = 'ไม่สามารถโหลดรายชื่อแผนกได้ กรุณาลองใหม่'
@@ -438,12 +437,7 @@ loadDashboard()
 </script>
 
 <template>
-  <div class="page">
-    <ControllerTopbar />
-
-    <div class="shell">
-      <ControllerNav />
-
+  <ControllerLayout>
       <main class="page-main">
         <RouterLink to="/meeting/controller" class="back-link">
           <span class="material-symbols-outlined back-icon">arrow_back</span>
@@ -897,7 +891,6 @@ loadDashboard()
           </aside>
         </div>
       </main>
-    </div>
 
     <div v-if="pinForm.open" class="modal-backdrop" @click.self="closeReason">
       <form class="modal" @submit.prevent="submitReason">
@@ -932,42 +925,12 @@ loadDashboard()
         </div>
       </form>
     </div>
-  </div>
+  </ControllerLayout>
 </template>
 
 <style scoped>
 @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap');
-
-.page {
-  --primary: #004337;
-  --primary-container: #105c4d;
-  --secondary: #006b56;
-  --secondary-container: #98f4d7;
-  --on-secondary-container: #00725c;
-  --surface: #f3fbf8;
-  --surface-low: #edf6f2;
-  --surface-container: #e7f0ec;
-  --surface-high: #e1eae6;
-  --surface-variant: #dce4e1;
-  --on-surface: #151d1b;
-  --on-surface-variant: #3f4945;
-  --outline: #6f7975;
-  --outline-variant: #bfc9c4;
-  --error: #ba1a1a;
-  --error-container: #ffdad6;
-  --tertiary-fixed-dim: #eec14b;
-  --tertiary-container: #674e00;
-  --primary-fixed-dim: #90d4c0;
-
-  width: 100%;
-  max-width: 100%;
-  min-height: 100vh;
-  overflow-x: hidden;
-  background: var(--surface);
-  font-family: 'Sarabun', 'IBM Plex Sans Thai', sans-serif;
-  color: var(--on-surface);
-}
 
 .material-symbols-outlined {
   font-family: 'Material Symbols Outlined', sans-serif;
@@ -1010,15 +973,6 @@ loadDashboard()
 }
 
 /* ---------- shell ---------- */
-
-.shell {
-  display: flex;
-  gap: 20px;
-  width: 100%;
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 22px;
-}
 
 .page-main {
   flex: 1;
@@ -1067,7 +1021,7 @@ loadDashboard()
 
 .page-head h1 {
   margin: 0 0 6px;
-  font-size: 24px;
+  font-size: var(--controller-h1-size, 26px);
   font-weight: 600;
   line-height: 1.35;
   color: var(--primary);
@@ -2185,7 +2139,7 @@ loadDashboard()
 }
 
 /* ---------- responsive ---------- */
-@media (min-width: 480px) {
+@media (min-width: 1024px) {
   .metric-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
@@ -2197,12 +2151,6 @@ loadDashboard()
   }
 }
 
-@media (min-width: 900px) {
-  .page-head h1 {
-    font-size: 26px;
-  }
-}
-
 @media (min-width: 1024px) {
   .layout {
     grid-template-columns: minmax(0, 8fr) minmax(0, 4fr);
@@ -2210,21 +2158,13 @@ loadDashboard()
 
   .side-card {
     position: sticky;
-    top: 20px;
+    top: calc(var(--controller-topbar-height, 64px) + 20px);
   }
-}
-
-@media (max-width: 899px) {
-  .shell {
-    flex-direction: column;
-    padding: 14px;
-  }
-
 }
 
 @media (max-width: 600px) {
   .table-wrap {
-    overflow-x: visible;
+    overflow-x: auto;
   }
 
   .table,
@@ -2322,10 +2262,6 @@ loadDashboard()
 @media (max-width: 420px) {
   .card {
     padding: 14px;
-  }
-
-  .page-head h1 {
-    font-size: 20px;
   }
 
   .tab {

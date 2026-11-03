@@ -3,8 +3,7 @@
 // existing Worker GET endpoints (dashboard summary for the cycle picker and
 // status labels, dashboard registrants for the rows) and never writes.
 import { computed, ref } from 'vue'
-import ControllerNav from '../components/ControllerNav.vue'
-import ControllerTopbar from '../components/ControllerTopbar.vue'
+import ControllerLayout from '../components/ControllerLayout.vue'
 
 const LOAD_ERROR_MESSAGE = 'ไม่สามารถโหลดรายชื่อผู้ลงทะเบียนได้ กรุณาลองใหม่'
 const EMPTY_MESSAGE = 'ยังไม่มีผู้ลงทะเบียนในรอบนี้'
@@ -165,12 +164,7 @@ loadPage()
 </script>
 
 <template>
-  <div class="page">
-    <ControllerTopbar />
-
-    <div class="shell">
-      <ControllerNav />
-
+  <ControllerLayout>
       <main class="page-main">
         <RouterLink to="/meeting/controller" class="back-link">
           <span class="material-symbols-outlined back-icon">arrow_back</span>
@@ -276,20 +270,11 @@ loadPage()
           </p>
         </section>
       </main>
-    </div>
-  </div>
+  </ControllerLayout>
 </template>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap');
-
-.page {
-  min-height: 100vh;
-  background: #f4f7f5;
-  color: #1b2a24;
-  font-family: 'IBM Plex Sans Thai', sans-serif;
-  --gutter: 16px;
-}
+@import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap');
 
 .material-symbols-outlined {
   font-family: 'Material Symbols Outlined', sans-serif;
@@ -303,21 +288,14 @@ loadPage()
   font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
 }
 
-.shell {
-  display: flex;
-  gap: 20px;
-  width: 100%;
-  max-width: 1120px;
-  margin: 0 auto;
-  padding: 22px;
-}
-
 .page-main {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 16px;
+  color: #1b2a24;
+  font-family: 'Sarabun', sans-serif;
 }
 
 .back-link {
@@ -346,7 +324,7 @@ loadPage()
 
 .page-head h1 {
   margin: 0;
-  font-size: 22px;
+  font-size: var(--controller-h1-size, 22px);
   line-height: 1.35;
   color: #115447;
   overflow-wrap: anywhere;
@@ -480,6 +458,7 @@ loadPage()
   margin-top: 14px;
   width: 100%;
   min-width: 0;
+  overflow-x: auto;
 }
 
 .table {
@@ -581,20 +560,6 @@ loadPage()
   .card {
     padding: 22px;
   }
-}
-
-@media (min-width: 900px) {
-  .page-head h1 {
-    font-size: 26px;
-  }
-}
-
-@media (max-width: 899px) {
-  .shell {
-    flex-direction: column;
-    padding: 16px var(--gutter) 24px;
-  }
-
 }
 
 @media (max-width: 600px) {

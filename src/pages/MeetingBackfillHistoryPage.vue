@@ -1,7 +1,6 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import ControllerNav from '../components/ControllerNav.vue'
-import ControllerTopbar from '../components/ControllerTopbar.vue'
+import ControllerLayout from '../components/ControllerLayout.vue'
 
 const LOAD_ERROR = 'โหลดข้อมูลไม่สำเร็จ กรุณาลองใหม่'
 
@@ -154,12 +153,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="page">
-    <ControllerTopbar />
-
-    <div class="shell">
-      <ControllerNav />
-
+  <ControllerLayout>
       <main class="content">
         <div class="page-head">
           <div>
@@ -352,27 +346,12 @@ onMounted(async () => {
           </div>
         </section>
       </main>
-    </div>
-  </div>
+  </ControllerLayout>
 </template>
 
 <style scoped>
-.page {
-  min-height: 100vh;
-  background: #f3f6f5;
-}
-
-.shell {
-  display: flex;
-  gap: 18px;
-  padding: 20px;
-  align-items: flex-start;
-}
-
 .content {
-  flex: 1;
   min-width: 0;
-  max-width: 1120px;
   padding-bottom: 48px;
 }
 
@@ -386,7 +365,7 @@ onMounted(async () => {
 }
 
 .page-title {
-  font-size: 24px;
+  font-size: var(--controller-h1-size, 26px);
   font-weight: 700;
   color: #12343b;
   margin: 0 0 6px;
@@ -587,10 +566,5 @@ onMounted(async () => {
   color: #5c7176;
 }
 
-@media (max-width: 900px) {
-  .shell {
-    flex-direction: column;
-    padding: 12px;
-  }
-}
+
 </style>

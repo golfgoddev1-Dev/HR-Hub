@@ -1,8 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import * as XLSX from 'xlsx'
-import ControllerNav from '../components/ControllerNav.vue'
-import ControllerTopbar from '../components/ControllerTopbar.vue'
+import ControllerLayout from '../components/ControllerLayout.vue'
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024
 const BATCH_ROWS = 500
@@ -391,12 +390,7 @@ const modeLabel = (mode) => ({ new: 'รอบใหม่', existing: 'ใช�
 </script>
 
 <template>
-  <div class="page">
-    <ControllerTopbar />
-
-    <div class="shell">
-      <ControllerNav />
-
+  <ControllerLayout>
       <main class="content">
         <div class="page-head">
           <div>
@@ -544,27 +538,12 @@ const modeLabel = (mode) => ({ new: 'รอบใหม่', existing: 'ใช�
           </div>
         </section>
       </main>
-    </div>
-  </div>
+  </ControllerLayout>
 </template>
 
 <style scoped>
-.page {
-  min-height: 100vh;
-  background: #f3f6f5;
-}
-
-.shell {
-  display: flex;
-  gap: 18px;
-  padding: 20px;
-  align-items: flex-start;
-}
-
 .content {
-  flex: 1;
   min-width: 0;
-  max-width: 1120px;
   padding-bottom: 48px;
 }
 
@@ -578,7 +557,7 @@ const modeLabel = (mode) => ({ new: 'รอบใหม่', existing: 'ใช�
 }
 
 .page-title {
-  font-size: 24px;
+  font-size: var(--controller-h1-size, 26px);
   font-weight: 700;
   color: #12343b;
   margin: 0 0 6px;
@@ -756,10 +735,5 @@ const modeLabel = (mode) => ({ new: 'รอบใหม่', existing: 'ใช�
   margin-top: 18px;
 }
 
-@media (max-width: 900px) {
-  .shell {
-    flex-direction: column;
-    padding: 12px;
-  }
-}
+
 </style>
