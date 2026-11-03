@@ -6,11 +6,13 @@ import assert from "node:assert/strict";
 
 import {
   REASON_MAX_LENGTH,
+  REASON_REQUIRED_STATUS_CODES,
   REASON_STATUS_CODES,
   SHIFT_VALUES,
   STATUS_CODES,
   normalizeStatusUpdate,
   requiresReason,
+  requiresReasonText,
   requiresShift,
 } from "../src/attendance-status.js";
 
@@ -18,12 +20,20 @@ test("STATUS_CODES lists exactly the four stored codes", () => {
   assert.deepEqual(STATUS_CODES, ["attended", "not_attended", "urgent_busy", "leave"]);
 });
 
-test("a reason is required only for urgent_busy and leave", () => {
+test("a reason is used only for urgent_busy and leave", () => {
   assert.deepEqual(REASON_STATUS_CODES, ["urgent_busy", "leave"]);
   assert.equal(requiresReason("urgent_busy"), true);
   assert.equal(requiresReason("leave"), true);
   assert.equal(requiresReason("attended"), false);
   assert.equal(requiresReason("not_attended"), false);
+});
+
+test("the reason is mandatory only for urgent_busy", () => {
+  assert.deepEqual(REASON_REQUIRED_STATUS_CODES, ["urgent_busy"]);
+  assert.equal(requiresReasonText("urgent_busy"), true);
+  assert.equal(requiresReasonText("leave"), false);
+  assert.equal(requiresReasonText("attended"), false);
+  assert.equal(requiresReasonText("not_attended"), false);
 });
 
 test("a shift is required only for leave, and the two allowed shifts are pinned", () => {
@@ -61,16 +71,26 @@ test("urgent_busy keeps a trimmed reason and never a shift", () => {
   );
 });
 
-test("leave needs a reason of 1-200 characters and a valid shift", () => {
-  assert.deepEqual(normalizeStatusUpdate({ statusCode: "leave", reason: "ลาป่วย", shift: "กะ B" }), {
+test("leave accepts no reason and stores null", () => {
+  assert.deepEqual(normalizeStatusUpdate({ statusCode: "leave", shift: "กะ A" }), {
+    ok: true,
+    value: { status_code: "leave", reason: null, shift: "กะ A" },
+  });
+  assert.deepEqual(normalizeStatusUpdate({ statusCode: "leave", reason: "", shift: "กะ B" }), {
+    ok: true,
+    value: { status_code: "leave", reason: null, shift: "กะ B" },
+  });
+  assert.deepEqual(normalizeStatusUpdate({ statusCode: "leave", reason: "   ", shift: "กะ A" }), {
+    ok: true,
+    value: { status_code: "leave", reason: null, shift: "กะ A" },
+  });
+});
+
+test("leave keeps an optional trimmed reason within the limit", () => {
+  assert.deepEqual(normalizeStatusUpdate({ statusCode: "leave", reason: "  ลาป่วย  ", shift: "กะ B" }), {
     ok: true,
     value: { status_code: "leave", reason: "ลาป่วย", shift: "กะ B" },
   });
-  assert.deepEqual(normalizeStatusUpdate({ statusCode: "leave", reason: "ลาป่วย" }), { ok: false });
-  assert.deepEqual(
-    normalizeStatusUpdate({ statusCode: "leave", reason: "ลาป่วย", shift: "กะเช้า" }),
-    { ok: false },
-  );
   assert.deepEqual(
     normalizeStatusUpdate({ statusCode: "leave", reason: "ก".repeat(REASON_MAX_LENGTH + 1), shift: "กะ A" }),
     { ok: false },
@@ -79,6 +99,11 @@ test("leave needs a reason of 1-200 characters and a valid shift", () => {
     normalizeStatusUpdate({ statusCode: "leave", reason: "ก".repeat(REASON_MAX_LENGTH), shift: "กะ A" }),
     { ok: true, value: { status_code: "leave", reason: "ก".repeat(REASON_MAX_LENGTH), shift: "กะ A" } },
   );
+});
+
+test("leave still needs a valid shift without a reason", () => {
+  assert.deepEqual(normalizeStatusUpdate({ statusCode: "leave" }), { ok: false });
+  assert.deepEqual(normalizeStatusUpdate({ statusCode: "leave", shift: "กะเช้า" }), { ok: false });
 });
 
 test("an unknown or empty status code is rejected", () => {

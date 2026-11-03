@@ -2,7 +2,7 @@
 // Registrant list for the meeting controller. Read-only: it consumes the
 // existing Worker GET endpoints (dashboard summary for the cycle picker and
 // status labels, dashboard registrants for the rows) and never writes.
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import ControllerLayout from '../components/ControllerLayout.vue'
 import { postJson } from '../api.js'
 
@@ -21,6 +21,8 @@ const STATUS_CODE_BY_LABEL = {
   ลาประชุม: 'leave',
 }
 const REASON_STATUS_CODES = ['urgent_busy', 'leave']
+// Only urgent_busy makes the reason mandatory; leave keeps it optional.
+const REASON_REQUIRED_STATUS_CODES = ['urgent_busy']
 const LEAVE_CODE = 'leave'
 const SHIFT_VALUES = ['กะ A', 'กะ B']
 const REASON_MAX_LENGTH = 200
@@ -120,15 +122,14 @@ function toneOfStatus(label) {
 const editCode = computed(() => STATUS_CODE_BY_LABEL[editStatus.value] ?? '')
 const editNeedsReason = computed(() => REASON_STATUS_CODES.includes(editCode.value))
 const editNeedsShift = computed(() => editCode.value === LEAVE_CODE)
+const editNeedsReasonRequired = computed(() => REASON_REQUIRED_STATUS_CODES.includes(editCode.value))
 
 const editCanSave = computed(() => {
   if (saving.value) return false
   if (!editItem.value?.employeeId || !editCode.value || !cycle.value) return false
   if (editNeedsShift.value && !SHIFT_VALUES.includes(editShift.value)) return false
-  if (editNeedsReason.value) {
-    const length = editReason.value.trim().length
-    if (length === 0 || length > REASON_MAX_LENGTH) return false
-  }
+  if (editNeedsReason.value && editReason.value.trim().length > REASON_MAX_LENGTH) return false
+  if (editNeedsReasonRequired.value && editReason.value.trim().length === 0) return false
   return true
 })
 
@@ -143,6 +144,13 @@ function openEdit(item) {
   notice.value = ''
   editOpen.value = true
 }
+
+// Changing the status drops whatever the new status does not use, so a shift
+// picked for one status can never carry over into another status' reason box.
+watch(editStatus, () => {
+  if (!editNeedsShift.value) editShift.value = ''
+  if (!editNeedsReason.value) editReason.value = ''
+})
 
 function closeEdit() {
   if (saving.value) return
@@ -538,7 +546,10 @@ loadPage()
             </label>
 
             <label v-if="editNeedsReason" class="field">
-              <span class="field-label">เหตุผล (ไม่เกิน {{ REASON_MAX_LENGTH }} ตัวอักษร)</span>
+              <span class="field-label">
+                เหตุผล ({{ editNeedsReasonRequired ? 'จำเป็น' : 'ไม่บังคับ' }} · ไม่เกิน
+                {{ REASON_MAX_LENGTH }} ตัวอักษร)
+              </span>
               <textarea
                 v-model="editReason"
                 class="textarea"
@@ -895,11 +906,22 @@ loadPage()
   gap: 12px;
   width: 100%;
   max-width: 420px;
-  max-height: 90vh;
+  max-height: calc(100vh - 32px);
+  margin: auto;
   overflow-y: auto;
   padding: 20px;
   border-radius: 16px;
   background: #ffffff;
+}
+
+/* The .field row layout uses a 220px flex basis for the page controls; inside
+   the column modal that basis would become a 220px tall gap per field. */
+.modal .field {
+  flex: 0 0 auto;
+}
+
+.modal .inline-error {
+  margin: 0;
 }
 
 .modal-title {

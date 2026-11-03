@@ -12,7 +12,12 @@ export const STATUS_CODE_BY_LABEL = {
 // status change is validated against this list; the browser never decides.
 export const STATUS_CODES = Object.values(STATUS_CODE_BY_LABEL);
 
+// Statuses that store a reason at all. The dialog shows the reason box for
+// these only.
 export const REASON_STATUS_CODES = ["urgent_busy", "leave"];
+// Only urgent_busy makes the reason mandatory. A leave can be recorded without
+// typing anything, but a reason that is typed must still fit the length limit.
+export const REASON_REQUIRED_STATUS_CODES = ["urgent_busy"];
 export const SHIFT_STATUS_CODES = ["leave"];
 export const SHIFT_VALUES = ["กะ A", "กะ B"];
 export const REASON_MAX_LENGTH = 200;
@@ -26,16 +31,20 @@ export function requiresReason(statusCode) {
   return REASON_STATUS_CODES.includes(statusCode);
 }
 
+export function requiresReasonText(statusCode) {
+  return REASON_REQUIRED_STATUS_CODES.includes(statusCode);
+}
+
 export function requiresShift(statusCode) {
   return SHIFT_STATUS_CODES.includes(statusCode);
 }
 
 /**
- * Validates a manual status change and normalises the reason/shift pair the
- * same way the public register route does: a reason only for urgent_busy and
- * leave, a shift only for leave, and neither for the other two statuses (they
- * are cleared to null). Returns { ok: true, value } with the database column
- * names, or { ok: false } for anything the register route would reject.
+ * Validates a manual status change and normalises the reason/shift pair: a
+ * shift only for leave, a reason for urgent_busy (mandatory) and leave
+ * (optional, at most REASON_MAX_LENGTH characters), and neither for the other
+ * two statuses (they are cleared to null). Returns { ok: true, value } with the
+ * database column names, or { ok: false } for anything the routes would reject.
  */
 export function normalizeStatusUpdate({ statusCode, reason, shift } = {}) {
   if (!STATUS_CODES.includes(statusCode)) return { ok: false };
@@ -49,18 +58,20 @@ export function normalizeStatusUpdate({ statusCode, reason, shift } = {}) {
 
   const trimmedReason = typeof reason === "string" ? reason.trim() : "";
   if (requiresReason(statusCode)) {
-    if (trimmedReason.length === 0 || trimmedReason.length > REASON_MAX_LENGTH) {
+    if (trimmedReason.length > REASON_MAX_LENGTH) return { ok: false };
+    if (requiresReasonText(statusCode) && trimmedReason.length === 0) {
       return { ok: false };
     }
   } else if (trimmedReason.length > 0) {
     return { ok: false };
   }
 
+  const keepsReason = requiresReason(statusCode) && trimmedReason.length > 0;
   return {
     ok: true,
     value: {
       status_code: statusCode,
-      reason: requiresReason(statusCode) ? trimmedReason : null,
+      reason: keepsReason ? trimmedReason : null,
       shift: requiresShift(statusCode) ? columnShift : null,
     },
   };
