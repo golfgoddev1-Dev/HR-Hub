@@ -1,7 +1,7 @@
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import dotenv from 'dotenv'
-import { getSupabase } from '../server/supabase.js'
+import { getSupabase } from './lib/supabase.js'
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 dotenv.config({ path: path.join(projectRoot, '.env.local'), quiet: true })

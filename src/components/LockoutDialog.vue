@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from 'vue'
-import { formatBangkokDate, formatBangkokTime } from '../../server/time.js'
+import { formatBangkokDate, formatBangkokTime } from '../time.js'
 
 const props = defineProps({
   modelValue: { type: Boolean, required: true },

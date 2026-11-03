@@ -1,3 +1,4 @@
+// Bangkok date/time display helpers for the browser (was server/time.js).
 export function formatBangkokTime(iso) {
   const value = new Intl.DateTimeFormat('en-GB', {
     timeZone: 'Asia/Bangkok',

@@ -114,13 +114,12 @@
 
 ## 6. การรันในเครื่อง (จนกว่าจะ cutover)
 
-`npm run dev` รัน Worker ในเครื่อง (`wrangler dev` ที่ `http://127.0.0.1:8787`) คู่กับ Vite และ Vite proxy ส่ง `/api` ไปที่ Worker ตาม `vite.config.js` — Express เดิม (`server/`) ยังใช้ได้ผ่าน `npm run dev:api`
+`npm run dev` รัน Worker ในเครื่อง (`wrangler dev` ที่ `http://127.0.0.1:8787`) คู่กับ Vite และ Vite proxy ส่ง `/api` ไปที่ Worker ตาม `vite.config.js` — Express ถูกถอดออกแล้ว Worker เป็น API เดียว
 
 - `npm install`
 - `npm run dev` (Worker + Vite พร้อมกัน) — ค่าเริ่มต้น
-- แยกคำสั่ง: `npm run dev:worker` (Worker), `npm run dev:web` (Vite), `npm run dev:api` (Express เดิม)
-- จะใช้ Express ต้องตั้ง `VITE_API_TARGET=http://localhost:3001` ให้ proxy ไปพอร์ตเดิม
-- Worker ใช้ secrets จาก `worker/.dev.vars`; Express ใช้ `.env.local` ตาม `.env.example` (ห้าม commit ทั้งสองไฟล์)
+- แยกคำสั่ง: `npm run dev:worker` (Worker), `npm run dev:web` (Vite); เปลี่ยนเป้าหมาย proxy ด้วย `VITE_API_TARGET`
+- Worker ใช้ secrets จาก `worker/.dev.vars` (ห้าม commit); สคริปต์ผู้ดูแล (`issue:reset-code`, `check:*`) ยังอ่าน `.env.local` ตาม `.env.example`
 
 ## 7. Checklist ก่อนเปิดใช้จริง
 

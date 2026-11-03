@@ -2,9 +2,9 @@ import { randomInt } from 'node:crypto'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import dotenv from 'dotenv'
-import { getRequiredEnv } from '../server/config.js'
-import { hmacSha256Hex } from '../server/crypto.js'
-import { getSupabase } from '../server/supabase.js'
+import { getRequiredEnv } from './lib/config.js'
+import { hmacSha256Hex } from './lib/crypto.js'
+import { getSupabase } from './lib/supabase.js'
 
 async function main() {
   const employeeCode = process.argv[2]

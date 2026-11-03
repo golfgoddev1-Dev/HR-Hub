@@ -6,7 +6,6 @@
   "scripts": {
     "dev": "concurrently -n worker,web -c magenta,green \"npm:dev:worker\" \"npm:dev:web\"",
     "dev:worker": "npm --prefix worker run dev",
-    "dev:api": "node --watch server/index.js",
     "dev:web": "vite",
     "build": "vite build",
     "preview": "vite preview",
@@ -15,8 +14,7 @@
     "check:admin-hash": "node scripts/check-admin-hash.js",
     "check:supabase": "node scripts/check-supabase.js",
     "check:meeting-types": "node scripts/check-meeting-types.js",
-    "issue:reset-code": "node scripts/issue-reset-code.js",
-    "start": "cross-env NODE_ENV=production node server/index.js"
+    "issue:reset-code": "node scripts/issue-reset-code.js"
   },
   "dependencies": {
     "@fontsource/ibm-plex-sans": "^5.3.0",

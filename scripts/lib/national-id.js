@@ -1,8 +1,9 @@
+// Node-only national-ID hash for the operator scripts (was server/national-id.js).
 import { getRequiredEnv } from './config.js'
 import { hmacSha256Hex } from './crypto.js'
 
 export function normalizeNationalId(input) {
-  return input.replace(/\D/g, '')
+  return String(input).replace(/\D/g, '')
 }
 
 export function nationalIdHash(normalized) {
