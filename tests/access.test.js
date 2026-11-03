@@ -10,8 +10,8 @@ describe('landingPathFor', () => {
     expect(landingPathFor('employee', false)).toBe('/leave')
   })
 
-  it('routes HR to the HR leave page', () => {
-    expect(landingPathFor('hr', false)).toBe('/leave/hr')
+  it('routes HR to the employee import page', () => {
+    expect(landingPathFor('hr', false)).toBe('/hr/employees/import')
   })
 
   it('routes meeting controllers to the meeting overview page', () => {

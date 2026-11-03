@@ -23,7 +23,8 @@ export function landingPathFor(loginRole, hasPendingApprovals) {
   if (loginRole === 'employee') {
     return hasPendingApprovals ? '/leave/approvals' : '/leave'
   }
-  if (loginRole === 'hr') return '/leave/hr'
+  // HR lands on the employee import page, matching the Worker (worker/src/session.js).
+  if (loginRole === 'hr') return '/hr/employees/import'
   if (loginRole === 'controller' || loginRole === 'meeting_controller') return '/meeting/controller'
   if (loginRole === 'system' || loginRole === 'system_admin') return '/admin'
   return '/login'

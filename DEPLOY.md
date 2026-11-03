@@ -112,14 +112,15 @@
    ซึ่งแปลว่า binding ต่อถึง Worker แล้ว
 8. หลังยืนยันว่าใช้งานได้จริงและไม่ rollback แล้ว จึงลบ Worker เก่า `hr-workers-spike` (owner ยืนยันก่อน)
 
-## 6. การรัน Express ในเครื่อง (จนกว่าจะ cutover)
+## 6. การรันในเครื่อง (จนกว่าจะ cutover)
 
-ส่วนนี้ใช้เฉพาะช่วงที่ API ยังเป็น Express (`server/`) ก่อน cutover ไป Worker — หลัง cutover ให้ลบส่วนนี้
+`npm run dev` รัน Worker ในเครื่อง (`wrangler dev` ที่ `http://127.0.0.1:8787`) คู่กับ Vite และ Vite proxy ส่ง `/api` ไปที่ Worker ตาม `vite.config.js` — Express เดิม (`server/`) ยังใช้ได้ผ่าน `npm run dev:api`
 
 - `npm install`
-- `npm run dev` (เปิด API และ Vite พร้อมกัน) หรือแยกเป็น `npm run dev:api` และ `npm run dev:web`
-- Vite dev proxy ส่ง `/api` ไปที่ `http://localhost:3001` ตาม `vite.config.js`
-- ตัวแปร env ของ Express ใช้ชื่อเดียวกับ `.env.example` และใส่ค่าจริงใน `.env.local` เท่านั้น (ห้าม commit)
+- `npm run dev` (Worker + Vite พร้อมกัน) — ค่าเริ่มต้น
+- แยกคำสั่ง: `npm run dev:worker` (Worker), `npm run dev:web` (Vite), `npm run dev:api` (Express เดิม)
+- จะใช้ Express ต้องตั้ง `VITE_API_TARGET=http://localhost:3001` ให้ proxy ไปพอร์ตเดิม
+- Worker ใช้ secrets จาก `worker/.dev.vars`; Express ใช้ `.env.local` ตาม `.env.example` (ห้าม commit ทั้งสองไฟล์)
 
 ## 7. Checklist ก่อนเปิดใช้จริง
 
