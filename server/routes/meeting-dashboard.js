@@ -4,6 +4,7 @@ import { getSupabase } from '../supabase.js'
 import { requireRole } from '../middleware/require-role.js'
 import { STATUS_LABEL_BY_CODE } from '../meeting-overview.js'
 import { verifyLoginPin } from '../pin-verify.js'
+import { normalizeStatusUpdate } from '../attendance-status.js'
 import {
   EMPTY_MESSAGE,
   bangkokDayKey,
@@ -376,6 +377,70 @@ router.get('/dept', async (req, res) => {
       counts,
       people,
       notYet,
+    })
+  } catch (error) {
+    logError(error)
+    return res.status(500).json({ ok: false, message: SERVER_ERROR_MESSAGE })
+  }
+})
+
+const statusUpdateSchema = z
+  .object({
+    code: z.enum(['sup', 'monthly']),
+    cycle: z.string().regex(/^\d{4}-\d{2}(-\d{2})?$/),
+    employeeId: z.uuid(),
+    statusCode: z.string(),
+    reason: z.string().nullish(),
+    shift: z.string().nullish(),
+  })
+  .strict()
+
+router.post('/attendance-status', async (req, res) => {
+  const parsed = statusUpdateSchema.safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ ok: false, message: INVALID_INPUT_MESSAGE })
+
+  // The target row is resolved from code + cycle + employeeId below: the client
+  // never sends an attendance id, and registered_at is never part of the patch.
+  const normalized = normalizeStatusUpdate(parsed.data)
+  if (!normalized.ok) return res.status(400).json({ ok: false, message: INVALID_INPUT_MESSAGE })
+
+  const { code, cycle, employeeId } = parsed.data
+  const patch = normalized.value
+
+  try {
+    const supabase = getSupabase()
+    const context = await loadContext(supabase, code)
+    if (!context) return res.status(400).json({ ok: false, message: TYPE_ERROR_MESSAGE })
+
+    const cycleRows = (context.rowsByCycle.get(cycle) ?? []).filter(
+      (row) => row.employee_id === employeeId,
+    )
+    const [row] = latestPerEmployee(cycleRows)
+    if (!row) return res.status(404).json({ ok: false, message: NO_ROW_MESSAGE })
+
+    const { data: updated, error: updateError } = await supabase
+      .from('meeting_attendance')
+      .update(patch)
+      .eq('id', row.id)
+      .select('id')
+      .maybeSingle()
+    if (updateError) throw updateError
+    if (!updated) return res.status(404).json({ ok: false, message: NO_ROW_MESSAGE })
+
+    // Status codes only in the detail: no reason text and no employee name.
+    const { error: auditError } = await supabase.from('audit_logs').insert({
+      actor_id: req.session.employeeId,
+      action: 'meeting_attendance_status_updated',
+      entity: 'meeting_attendance',
+      entity_id: row.id,
+      detail: JSON.stringify({ from: row.status_code, to: patch.status_code, created: false }),
+    })
+    if (auditError) throw auditError
+
+    return res.status(200).json({
+      ok: true,
+      status: STATUS_LABEL_BY_CODE[patch.status_code] ?? DASH,
+      shift: patch.shift,
     })
   } catch (error) {
     logError(error)

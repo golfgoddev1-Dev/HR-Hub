@@ -145,7 +145,7 @@ function createBackend(options = {}) {
       return jsonResponse([{ id: EMPLOYEE_ID, is_active: true }]);
     }
     if (table === "audit_logs") {
-      auditCalls.push(call);
+      auditCalls.push({ ...call, body: init.body });
       return jsonResponse([]);
     }
     // allowedLoginTypesFor (session.js): the controller must land in
@@ -197,6 +197,13 @@ function createBackend(options = {}) {
       return jsonResponse(allRows.filter((row) => ids.includes(row.session_id)));
     }
 
+    // ---- meeting_attendance: manual status update (PATCH) ----
+    if (table === "meeting_attendance" && method === "PATCH") {
+      const idFilter = params.get("id")?.replace("eq.", "");
+      state.attendanceWrites.push({ id: idFilter, body: JSON.parse(init.body ?? "{}") });
+      return jsonResponse([{ id: idFilter }]);
+    }
+
     // ---- meeting_roster ----
     if (table === "meeting_roster" && method === "GET") {
       const typeId = params.get("meeting_type_id")?.replace("eq.", "");
@@ -216,6 +223,7 @@ function createBackend(options = {}) {
   };
 
   const state = {
+    attendanceWrites: [],
     sessionsByType: {
       [TYPE_S]: SUP_SESSIONS,
       [TYPE_M]: MONTHLY_SESSIONS,
@@ -226,6 +234,23 @@ function createBackend(options = {}) {
     globalThis.fetch = originalFetch;
   }
   return { calls, auditCalls, state, restore };
+}
+
+const VALID_STATUS_BODY = {
+  code: "sup",
+  cycle: "2026-12-22",
+  employeeId: EMP_A,
+  statusCode: "not_attended",
+};
+
+async function postStatus(body, cookie = CONTROLLER_COOKIE) {
+  const headers = { "Content-Type": "application/json" };
+  if (cookie) headers.Cookie = cookie;
+  return app.request(
+    "/api/meeting/dashboard/attendance-status",
+    { method: "POST", headers, body: JSON.stringify(body) },
+    ENV,
+  );
 }
 
 async function get(path, cookie = CONTROLLER_COOKIE) {
@@ -589,6 +614,146 @@ test("GET /dept: validation and malformed cycle", async (t) => {
   }
 });
 
+test("POST /attendance-status: auth needs a meeting_controller session", async (t) => {
+  freeze(t);
+  const backend = createBackend();
+  try {
+    const anonymous = await postStatus(VALID_STATUS_BODY, null);
+    assert.equal(anonymous.status, 401);
+    assert.deepEqual(await anonymous.json(), { ok: false, error: UNAUTHENTICATED });
+
+    const employee = await postStatus(VALID_STATUS_BODY, EMPLOYEE_COOKIE);
+    assert.equal(employee.status, 403);
+    assert.deepEqual(await employee.json(), { ok: false, error: FORBIDDEN });
+
+    assert.equal(backend.state.attendanceWrites.length, 0);
+    assert.equal(backend.auditCalls.length, 0);
+  } finally {
+    backend.restore();
+  }
+});
+
+test("POST /attendance-status: server-side reason and shift rules", async (t) => {
+  freeze(t);
+  const backend = createBackend();
+  try {
+    const cases = [
+      { ...VALID_STATUS_BODY, statusCode: "attended", reason: "มีเหตุผล" },
+      { ...VALID_STATUS_BODY, statusCode: "attended", shift: "กะ A" },
+      { ...VALID_STATUS_BODY, statusCode: "urgent_busy" },
+      { ...VALID_STATUS_BODY, statusCode: "urgent_busy", reason: "   " },
+      { ...VALID_STATUS_BODY, statusCode: "urgent_busy", reason: "ติดงานด่วน", shift: "กะ A" },
+      { ...VALID_STATUS_BODY, statusCode: "urgent_busy", reason: "ก".repeat(201) },
+      { ...VALID_STATUS_BODY, statusCode: "leave", reason: "ลาป่วย" },
+      { ...VALID_STATUS_BODY, statusCode: "leave", reason: "ลาป่วย", shift: "กะเช้า" },
+      { ...VALID_STATUS_BODY, statusCode: "meeting_skipped" },
+      { ...VALID_STATUS_BODY, extra: true },
+      { ...VALID_STATUS_BODY, employeeId: "not-a-uuid" },
+      { ...VALID_STATUS_BODY, cycle: "2026-1" },
+      { ...VALID_STATUS_BODY, code: "weekly" },
+    ];
+    for (const body of cases) {
+      const res = await postStatus(body);
+      assert.equal(res.status, 400, JSON.stringify(body));
+      assert.deepEqual(await res.json(), { ok: false, error: INVALID_INPUT }, JSON.stringify(body));
+    }
+
+    assert.equal(backend.state.attendanceWrites.length, 0);
+    assert.equal(backend.auditCalls.length, 0);
+  } finally {
+    backend.restore();
+  }
+});
+
+test("POST /attendance-status: 404 when the person has no row in that cycle", async (t) => {
+  freeze(t);
+  const backend = createBackend();
+  try {
+    // EMP_C only has a row in the 2026-12-15 round, not the requested one.
+    const res = await postStatus({ ...VALID_STATUS_BODY, employeeId: EMP_C });
+    assert.equal(res.status, 404);
+    assert.deepEqual(await res.json(), { ok: false, error: "ไม่พบข้อมูลของคนนี้ในรอบนี้" });
+    assert.equal(backend.state.attendanceWrites.length, 0);
+    assert.equal(backend.auditCalls.length, 0);
+  } finally {
+    backend.restore();
+  }
+});
+
+test("POST /attendance-status: updates the resolved row only, and audits codes", async (t) => {
+  freeze(t);
+  const backend = createBackend();
+  try {
+    // EMP_A's latest row for 2026-12-22 is att-1 (attended, shift กะเช้า), so the
+    // request writes status_code/reason/shift and never registered_at.
+    const res = await postStatus({ ...VALID_STATUS_BODY, statusCode: "attended" });
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("Cache-Control"), "no-store");
+    assert.deepEqual(await res.json(), {
+      ok: true,
+      status: "เข้าร่วมประชุม",
+      shift: null,
+    });
+
+    assert.deepEqual(backend.state.attendanceWrites, [
+      { id: "att-1", body: { status_code: "attended", reason: null, shift: null } },
+    ]);
+
+    assert.equal(backend.auditCalls.length, 1);
+    assert.equal(backend.auditCalls[0].method, "POST");
+    const auditBody = JSON.parse(backend.auditCalls[0].body);
+    assert.deepEqual(Object.keys(auditBody).sort(), [
+      "action",
+      "actor_id",
+      "detail",
+      "entity",
+      "entity_id",
+    ]);
+    assert.equal(auditBody.action, "meeting_attendance_status_updated");
+    assert.equal(auditBody.entity, "meeting_attendance");
+    assert.equal(auditBody.entity_id, "att-1");
+    assert.deepEqual(JSON.parse(auditBody.detail), {
+      from: "attended",
+      to: "attended",
+      created: false,
+    });
+  } finally {
+    backend.restore();
+  }
+});
+
+test("POST /attendance-status: leave stores the trimmed reason and the chosen shift", async (t) => {
+  freeze(t);
+  const backend = createBackend();
+  try {
+    const res = await postStatus({
+      ...VALID_STATUS_BODY,
+      statusCode: "leave",
+      reason: "  ลาป่วย  ",
+      shift: "กะ B",
+    });
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), {
+      ok: true,
+      status: "ลาประชุม",
+      shift: "กะ B",
+    });
+    assert.deepEqual(backend.state.attendanceWrites[0].body, {
+      status_code: "leave",
+      reason: "ลาป่วย",
+      shift: "กะ B",
+    });
+    const auditBody = JSON.parse(backend.auditCalls[0].body);
+    assert.deepEqual(JSON.parse(auditBody.detail), {
+      from: "attended",
+      to: "leave",
+      created: false,
+    });
+  } finally {
+    backend.restore();
+  }
+});
+
 test("GET /registrants: ascending order and employee joins", async (t) => {
   freeze(t);
   const backend = createBackend();
@@ -600,9 +765,9 @@ test("GET /registrants: ascending order and employee joins", async (t) => {
     assert.deepEqual(body.cycle, { key: "2026-12-22", label: "วันอังคาร 22 ธ.ค. 2569" });
     assert.equal(body.total, 3);
     assert.deepEqual(body.items, [
-      { name: "คนดี", departmentName: "แผนกประชาสัมพันธ์", positionName: "พนักงานประชาสัมพันธ์", status: "ติดงานด่วน", shift: null, time: "08:00", employeeCode: null },
-      { name: "คนบี", departmentName: "แผนกวิจัย", positionName: "พนักงานวิจัย", status: "ลาประชุม", shift: "กะบ่าย", time: "09:30", employeeCode: null },
-      { name: "คนเอ", departmentName: "แผนกวิจัย", positionName: "หัวหน้าฝ่ายวิจัย", status: "เข้าร่วมประชุม", shift: "กะเช้า", time: "10:00", employeeCode: "A0001" },
+      { name: "คนดี", departmentName: "แผนกประชาสัมพันธ์", positionName: "พนักงานประชาสัมพันธ์", status: "ติดงานด่วน", shift: null, time: "08:00", employeeCode: null, employeeId: EMP_D, id: "att-4" },
+      { name: "คนบี", departmentName: "แผนกวิจัย", positionName: "พนักงานวิจัย", status: "ลาประชุม", shift: "กะบ่าย", time: "09:30", employeeCode: null, employeeId: EMP_B, id: "att-2" },
+      { name: "คนเอ", departmentName: "แผนกวิจัย", positionName: "หัวหน้าฝ่ายวิจัย", status: "เข้าร่วมประชุม", shift: "กะเช้า", time: "10:00", employeeCode: "A0001", employeeId: EMP_A, id: "att-1" },
     ]);
 
     for (const query of ["?code=sup", "?code=sup&cycle=fff"]) {
@@ -650,6 +815,8 @@ test("GET /registrants: employee_code is selected and mapped to employeeCode", a
         "shift",
         "time",
         "employeeCode",
+        "employeeId",
+        "id",
       ]);
     }
 

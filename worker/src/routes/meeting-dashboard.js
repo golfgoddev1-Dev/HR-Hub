@@ -31,6 +31,81 @@ import {
   topAbsentPerDept,
 } from "../meeting-dashboard.js";
 import { STATUS_LABEL_BY_CODE } from "../meeting-overview.js";
+import { normalizeStatusUpdate } from "../attendance-status.js";
+
+// --- Manual status change (POST /attendance-status) -------------------------
+// The controller may correct one person's status for the round the page shows.
+// The row is resolved server-side from code + cycle + employeeId; an attendance
+// id from the browser is never accepted. These helpers are local to the group,
+// like the ones in routes/dashboard-reason.js and routes/meeting-roster.js.
+const AUDIT_TABLE = "audit_logs";
+const NO_ROW_MESSAGE = "ไม่พบข้อมูลของคนนี้ในรอบนี้";
+const STATUS_UPDATE_ACTION = "meeting_attendance_status_updated";
+const MAX_BODY_BYTES = 4 * 1024;
+
+// Same set as Express's z.uuid(): versions 1-8 with an RFC variant, plus the
+// nil and max UUIDs, case-insensitive.
+const UUID_PATTERN =
+  /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/i;
+
+// Strict body: exactly these keys. reason and shift are optional and may be null.
+const STATUS_BODY_KEYS = new Set(["code", "cycle", "employeeId", "statusCode", "reason", "shift"]);
+
+function isPlainObject(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isJsonContentType(value) {
+  if (typeof value !== "string") return false;
+  return value.split(";")[0].trim().toLowerCase() === "application/json";
+}
+
+async function readStrictJson(c) {
+  if (!isJsonContentType(c.req.header("Content-Type"))) return null;
+
+  const declaredLength = Number(c.req.header("Content-Length"));
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_BODY_BYTES) return null;
+
+  let text;
+  try {
+    text = await c.req.text();
+  } catch {
+    return null;
+  }
+  if (new TextEncoder().encode(text).length > MAX_BODY_BYTES) return null;
+
+  try {
+    const parsed = JSON.parse(text);
+    return isPlainObject(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function isStrictStatusUpdateBody(value) {
+  if (!isPlainObject(value)) return false;
+  for (const key of Object.keys(value)) {
+    if (!STATUS_BODY_KEYS.has(key)) return false;
+  }
+  for (const key of ["code", "cycle", "employeeId", "statusCode"]) {
+    if (typeof value[key] !== "string") return false;
+  }
+  for (const key of ["reason", "shift"]) {
+    const field = value[key];
+    if (field !== undefined && field !== null && typeof field !== "string") return false;
+  }
+  return true;
+}
+
+/** Turns a { error: { code } } db result into a throw so the route answers 500. */
+function ensureOk(result) {
+  if (result && result.error) {
+    const error = new Error("database write failed");
+    error.code = result.error.code;
+    throw error;
+  }
+  return result;
+}
 
 const INVALID_INPUT_MESSAGE = "ข้อมูลไม่ถูกต้อง";
 const TYPE_ERROR_MESSAGE = "ประเภทการประชุมไม่ถูกต้อง";
@@ -492,6 +567,8 @@ dashboard.get("/registrants", async (c) => {
         shift: row.shift ?? null,
         time: timeOfDay(row.registered_at),
         employeeCode: employee?.employeeCode ?? null,
+        employeeId: row.employee_id,
+        id: row.id,
       };
     });
 
@@ -598,5 +675,66 @@ function statusOrderIndex(label) {
   const index = STATUS_LABELS.indexOf(label);
   return index === -1 ? STATUS_LABELS.length : index;
 }
+
+/* ------------------------------------------------------------------ */
+/* POST /api/meeting/dashboard/attendance-status                       */
+/* ------------------------------------------------------------------ */
+
+dashboard.post("/attendance-status", async (c) => {
+  const guardResult = await guard(c);
+  if (!guardResult.ok) return reject(c, guardResult.status, guardResult.message);
+
+  const body = await readStrictJson(c);
+  if (!body || !isStrictStatusUpdateBody(body)) return reject(c, 400, INVALID_INPUT_MESSAGE);
+  if (!VALID_CODES.has(body.code)) return reject(c, 400, INVALID_INPUT_MESSAGE);
+  if (!CYCLE_PATTERN.test(body.cycle)) return reject(c, 400, INVALID_INPUT_MESSAGE);
+  if (!UUID_PATTERN.test(body.employeeId)) return reject(c, 400, INVALID_INPUT_MESSAGE);
+
+  const normalized = normalizeStatusUpdate(body);
+  if (!normalized.ok) return reject(c, 400, INVALID_INPUT_MESSAGE);
+
+  const patch = normalized.value;
+  const db = createDb(c.env);
+  try {
+    // Same loader the GET routes use, so the cycle/row rules stay identical.
+    const context = await loadContext(db, body.code);
+    if (context.typeNotFound) return reject(c, 400, TYPE_ERROR_MESSAGE);
+
+    const cycleRows = (context.rowsByCycle.get(body.cycle) ?? []).filter(
+      (row) => row.employee_id === body.employeeId,
+    );
+    const [row] = latestPerEmployee(cycleRows);
+    if (!row) return reject(c, 404, NO_ROW_MESSAGE);
+
+    const updated = await db.update(ATTENDANCE_TABLE, patch, [["id", "eq", row.id]], {
+      returning: true,
+      columns: "id",
+    });
+    ensureOk(updated);
+    if (!Array.isArray(updated.data) || updated.data.length === 0) {
+      return reject(c, 404, NO_ROW_MESSAGE);
+    }
+
+    // Status codes only in the detail: no reason text and no employee name.
+    ensureOk(
+      await db.insert(AUDIT_TABLE, {
+        actor_id: guardResult.session.employeeId,
+        action: STATUS_UPDATE_ACTION,
+        entity: ATTENDANCE_TABLE,
+        entity_id: row.id,
+        detail: JSON.stringify({ from: row.status_code, to: patch.status_code, created: false }),
+      })
+    );
+
+    return c.json({
+      ok: true,
+      status: STATUS_LABEL_BY_CODE[patch.status_code] ?? DASH,
+      shift: patch.shift,
+    });
+  } catch (error) {
+    logError(error);
+    return reject(c, 500, SERVER_ERROR_MESSAGE);
+  }
+});
 
 export default dashboard;
