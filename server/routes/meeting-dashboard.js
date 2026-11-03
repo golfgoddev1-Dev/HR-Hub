@@ -4,6 +4,14 @@ import { getSupabase } from '../supabase.js'
 import { requireRole } from '../middleware/require-role.js'
 import { STATUS_LABEL_BY_CODE } from '../meeting-overview.js'
 import { verifyLoginPin } from '../pin-verify.js'
+import { normalizeStatusUpdate } from '../attendance-status.js'
+import { triggerAutoAbsentIfDue } from '../auto-absent-job.js'
+import {
+  CLOSE_ACTION,
+  CLOSE_AUDIT_ENTITY,
+  closeCycle,
+  normalizeCutoffTime,
+} from '../cycle-close.js'
 import {
   EMPTY_MESSAGE,
   bangkokDayKey,
@@ -12,6 +20,7 @@ import {
   historyKeys,
   latestPerEmployee,
   rateOf,
+  sortByRegisteredAt,
   thaiDateLabel,
   thaiMonthLabel,
   thaiShortDateLabel,
@@ -48,6 +57,11 @@ const deptSchema = z.object({
   code: z.enum(['sup', 'monthly']),
   cycle: z.string().regex(/^\d{4}-\d{2}(-\d{2})?$/),
   dept: z.string().min(1).max(200),
+})
+
+const registrantsSchema = z.object({
+  code: z.enum(['sup', 'monthly']),
+  cycle: z.string().regex(/^\d{4}-\d{2}(-\d{2})?$/),
 })
 
 const monthlySummarySchema = z.object({
@@ -113,6 +127,91 @@ async function loadCycleSessions(supabase, typeId, code, cycle) {
   const { data, error } = await query
   if (error) throw error
   return data ?? []
+}
+
+async function loadCloseType(supabase, code) {
+  const { data, error } = await supabase
+    .from('meeting_types')
+    .select('id, code, name, default_cutoff_time')
+    .eq('code', code)
+    .maybeSingle()
+  if (error) throw error
+  return data ?? null
+}
+
+// Session lookup for close-cycle: the same query /registrants runs, plus the
+// cutoff time (the session's own value, else the type default). No session is
+// ever created here.
+async function loadCloseSessions(supabase, { code, cycle }) {
+  const type = await loadCloseType(supabase, code)
+  if (!type) return []
+
+  const base = supabase
+    .from('meeting_sessions')
+    .select('id, session_date, meeting_type_id, cutoff_time')
+    .eq('meeting_type_id', type.id)
+  const query =
+    code === 'sup'
+      ? base.eq('session_date', cycle)
+      : base
+          .gte('session_date', `${cycle}-01`)
+          .lt('session_date', `${nextMonthKey(cycle)}-01`)
+  const { data, error } = await query
+  if (error) throw error
+
+  return (data ?? []).map((row) => ({
+    ...row,
+    meeting_type_id: row.meeting_type_id ?? type.id,
+    cutoff_time: normalizeCutoffTime(row.cutoff_time) ?? type.default_cutoff_time ?? null,
+  }))
+}
+
+async function loadCloseRoster(supabase, session) {
+  const { data, error } = await supabase
+    .from('meeting_roster')
+    .select(
+      'employee_id, employees!meeting_roster_employee_id_fkey!inner(department_id, position_id)',
+    )
+    .eq('meeting_type_id', session.meeting_type_id)
+    .eq('is_active', true)
+  if (error) throw error
+
+  return (data ?? []).map((row) => ({
+    employeeId: row.employee_id,
+    departmentId: row.employees?.department_id ?? null,
+    positionId: row.employees?.position_id ?? null,
+  }))
+}
+
+async function loadCloseAttendance(supabase, sessionId) {
+  const { data, error } = await supabase
+    .from('meeting_attendance')
+    .select('employee_id')
+    .eq('session_id', sessionId)
+  if (error) throw error
+  return data ?? []
+}
+
+// ignoreDuplicates keeps an existing row untouched; the returned rows are the
+// ones actually inserted, which is the number the response reports.
+async function insertAbsentRows(supabase, rows) {
+  const { data, error } = await supabase
+    .from('meeting_attendance')
+    .upsert(rows, { onConflict: 'session_id,employee_id', ignoreDuplicates: true })
+    .select('id')
+  if (error) throw error
+  return Array.isArray(data) ? data.length : rows.length
+}
+
+async function writeCloseAudit(supabase, { actorId, entityId, detail }) {
+  const { error } = await supabase.from('audit_logs').insert({
+    actor_id: actorId,
+    action: CLOSE_ACTION,
+    entity: CLOSE_AUDIT_ENTITY,
+    entity_id: entityId,
+    detail,
+  })
+  if (error) throw error
 }
 
 function cycleLabel(code, key) {
@@ -233,6 +332,7 @@ router.get('/', async (req, res) => {
 
   try {
     const supabase = getSupabase()
+    triggerAutoAbsentIfDue(supabase)
     const context = await loadContext(supabase, code)
     if (!context) return res.status(400).json({ ok: false, message: TYPE_ERROR_MESSAGE })
 
@@ -381,6 +481,135 @@ router.get('/dept', async (req, res) => {
     logError(error)
     return res.status(500).json({ ok: false, message: SERVER_ERROR_MESSAGE })
   }
+})
+
+router.get('/registrants', async (req, res) => {
+  const parsed = registrantsSchema.safeParse(req.query)
+  if (!parsed.success) return res.status(400).json({ ok: false, message: INVALID_INPUT_MESSAGE })
+  const { code, cycle } = parsed.data
+
+  try {
+    const supabase = getSupabase()
+    const type = await loadType(supabase, code)
+    if (!type) return res.status(400).json({ ok: false, message: TYPE_ERROR_MESSAGE })
+
+    const sessions = await loadCycleSessions(supabase, type.id, code, cycle)
+    const cycleRows = await loadAttendance(
+      supabase,
+      sessions.map((row) => row.id),
+    )
+    const latest = sortByRegisteredAt(latestPerEmployee(cycleRows))
+    const employees = await loadEmployees(
+      supabase,
+      latest.map((row) => row.employee_id),
+    )
+
+    const items = latest.map((row) => {
+      const employee = employees.get(row.employee_id)
+      return {
+        name: employee?.fullName ?? DASH,
+        departmentName: employee?.departmentName ?? DASH,
+        positionName: employee?.positionName ?? DASH,
+        status: STATUS_LABEL_BY_CODE[row.status_code] ?? DASH,
+        shift: row.shift ?? null,
+        time: timeOfDay(row.registered_at),
+        employeeId: row.employee_id,
+        id: row.id,
+      }
+    })
+
+    return res.status(200).json({
+      ok: true,
+      cycle: { key: cycle, label: cycleFullLabel(code, cycle) },
+      total: items.length,
+      items,
+    })
+  } catch (error) {
+    logError(error)
+    return res.status(500).json({ ok: false, message: SERVER_ERROR_MESSAGE })
+  }
+})
+
+const statusUpdateSchema = z
+  .object({
+    code: z.enum(['sup', 'monthly']),
+    cycle: z.string().regex(/^\d{4}-\d{2}(-\d{2})?$/),
+    employeeId: z.uuid(),
+    statusCode: z.string(),
+    reason: z.string().nullish(),
+    shift: z.string().nullish(),
+  })
+  .strict()
+
+router.post('/attendance-status', async (req, res) => {
+  const parsed = statusUpdateSchema.safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ ok: false, message: INVALID_INPUT_MESSAGE })
+
+  // The target row is resolved from code + cycle + employeeId below: the client
+  // never sends an attendance id, and registered_at is never part of the patch.
+  const normalized = normalizeStatusUpdate(parsed.data)
+  if (!normalized.ok) return res.status(400).json({ ok: false, message: INVALID_INPUT_MESSAGE })
+
+  const { code, cycle, employeeId } = parsed.data
+  const patch = normalized.value
+
+  try {
+    const supabase = getSupabase()
+    const context = await loadContext(supabase, code)
+    if (!context) return res.status(400).json({ ok: false, message: TYPE_ERROR_MESSAGE })
+
+    const cycleRows = (context.rowsByCycle.get(cycle) ?? []).filter(
+      (row) => row.employee_id === employeeId,
+    )
+    const [row] = latestPerEmployee(cycleRows)
+    if (!row) return res.status(404).json({ ok: false, message: NO_ROW_MESSAGE })
+
+    const { data: updated, error: updateError } = await supabase
+      .from('meeting_attendance')
+      .update(patch)
+      .eq('id', row.id)
+      .select('id')
+      .maybeSingle()
+    if (updateError) throw updateError
+    if (!updated) return res.status(404).json({ ok: false, message: NO_ROW_MESSAGE })
+
+    // Status codes only in the detail: no reason text and no employee name.
+    const { error: auditError } = await supabase.from('audit_logs').insert({
+      actor_id: req.session.employeeId,
+      action: 'meeting_attendance_status_updated',
+      entity: 'meeting_attendance',
+      entity_id: row.id,
+      detail: JSON.stringify({ from: row.status_code, to: patch.status_code, created: false }),
+    })
+    if (auditError) throw auditError
+
+    return res.status(200).json({
+      ok: true,
+      status: STATUS_LABEL_BY_CODE[patch.status_code] ?? DASH,
+      shift: patch.shift,
+    })
+  } catch (error) {
+    logError(error)
+    return res.status(500).json({ ok: false, message: SERVER_ERROR_MESSAGE })
+  }
+})
+
+// "Close the cycle": mark every active roster member with no row for the
+// cycle's session as not attended. The rules live in ../cycle-close.js, shared
+// verbatim with the Worker.
+router.post('/close-cycle', async (req, res) => {
+  const supabase = getSupabase()
+  const outcome = await closeCycle({
+    body: req.body,
+    now: new Date(),
+    actorId: req.session.employeeId,
+    loadSessions: (args) => loadCloseSessions(supabase, args),
+    loadRoster: (session) => loadCloseRoster(supabase, session),
+    loadAttendance: (sessionId) => loadCloseAttendance(supabase, sessionId),
+    insertAbsent: (rows) => insertAbsentRows(supabase, rows),
+    writeAudit: (args) => writeCloseAudit(supabase, args),
+  })
+  return res.status(outcome.status).json(outcome.body)
 })
 
 router.get('/monthly-summary', async (req, res) => {

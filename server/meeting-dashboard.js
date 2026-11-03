@@ -78,6 +78,10 @@ export function latestPerEmployee(rows) {
   return [...latest.values()]
 }
 
+export function sortByRegisteredAt(rows) {
+  return [...(rows ?? [])].sort((a, b) => registeredTime(a) - registeredTime(b))
+}
+
 export function countByStatus(rows) {
   const counts = { attended: 0, not_attended: 0, urgent_busy: 0, leave: 0, total: 0 }
   for (const row of rows ?? []) {

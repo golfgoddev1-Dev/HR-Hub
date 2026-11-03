@@ -215,20 +215,45 @@ export async function runAutoAbsentOnce(supabase) {
   return { processed }
 }
 
+let lastStartedAt = 0
+let runInProgress = false
+
+export function shouldStartRun({
+  now,
+  lastStartedAt: lastStart,
+  running,
+  windowMs = RUN_INTERVAL_MS,
+} = {}) {
+  if (running) return false
+  const current = Number(now)
+  if (!Number.isFinite(current)) return false
+  const previous = Number(lastStart)
+  if (!Number.isFinite(previous) || previous <= 0) return true
+  return current - previous >= windowMs
+}
+
+export function triggerAutoAbsentIfDue(supabase) {
+  const now = Date.now()
+  if (!shouldStartRun({ now, lastStartedAt, running: runInProgress })) return
+
+  lastStartedAt = now
+  runInProgress = true
+
+  Promise.resolve()
+    .then(() => runAutoAbsentOnce(supabase))
+    .catch((error) => {
+      logError(error)
+    })
+    .finally(() => {
+      runInProgress = false
+    })
+}
+
 export function startAutoAbsentJob(supabase) {
-  let running = false
   let intervalTimer = null
 
-  async function run() {
-    if (running) return
-    running = true
-    try {
-      await runAutoAbsentOnce(supabase)
-    } catch (error) {
-      logError(error)
-    } finally {
-      running = false
-    }
+  function run() {
+    triggerAutoAbsentIfDue(supabase)
   }
 
   const firstTimer = setTimeout(run, FIRST_RUN_DELAY_MS)

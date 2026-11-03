@@ -6,6 +6,7 @@ import {
   historyKeys,
   latestPerEmployee,
   rateOf,
+  sortByRegisteredAt,
   thaiDateLabel,
   thaiMonthLabel,
   topAbsentPerDept,
@@ -207,5 +208,21 @@ describe('topAbsentPerDept', () => {
   it('returns an empty list when there are no rows', () => {
     expect(topAbsentPerDept([])).toEqual([])
     expect(topAbsentPerDept(undefined)).toEqual([])
+  })
+})
+
+describe('sortByRegisteredAt', () => {
+  it('orders rows by registered_at ascending without mutating the input', () => {
+    const rows = [
+      { employee_id: 'b', registered_at: '2026-10-27T03:10:00Z' },
+      { employee_id: 'a', registered_at: '2026-10-27T02:00:00Z' },
+      { employee_id: 'c', registered_at: '2026-10-27T04:30:00Z' },
+    ]
+
+    const sorted = sortByRegisteredAt(rows)
+
+    expect(sorted.map((row) => row.employee_id)).toEqual(['a', 'b', 'c'])
+    expect(rows.map((row) => row.employee_id)).toEqual(['b', 'a', 'c'])
+    expect(sortByRegisteredAt([])).toEqual([])
   })
 })

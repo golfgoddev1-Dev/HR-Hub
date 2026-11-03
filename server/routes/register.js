@@ -4,6 +4,8 @@ import { getSupabase } from '../supabase.js'
 import { bangkokToday, resolveScanState } from '../register-window.js'
 import { isUniqueViolation } from '../unique-violation.js'
 import { STATUS_CODE_BY_LABEL, statusCodeFromLabel } from '../attendance-status.js'
+import { createFixedWindowLimiter } from '../rate-limit.js'
+import { triggerAutoAbsentIfDue } from '../auto-absent-job.js'
 
 const router = Router()
 
@@ -12,6 +14,8 @@ const SERVER_ERROR_MESSAGE = 'ระบบขัดข้องชั่วค�
 const ROSTER_ERROR_MESSAGE = 'ไม่พบรายชื่อนี้ในรายชื่อการประชุม'
 const DUPLICATE_MESSAGE = 'ท่านได้ลงทะเบียนสำหรับประชุมนี้แล้ว'
 const INVALID_BODY_MESSAGE = 'ข้อมูลไม่ถูกต้อง'
+const RATE_LIMIT_MESSAGE = 'ส่งคำขอบ่อยเกินไป กรุณารอสักครู่แล้วลองใหม่'
+const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000
 const DASH = '-'
 
 const STATUSES = Object.keys(STATUS_CODE_BY_LABEL)
@@ -27,6 +31,18 @@ const submitSchema = z.object({
   shift: z.string().nullish(),
   reason: z.string().nullish(),
 }).strict()
+
+const contextLimiter = createFixedWindowLimiter({ limit: 1000, windowMs: RATE_LIMIT_WINDOW_MS })
+const submitLimiter = createFixedWindowLimiter({ limit: 300, windowMs: RATE_LIMIT_WINDOW_MS })
+
+function isLimited(limiter, routeName, req) {
+  const ip = typeof req.ip === 'string' && req.ip.length > 0 ? req.ip : 'unknown'
+  return !limiter(`${routeName}|${ip}`)
+}
+
+function limitExceeded(res) {
+  return res.status(429).json({ ok: false, message: RATE_LIMIT_MESSAGE })
+}
 
 function logError(error) {
   console.error('[register-error]', {
@@ -165,9 +181,12 @@ router.use((_req, res, next) => {
 })
 
 router.get('/context', async (req, res) => {
+  if (isLimited(contextLimiter, 'context', req)) return limitExceeded(res)
+
   try {
     const token = typeof req.query.t === 'string' ? req.query.t : ''
     const supabase = getSupabase()
+    triggerAutoAbsentIfDue(supabase)
     const type = await findTypeByToken(supabase, token)
     if (!type) return res.status(404).json({ ok: false, message: LINK_ERROR_MESSAGE })
 
@@ -199,6 +218,8 @@ router.get('/context', async (req, res) => {
 })
 
 router.post('/submit', async (req, res) => {
+  if (isLimited(submitLimiter, 'submit', req)) return limitExceeded(res)
+
   const parsed = submitSchema.safeParse(req.body)
   if (!parsed.success) return res.status(400).json({ ok: false, message: INVALID_BODY_MESSAGE })
 

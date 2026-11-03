@@ -4,6 +4,7 @@ import { getSupabase } from '../supabase.js'
 import { requireRole } from '../middleware/require-role.js'
 import { bangkokToday } from '../register-window.js'
 import { countByStatus, findPending, sessionPhase } from '../meeting-overview.js'
+import { triggerAutoAbsentIfDue } from '../auto-absent-job.js'
 
 const router = Router()
 
@@ -92,6 +93,7 @@ router.use(requireRole('meeting_controller'))
 router.get('/', async (_req, res) => {
   try {
     const supabase = getSupabase()
+    triggerAutoAbsentIfDue(supabase)
     const now = new Date()
     const today = bangkokToday(now)
     const todayWeekday = weekdayOf(today)
