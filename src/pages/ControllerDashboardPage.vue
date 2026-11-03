@@ -51,6 +51,50 @@ const reasons = reactive({})
 
 const monthly = reactive({ month: '', options: [], loading: false, error: '', data: null })
 
+const STATUS_ICON = { เข้าร่วมประชุม: 'check_circle', ไม่เข้าร่วม: 'cancel', ติดงานด่วน: 'engineering', ลาประชุม: 'event_busy' }
+const SHORT_LABEL = { เข้าร่วมประชุม: 'เข้าร่วม', ไม่เข้าร่วม: 'ไม่เข้า', ติดงานด่วน: 'งานด่วน', ลาประชุม: 'ลา' }
+const DONUT_COLORS = { ok: '#006b56', muted: '#bfc9c4', warn: '#eec14b', info: '#90d4c0' }
+const QUORUM_TARGET = 80
+const DONUT_C = 2 * Math.PI * 40
+const GAUGE_C = 2 * Math.PI * 32
+
+const registeredCount = computed(() => dash.value?.today?.registered ?? 0)
+const rosterCount = computed(() => dash.value?.rosterCount ?? 0)
+const registeredPct = computed(() =>
+  rosterCount.value ? Math.round((registeredCount.value / rosterCount.value) * 1000) / 10 : 0,
+)
+const quorumOk = computed(() => registeredPct.value > QUORUM_TARGET)
+const gaugeOffset = computed(() => GAUGE_C * (1 - Math.min(registeredPct.value, 100) / 100))
+
+function countOf(label) {
+  return dash.value?.today?.byStatus?.[label] ?? 0
+}
+
+function shareOf(count, base) {
+  return base ? Math.round((count / base) * 1000) / 10 : 0
+}
+
+function segWidth(count) {
+  return rosterCount.value ? `${(count / rosterCount.value) * 100}%` : '0%'
+}
+
+function isCurrentCycle(cycle) {
+  return currentIsThisPeriod.value && cycle.key === (dash.value?.current?.key ?? '')
+}
+
+const donutSegments = computed(() => {
+  const labels = dash.value?.statuses ?? []
+  const total = labels.reduce((sum, label) => sum + countOf(label), 0)
+  let consumed = 0
+  return labels.map((label) => {
+    const count = countOf(label)
+    const length = total ? (count / total) * DONUT_C : 0
+    const seg = { label, count, tone: toneOfStatus(label), length, offset: -consumed }
+    consumed += length
+    return seg
+  })
+})
+
 const historyOptions = computed(() =>
   cycleOptions.value.length > 0 ? cycleOptions.value : dash.value?.history?.options ?? [],
 )
@@ -194,6 +238,8 @@ async function loadDashboard() {
     }
     dash.value = data
     updatedText.value = formatUpdated(data.updated)
+    const selected = drawer.dept || data.depts?.[0]?.name || ''
+    if (selected) await openDept(selected)
   } catch {
     errorMessage.value = LOAD_ERROR_MESSAGE
   } finally {
@@ -415,17 +461,21 @@ loadDashboard()
           กลับหน้าหลัก
         </RouterLink>
 
-        <div class="page-head">
+        <div class="page-head fade-up">
           <div class="page-head-text">
             <h1>แดชบอร์ดการเข้าประชุม</h1>
-            <p class="updated">อัปเดตล่าสุด {{ updatedText || DASH }}</p>
+            <p class="updated">
+              <span class="pulse-dot"></span>
+              อัปเดตล่าสุด {{ updatedText || DASH }}
+            </p>
           </div>
           <button type="button" class="btn btn-primary" :disabled="loading" @click="refresh">
+            <span class="material-symbols-outlined btn-icon" :class="{ spin: loading }">refresh</span>
             {{ loading ? 'กำลังโหลด…' : 'รีเฟรช' }}
           </button>
         </div>
 
-        <div class="tabs" role="tablist">
+        <div class="tabs fade-up delay-1" role="tablist">
           <button
             v-for="tab in TABS"
             :key="tab.code"
@@ -444,297 +494,420 @@ loadDashboard()
 
         <div v-if="loading && !dash" class="state-box">กำลังโหลดข้อมูล…</div>
 
-        <template v-else-if="dash">
-          <section class="card">
-            <div class="card-head">
-              <h2 class="card-title">{{ cycleHeading }}</h2>
-              <span class="count-tag">{{ dash.meeting.periodLabel }}</span>
-            </div>
+        <div v-else-if="dash" class="layout">
+          <div class="col-main">
+            <!-- Current cycle: counts, donut, quorum gauge -->
+            <section class="card fade-up delay-1">
+              <div class="card-head">
+                <div class="card-head-left">
+                  <span v-if="currentIsThisPeriod" class="badge-today">วันนี้</span>
+                  <h2 class="card-title">{{ cycleHeading }}</h2>
+                </div>
+                <span class="period-tag">{{ dash.meeting.periodLabel }}</span>
+              </div>
 
-            <p v-if="dash.history.empty" class="empty-text">{{ NO_DATA_MESSAGE }}</p>
+              <p v-if="dash.history.empty" class="empty-text">{{ NO_DATA_MESSAGE }}</p>
 
-            <template v-else>
-              <div class="count-grid">
-                <div
-                  v-for="(label, index) in dash.statuses"
-                  :key="label"
-                  class="count-item"
-                  :class="`tone-${TONES[index] ?? 'muted'}`"
-                >
-                  <span class="count-label">{{ label }}</span>
-                  <span class="count-value">{{ dash.today.byStatus?.[label] ?? 0 }}</span>
+              <template v-else>
+                <div class="metric-grid">
+                  <div
+                    v-for="label in dash.statuses"
+                    :key="label"
+                    class="metric"
+                    :class="`tone-${toneOfStatus(label)}`"
+                  >
+                    <div class="metric-top">
+                      <span class="metric-label">{{ label }}</span>
+                      <span class="metric-icon material-symbols-outlined">{{ STATUS_ICON[label] ?? 'circle' }}</span>
+                    </div>
+                    <div class="metric-value-row">
+                      <span class="metric-value">{{ countOf(label) }}</span>
+                      <span class="metric-unit">คน</span>
+                      <span class="metric-share">{{ shareOf(countOf(label), registeredCount) }}%</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="donut-row">
+                  <div class="donut-card">
+                    <div class="donut">
+                      <svg viewBox="0 0 100 100" class="donut-svg" aria-hidden="true">
+                        <circle cx="50" cy="50" r="40" fill="none" stroke-width="12" class="donut-track" />
+                        <circle
+                          v-for="seg in donutSegments"
+                          :key="seg.label"
+                          cx="50"
+                          cy="50"
+                          r="40"
+                          fill="none"
+                          stroke-width="12"
+                          :stroke="DONUT_COLORS[seg.tone]"
+                          :stroke-dasharray="`${seg.length} ${DONUT_C}`"
+                          :stroke-dashoffset="seg.offset"
+                        />
+                      </svg>
+                      <div class="donut-center">
+                        <span class="donut-num">{{ registeredCount }}</span>
+                        <span class="donut-sub">ยืนยันแล้ว</span>
+                      </div>
+                    </div>
+                    <div class="donut-legend">
+                      <div class="legend-head">
+                        <span>สัดส่วนผู้แจ้งสถานะรอบนี้</span>
+                        <span>{{ registeredCount }} คน</span>
+                      </div>
+                      <div v-for="seg in donutSegments" :key="seg.label" class="legend-row">
+                        <span class="legend-dot" :style="{ background: DONUT_COLORS[seg.tone] }"></span>
+                        <span class="legend-label">{{ seg.label }}</span>
+                        <span class="legend-value">
+                          {{ shareOf(seg.count, registeredCount) }}% <em>({{ seg.count }})</em>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="quorum-card">
+                    <div class="quorum-text">
+                      <span class="quorum-title">
+                        <span class="material-symbols-outlined">verified_user</span>
+                        อัตราลงทะเบียนรวม
+                      </span>
+                      <span class="quorum-sub">{{ registeredCount }} จากทั้งหมด {{ rosterCount }} คน</span>
+                      <span class="quorum-badge" :class="{ 'is-ok': quorumOk }">
+                        {{ quorumOk ? 'ครบองค์ประชุม' : 'ยังไม่ครบองค์ประชุม' }}
+                      </span>
+                    </div>
+                    <div class="gauge">
+                      <svg viewBox="0 0 80 80" class="gauge-svg" aria-hidden="true">
+                        <circle cx="40" cy="40" r="32" fill="none" stroke-width="8" class="gauge-track" />
+                        <circle
+                          cx="40"
+                          cy="40"
+                          r="32"
+                          fill="none"
+                          stroke-width="8"
+                          stroke-linecap="round"
+                          class="gauge-fill"
+                          :stroke-dasharray="GAUGE_C"
+                          :stroke-dashoffset="gaugeOffset"
+                        />
+                      </svg>
+                      <div class="gauge-center">
+                        <span class="gauge-num">{{ registeredPct }}%</span>
+                        <span class="gauge-target">เป้าหมาย &gt;{{ QUORUM_TARGET }}%</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="summary-banner">
+                  <div class="summary-main">
+                    <span class="pulse-dot"></span>
+                    <span>ลงทะเบียนแล้ว {{ registeredCount }} / {{ rosterCount }} คน</span>
+                    <span class="summary-pct">({{ registeredPct }}% ของทั้งหมด)</span>
+                  </div>
+                  <div class="summary-pending">
+                    <span class="material-symbols-outlined">pending</span>
+                    ยังไม่ลงทะเบียน {{ dash.today.notYet }} คน
+                  </div>
+                </div>
+              </template>
+            </section>
+
+            <!-- Department overview -->
+            <section class="card fade-up delay-2">
+              <div class="card-head">
+                <div class="card-head-left">
+                  <h3 class="card-title">ภาพรวมตามแผนก</h3>
+                  <span class="count-tag">{{ dash.depts.length }} แผนก</span>
+                </div>
+                <span class="hint">
+                  <span class="material-symbols-outlined">touch_app</span>
+                  คลิกแถวเพื่อดูรายละเอียด
+                </span>
+              </div>
+
+              <p v-if="!dash.depts.length" class="empty-text">{{ NO_DATA_MESSAGE }}</p>
+
+              <div v-else class="table-wrap">
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th scope="col">แผนก</th>
+                      <th scope="col">ลงทะเบียน / ทั้งหมด</th>
+                      <th scope="col">ยังไม่ลงทะเบียน</th>
+                      <th scope="col">อัตราเข้าร่วม</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr
+                      v-for="row in dash.depts"
+                      :key="row.name"
+                      class="row-click"
+                      :class="{ 'row-active': drawer.dept === row.name }"
+                      tabindex="0"
+                      @click="openDept(row.name)"
+                      @keydown.enter="openDept(row.name)"
+                    >
+                      <td class="cell-name">
+                        <span class="dept-dot"></span>
+                        {{ row.name }}
+                      </td>
+                      <td class="cell-num" data-label="ลงทะเบียน / ทั้งหมด">
+                        {{ row.registered }} / {{ row.total }}
+                      </td>
+                      <td data-label="ยังไม่ลงทะเบียน">
+                        <span class="pill" :class="row.notYet > 0 ? 'pill-error' : 'pill-muted'">
+                          {{ row.notYet }} คน
+                        </span>
+                      </td>
+                      <td data-label="อัตราเข้าร่วม">
+                        <div class="rate">
+                          <span class="rate-track">
+                            <span class="rate-fill" :style="{ width: percent(row.rate) }"></span>
+                          </span>
+                          <span class="rate-text">{{ percent(row.rate) }}</span>
+                        </div>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <!-- History -->
+            <section class="card fade-up delay-3">
+              <div class="card-head wrap">
+                <div class="card-head-left column">
+                  <h3 class="card-title">ประวัติย้อนหลัง</h3>
+                  <span class="card-sub">แนวโน้มองค์ประกอบผู้เข้าร่วมแต่ละรอบการประชุม</span>
+                </div>
+                <div class="history-tools">
+                  <select v-model="value" class="select" aria-label="เลือกรอบ" @change="selectCycle">
+                    <option value="">รอบล่าสุด</option>
+                    <option v-for="option in historyOptions" :key="option.key" :value="option.key">
+                      {{ option.label }}
+                    </option>
+                  </select>
+                  <div class="mode-group" role="group" aria-label="มุมมองประวัติ">
+                    <button
+                      v-for="item in MODES"
+                      :key="item.key"
+                      type="button"
+                      class="mode-btn"
+                      :class="{ 'mode-active': mode === item.key }"
+                      @click="selectMode(item.key)"
+                    >
+                      {{ item.label }}
+                    </button>
+                  </div>
                 </div>
               </div>
 
-              <div class="notyet-row">
-                <span class="notyet-main">ยังไม่ลงทะเบียน {{ dash.today.notYet }} คน</span>
-                <span class="notyet-sub">
-                  ลงทะเบียนแล้ว {{ dash.today.registered }} / {{ dash.rosterCount }} คน
+              <div class="history-legend">
+                <span v-for="(label, index) in dash.statuses" :key="label" class="legend-chip">
+                  <span class="legend-swatch" :class="`seg-${TONES[index] ?? 'muted'}`"></span>{{ label }}
                 </span>
               </div>
-            </template>
-          </section>
 
-          <section class="card">
-            <div class="card-head">
-              <h2 class="card-title">ภาพรวมตามแผนก</h2>
-              <span class="count-tag">{{ dash.depts.length }} แผนก</span>
-            </div>
+              <p v-if="dash.history.empty || !dash.history.cycles.length" class="empty-text">
+                {{ NO_DATA_MESSAGE }}
+              </p>
 
-            <p v-if="!dash.depts.length" class="empty-text">{{ NO_DATA_MESSAGE }}</p>
+              <div v-else class="history-list">
+                <div v-for="cycle in dash.history.cycles" :key="cycle.key" class="history-row">
+                  <div class="history-label">
+                    <span>{{ cycle.label }}</span>
+                    <span v-if="isCurrentCycle(cycle)" class="badge-today small">วันนี้</span>
+                  </div>
+                  <div class="history-track">
+                    <div
+                      v-for="segment in segmentsOf(cycle)"
+                      :key="segment.key"
+                      class="history-seg"
+                      :class="`seg-${segment.key}`"
+                      :style="{ width: segWidth(segment.count) }"
+                      :title="`${segment.label} ${segment.count}`"
+                    >
+                      <span v-if="segment.count > 0">{{ segment.count }}</span>
+                    </div>
+                  </div>
+                  <div class="history-total">{{ cycle.total }}/{{ rosterCount }}</div>
+                </div>
+              </div>
 
-            <div v-else class="table-wrap">
-              <table class="table">
-                <thead>
-                  <tr>
-                    <th scope="col">แผนก</th>
-                    <th scope="col">ลงทะเบียน / ทั้งหมด</th>
-                    <th scope="col">ยังไม่ลงทะเบียน</th>
-                    <th scope="col">อัตราเข้าร่วม</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr
-                    v-for="row in dash.depts"
-                    :key="row.name"
-                    class="row-click"
-                    tabindex="0"
-                    @click="openDept(row.name)"
-                    @keydown.enter="openDept(row.name)"
-                  >
-                    <td class="cell-name">{{ row.name }}</td>
-                    <td class="cell-num" data-label="ลงทะเบียน / ทั้งหมด">
-                      {{ row.registered }} / {{ row.total }}
-                    </td>
-                    <td class="cell-num" data-label="ยังไม่ลงทะเบียน">{{ row.notYet }}</td>
-                    <td data-label="อัตราเข้าร่วม">
-                      <div class="rate">
-                        <span class="rate-track">
-                          <span class="rate-fill" :style="{ width: percent(row.rate) }"></span>
-                        </span>
-                        <span class="rate-text">{{ percent(row.rate) }}</span>
-                      </div>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </section>
+              <p class="note">ประวัติจะแสดงข้อมูลหลังนำเข้าข้อมูลย้อนหลังแล้วเท่านั้น</p>
+            </section>
 
-          <section class="card">
-            <div class="card-head">
-              <h2 class="card-title">ประวัติย้อนหลัง</h2>
-            </div>
+            <!-- Monthly summary -->
+            <section v-if="code === 'monthly'" class="card fade-up delay-3">
+              <div class="card-head">
+                <div class="card-head-left">
+                  <h2 class="card-title">สรุปรายเดือน</h2>
+                  <span v-if="monthly.data" class="count-tag">{{ monthly.data.totalMeetings }} ครั้ง</span>
+                </div>
+              </div>
 
-            <div class="history-controls">
               <label class="field">
-                <span class="field-label">เลือกรอบ</span>
-                <select v-model="value" class="select" @change="selectCycle">
-                  <option value="">รอบล่าสุด</option>
-                  <option v-for="option in historyOptions" :key="option.key" :value="option.key">
+                <span class="field-label">เดือน</span>
+                <select v-model="monthly.month" class="select" @change="selectMonth">
+                  <option v-if="!monthly.options.length" value="">{{ DASH }}</option>
+                  <option v-for="option in monthly.options" :key="option.key" :value="option.key">
                     {{ option.label }}
                   </option>
                 </select>
               </label>
 
-              <div class="mode-group" role="group" aria-label="มุมมองประวัติ">
-                <button
-                  v-for="item in MODES"
-                  :key="item.key"
-                  type="button"
-                  class="mode-btn"
-                  :class="{ 'mode-active': mode === item.key }"
-                  @click="selectMode(item.key)"
-                >
-                  {{ item.label }}
-                </button>
-              </div>
-            </div>
+              <p v-if="monthly.error" class="inline-error" role="alert">{{ monthly.error }}</p>
+              <div v-else-if="monthly.loading" class="state-box">กำลังโหลด…</div>
+              <p v-else-if="!monthly.data" class="empty-text">{{ NO_DATA_MESSAGE }}</p>
 
-            <p v-if="dash.history.empty || !dash.history.cycles.length" class="empty-text">
-              {{ NO_DATA_MESSAGE }}
-            </p>
+              <template v-else>
+                <p v-if="!monthly.data.depts.length" class="empty-text">{{ NO_DATA_MESSAGE }}</p>
 
-            <div v-else class="chart-wrap">
-              <div class="chart">
-                <div v-for="cycle in dash.history.cycles" :key="cycle.key" class="chart-col">
-                  <span class="chart-total">{{ cycle.total }}</span>
-                  <div class="chart-track">
-                    <div class="chart-bar" :style="{ height: barHeight(cycle.total) }">
-                      <span
-                        v-for="segment in segmentsOf(cycle)"
-                        :key="segment.key"
-                        class="chart-seg"
-                        :class="`seg-${segment.key}`"
-                        :style="{ flexGrow: segment.count }"
-                        :title="`${segment.label} ${segment.count}`"
-                      ></span>
-                    </div>
-                  </div>
-                  <span class="chart-label">{{ cycle.label }}</span>
+                <div v-else class="table-wrap">
+                  <table class="table table-wide">
+                    <thead>
+                      <tr>
+                        <th scope="col">แผนก</th>
+                        <th v-for="label in dash.statuses" :key="label" scope="col">{{ label }}</th>
+                        <th scope="col">รวม</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="row in monthly.data.depts" :key="row.name">
+                        <td class="cell-name">{{ row.name }}</td>
+                        <td
+                          v-for="label in dash.statuses"
+                          :key="label"
+                          class="cell-num"
+                          :data-label="label"
+                        >
+                          {{ row.counts?.[label] ?? 0 }}
+                        </td>
+                        <td class="cell-num" data-label="รวม">{{ row.rows }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
-              </div>
-            </div>
 
-            <p class="note">ประวัติจะแสดงข้อมูลหลังนำเข้าข้อมูลย้อนหลังแล้วเท่านั้น</p>
-          </section>
+                <h3 class="sub-title">ผู้ไม่เข้าร่วมมากที่สุดต่อแผนก</h3>
 
-          <section v-if="code === 'monthly'" class="card">
-            <div class="card-head">
-              <h2 class="card-title">สรุปรายเดือน</h2>
-              <span v-if="monthly.data" class="count-tag">
-                {{ monthly.data.totalMeetings }} ครั้ง
-              </span>
-            </div>
+                <p v-if="!topByDept.length" class="empty-text">{{ NO_DATA_MESSAGE }}</p>
 
-            <label class="field">
-              <span class="field-label">เดือน</span>
-              <select v-model="monthly.month" class="select" @change="selectMonth">
-                <option v-if="!monthly.options.length" value="">{{ DASH }}</option>
-                <option v-for="option in monthly.options" :key="option.key" :value="option.key">
-                  {{ option.label }}
-                </option>
-              </select>
-            </label>
-
-            <p v-if="monthly.error" class="inline-error" role="alert">{{ monthly.error }}</p>
-            <div v-else-if="monthly.loading" class="state-box">กำลังโหลด…</div>
-
-            <p v-else-if="!monthly.data" class="empty-text">{{ NO_DATA_MESSAGE }}</p>
-
-            <template v-else>
-              <p v-if="!monthly.data.depts.length" class="empty-text">{{ NO_DATA_MESSAGE }}</p>
-
-              <div v-else class="table-wrap">
-                <table class="table table-wide">
-                  <thead>
-                    <tr>
-                      <th scope="col">แผนก</th>
-                      <th v-for="label in dash.statuses" :key="label" scope="col">{{ label }}</th>
-                      <th scope="col">รวม</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="row in monthly.data.depts" :key="row.name">
-                      <td class="cell-name">{{ row.name }}</td>
-                      <td
-                        v-for="label in dash.statuses"
-                        :key="label"
-                        class="cell-num"
-                        :data-label="label"
-                      >
-                        {{ row.counts?.[label] ?? 0 }}
-                      </td>
-                      <td class="cell-num" data-label="รวม">{{ row.rows }}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-
-              <h3 class="sub-title">ผู้ไม่เข้าร่วมมากที่สุดต่อแผนก</h3>
-
-              <p v-if="!topByDept.length" class="empty-text">{{ NO_DATA_MESSAGE }}</p>
-
-              <div v-else class="table-wrap">
-                <table class="table table-wide">
-                  <thead>
-                    <tr>
-                      <th scope="col">แผนก</th>
-                      <th v-for="status in ['not_attended', 'urgent_busy', 'leave']" :key="status" scope="col">
-                        {{ TOP_STATUS_LABEL[status] }}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="dept in topByDept" :key="dept.name">
-                      <td class="cell-name">{{ dept.name }}</td>
-                      <td
-                        v-for="cell in dept.cells"
-                        :key="cell.status"
-                        class="cell-top"
-                        :data-label="TOP_STATUS_LABEL[cell.status]"
-                      >
-                        <span class="top-name">{{ cell.name || DASH }}</span>
-                        <span class="top-meta">{{ cell.count }} ครั้ง · {{ percent(cell.pct) }}</span>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </template>
-          </section>
-        </template>
-      </main>
-    </div>
-
-    <div v-if="drawer.open" class="drawer-backdrop" @click.self="closeDrawer">
-      <aside class="drawer" role="dialog" aria-modal="true" :aria-label="`รายชื่อแผนก ${drawer.dept}`">
-        <div class="drawer-head">
-          <div class="drawer-head-text">
-            <h2 class="card-title">{{ drawer.dept }}</h2>
-            <p class="drawer-sub">{{ drawer.data?.cycle?.label ?? dash?.current?.label ?? DASH }}</p>
-          </div>
-          <button type="button" class="icon-btn" aria-label="ปิด" @click="closeDrawer">
-            <span class="material-symbols-outlined">close</span>
-          </button>
-        </div>
-
-        <div v-if="drawer.loading" class="state-box">กำลังโหลด…</div>
-        <p v-else-if="drawer.error" class="inline-error" role="alert">{{ drawer.error }}</p>
-
-        <template v-else-if="drawer.data">
-          <div class="drawer-tags">
-            <span class="count-tag">{{ drawer.data.total }} คนในรายชื่อ</span>
-            <span class="count-tag tag-warn">ยังไม่ลงทะเบียน {{ drawer.data.notYet }}</span>
+                <div v-else class="table-wrap">
+                  <table class="table table-wide">
+                    <thead>
+                      <tr>
+                        <th scope="col">แผนก</th>
+                        <th
+                          v-for="status in ['not_attended', 'urgent_busy', 'leave']"
+                          :key="status"
+                          scope="col"
+                        >
+                          {{ TOP_STATUS_LABEL[status] }}
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="dept in topByDept" :key="dept.name">
+                        <td class="cell-name">{{ dept.name }}</td>
+                        <td
+                          v-for="cell in dept.cells"
+                          :key="cell.status"
+                          class="cell-top"
+                          :data-label="TOP_STATUS_LABEL[cell.status]"
+                        >
+                          <span class="top-name">{{ cell.name || DASH }}</span>
+                          <span class="top-meta">{{ cell.count }} ครั้ง · {{ percent(cell.pct) }}</span>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </template>
+            </section>
           </div>
 
-          <div class="drawer-counts">
-            <div
-              v-for="(label, index) in dash?.statuses ?? []"
-              :key="label"
-              class="drawer-count"
-              :class="`tone-${TONES[index] ?? 'muted'}`"
-            >
-              <span class="drawer-count-label">{{ label }}</span>
-              <span class="drawer-count-value">{{ drawer.data.counts?.[label] ?? 0 }}</span>
-            </div>
-          </div>
+          <!-- Side panel: department detail (always visible once a department is selected) -->
+          <aside class="col-side">
+            <div v-if="drawer.dept" class="card side-card fade-up delay-2">
+              <div class="side-head">
+                <div class="side-title">
+                  <span class="material-symbols-outlined side-icon">domain</span>
+                  <h3 class="card-title">{{ drawer.dept }}</h3>
+                </div>
+                <span v-if="drawer.data" class="count-tag">
+                  {{ drawer.data.total - drawer.data.notYet }} / {{ drawer.data.total }} คน
+                </span>
+              </div>
+              <p class="card-sub">{{ drawer.data?.cycle?.label ?? dash?.current?.label ?? DASH }}</p>
 
-          <p v-if="drawer.data.total === 0" class="empty-text">{{ EMPTY_DEPT_MESSAGE }}</p>
+              <div v-if="drawer.loading" class="state-box">กำลังโหลด…</div>
+              <p v-else-if="drawer.error" class="inline-error" role="alert">{{ drawer.error }}</p>
 
-          <div v-for="group in peopleGroups" :key="group.status" class="group">
-            <h3 class="group-title" :class="`tone-${toneOfStatus(group.status)}`">
-              {{ group.status }} ({{ group.people.length }})
-            </h3>
-            <ul class="people">
-              <li v-for="person in group.people" :key="person.employeeId" class="person">
-                <div class="person-row">
-                  <div class="person-info">
-                    <span class="person-name">{{ person.name }}</span>
-                    <span class="person-sub">
-                      {{ person.level }}
-                      <template v-if="person.shift"> · {{ person.shift }}</template>
-                      <template v-if="person.time"> · {{ person.time }} น.</template>
-                    </span>
-                  </div>
-                  <button
-                    v-if="REASON_STATUSES.includes(group.status)"
-                    type="button"
-                    class="btn btn-small"
-                    @click="openReason(person)"
+              <template v-else-if="drawer.data">
+                <div class="mini-grid">
+                  <div
+                    v-for="(label, index) in dash?.statuses ?? []"
+                    :key="label"
+                    class="mini"
+                    :class="`tone-${TONES[index] ?? 'muted'}`"
                   >
-                    ดูเหตุผล
-                  </button>
+                    <span class="mini-value">{{ drawer.data.counts?.[label] ?? 0 }}</span>
+                    <span class="mini-label">{{ SHORT_LABEL[label] ?? label }}</span>
+                  </div>
+                  <div class="mini tone-error">
+                    <span class="mini-value">{{ drawer.data.notYet }}</span>
+                    <span class="mini-label">รอลง</span>
+                  </div>
                 </div>
-                <p v-if="reasons[person.employeeId]" class="reason-text">
-                  <span class="reason-label">เหตุผล</span>
-                  {{ reasons[person.employeeId].text }}
-                </p>
-              </li>
-            </ul>
-          </div>
-        </template>
-      </aside>
+
+                <p v-if="drawer.data.total === 0" class="empty-text">{{ EMPTY_DEPT_MESSAGE }}</p>
+
+                <div class="people-scroll">
+                  <div v-for="group in peopleGroups" :key="group.status" class="group">
+                    <h4 class="group-title" :class="`tone-${toneOfStatus(group.status)}`">
+                      {{ group.status }} ({{ group.people.length }})
+                    </h4>
+                    <ul class="people">
+                      <li v-for="person in group.people" :key="person.employeeId" class="person">
+                        <div class="person-row">
+                          <div class="person-info">
+                            <span class="person-name">{{ person.name }}</span>
+                            <span class="person-sub">
+                              {{ person.level }}
+                              <template v-if="person.shift"> · {{ person.shift }}</template>
+                              <template v-if="person.time"> · {{ person.time }} น.</template>
+                            </span>
+                          </div>
+                          <button
+                            v-if="REASON_STATUSES.includes(group.status)"
+                            type="button"
+                            class="btn btn-small"
+                            @click="openReason(person)"
+                          >
+                            ดูเหตุผล
+                          </button>
+                        </div>
+                        <p v-if="reasons[person.employeeId]" class="reason-text">
+                          <span class="reason-label">เหตุผล</span>
+                          {{ reasons[person.employeeId].text }}
+                        </p>
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+              </template>
+            </div>
+
+            <div v-else class="card side-card side-empty">
+              <span class="material-symbols-outlined">domain</span>
+              <p class="empty-text">เลือกแผนกจากตารางเพื่อดูรายละเอียด</p>
+            </div>
+          </aside>
+        </div>
+      </main>
     </div>
 
     <div v-if="pinForm.open" class="modal-backdrop" @click.self="closeReason">
@@ -778,13 +951,33 @@ loadDashboard()
 @import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap');
 
 .page {
+  --primary: #004337;
+  --primary-container: #105c4d;
+  --secondary: #006b56;
+  --secondary-container: #98f4d7;
+  --on-secondary-container: #00725c;
+  --surface: #f3fbf8;
+  --surface-low: #edf6f2;
+  --surface-container: #e7f0ec;
+  --surface-high: #e1eae6;
+  --surface-variant: #dce4e1;
+  --on-surface: #151d1b;
+  --on-surface-variant: #3f4945;
+  --outline: #6f7975;
+  --outline-variant: #bfc9c4;
+  --error: #ba1a1a;
+  --error-container: #ffdad6;
+  --tertiary-fixed-dim: #eec14b;
+  --tertiary-container: #674e00;
+  --primary-fixed-dim: #90d4c0;
+
   width: 100%;
   max-width: 100%;
   min-height: 100vh;
   overflow-x: hidden;
-  background: #f4f8f5;
+  background: var(--surface);
   font-family: 'Sarabun', 'IBM Plex Sans Thai', sans-serif;
-  color: #12251f;
+  color: var(--on-surface);
 }
 
 .material-symbols-outlined {
@@ -799,6 +992,35 @@ loadDashboard()
   font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
 }
 
+/* ---------- entrance & pulse ---------- */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.fade-up {
+  animation: fadeInUp 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.delay-1 { animation-delay: 80ms; }
+.delay-2 { animation-delay: 160ms; }
+.delay-3 { animation-delay: 240ms; }
+.spin { animation: spin 1s linear infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .fade-up,
+  .spin,
+  .pulse-dot {
+    animation: none;
+  }
+}
+
+/* ---------- shell ---------- */
 .topbar {
   display: flex;
   flex-wrap: wrap;
@@ -824,9 +1046,8 @@ loadDashboard()
   display: grid;
   place-items: center;
   border-radius: 12px;
-  background: #176c5b;
+  background: var(--primary);
   color: #ffffff;
-  font-family: 'Sarabun', sans-serif;
   font-size: 14px;
   font-weight: 700;
   letter-spacing: 0.5px;
@@ -842,14 +1063,14 @@ loadDashboard()
   font-size: 14px;
   font-weight: 600;
   line-height: 1.4;
-  color: #115447;
+  color: var(--secondary);
   overflow-wrap: anywhere;
 }
 
 .brand-sub {
   font-size: 12px;
   line-height: 1.4;
-  color: #6b7a75;
+  color: var(--outline);
 }
 
 .role-chip {
@@ -859,7 +1080,7 @@ loadDashboard()
   padding: 7px 14px;
   border-radius: 999px;
   background: #eaf3ef;
-  color: #115447;
+  color: var(--primary);
   font-size: 13px;
   font-weight: 600;
   white-space: nowrap;
@@ -873,7 +1094,7 @@ loadDashboard()
   display: flex;
   gap: 20px;
   width: 100%;
-  max-width: 1120px;
+  max-width: 1280px;
   margin: 0 auto;
   padding: 22px;
 }
@@ -896,7 +1117,7 @@ loadDashboard()
   border: 1px solid #d8e4de;
   border-radius: 999px;
   background: #ffffff;
-  color: #115447;
+  color: var(--secondary);
   font-size: 14px;
   font-weight: 600;
   text-decoration: none;
@@ -910,6 +1131,7 @@ loadDashboard()
   font-size: 18px;
 }
 
+/* ---------- page head ---------- */
 .page-head {
   display: flex;
   flex-wrap: wrap;
@@ -927,15 +1149,31 @@ loadDashboard()
   font-size: 24px;
   font-weight: 600;
   line-height: 1.35;
-  color: #115447;
+  color: var(--primary);
   overflow-wrap: anywhere;
 }
 
 .updated {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   margin: 0;
-  font-size: 14px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--surface-high);
+  font-size: 13px;
   line-height: 1.5;
-  color: #3d4f49;
+  color: var(--on-surface-variant);
+}
+
+.pulse-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  border-radius: 999px;
+  background: var(--secondary);
+  animation: pulse 2s ease-in-out infinite;
 }
 
 .btn {
@@ -947,7 +1185,7 @@ loadDashboard()
   border: 1px solid #d8e4de;
   border-radius: 999px;
   background: #ffffff;
-  color: #115447;
+  color: var(--primary);
   font-family: inherit;
   font-size: 14px;
   font-weight: 600;
@@ -964,14 +1202,23 @@ loadDashboard()
   opacity: 0.7;
 }
 
+.btn-icon {
+  font-size: 18px;
+  color: var(--secondary);
+}
+
 .btn-primary {
-  border-color: #176c5b;
-  background: #176c5b;
+  border-color: var(--primary-container);
+  background: var(--primary-container);
+  color: #ffffff;
+}
+
+.btn-primary .btn-icon {
   color: #ffffff;
 }
 
 .btn-primary:hover {
-  background: #115447;
+  background: var(--primary);
 }
 
 .btn-small {
@@ -979,14 +1226,14 @@ loadDashboard()
   font-size: 13px;
 }
 
+/* ---------- tabs ---------- */
 .tabs {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
   padding: 6px;
-  border: 1px solid #e3e8e6;
-  border-radius: 999px;
-  background: #ffffff;
+  border-radius: 14px;
+  background: var(--surface-high);
 }
 
 .tab {
@@ -994,19 +1241,23 @@ loadDashboard()
   min-width: 0;
   padding: 9px 14px;
   border: 0;
-  border-radius: 999px;
+  border-radius: 10px;
   background: transparent;
-  color: #3d4f49;
+  color: var(--on-surface-variant);
   font-family: inherit;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  white-space: normal;
+}
+
+.tab:hover {
+  color: var(--on-surface);
 }
 
 .tab-active {
-  background: #176c5b;
-  color: #ffffff;
+  background: #ffffff;
+  color: var(--primary);
+  box-shadow: 0 1px 4px rgba(16, 40, 35, 0.12);
 }
 
 .alert {
@@ -1015,7 +1266,7 @@ loadDashboard()
   border: 1px solid #f2c7c2;
   border-radius: 12px;
   background: #fdeeea;
-  color: #b3261e;
+  color: var(--error);
   font-size: 14px;
   line-height: 1.5;
 }
@@ -1034,13 +1285,30 @@ loadDashboard()
   text-align: center;
 }
 
+/* ---------- layout ---------- */
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.col-main,
+.col-side {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+/* ---------- cards ---------- */
 .card {
   min-width: 0;
   padding: 18px;
-  border: 1px solid #e3e8e6;
+  border: 1px solid rgba(191, 201, 196, 0.35);
   border-radius: 18px;
   background: #ffffff;
-  box-shadow: 0 10px 24px rgba(16, 40, 35, 0.06);
+  box-shadow: 0 6px 18px rgba(16, 40, 35, 0.05);
 }
 
 .card-head {
@@ -1048,8 +1316,28 @@ loadDashboard()
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 10px;
   margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--surface-container);
+}
+
+.card-head.wrap {
+  align-items: flex-start;
+}
+
+.card-head-left {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.card-head-left.column {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
 }
 
 .card-title {
@@ -1057,116 +1345,415 @@ loadDashboard()
   font-size: 17px;
   font-weight: 600;
   line-height: 1.4;
-  color: #115447;
+  color: var(--on-surface);
   overflow-wrap: anywhere;
 }
 
-.count-tag {
+.card-sub {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--on-surface-variant);
+}
+
+.count-tag,
+.period-tag {
   display: inline-flex;
   align-items: center;
-  padding: 4px 12px;
+  padding: 3px 10px;
   border-radius: 999px;
-  background: #eaf3ef;
-  color: #115447;
-  font-size: 13px;
+  background: var(--surface-container);
+  color: var(--on-surface-variant);
+  font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
 }
 
-.tag-warn {
-  background: #fdf1e4;
-  color: #a75c11;
+.badge-today {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(0, 107, 86, 0.14);
+  color: var(--secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.badge-today.small {
+  padding: 1px 6px;
+  font-size: 10px;
+}
+
+.hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--on-surface-variant);
+  font-size: 12px;
+}
+
+.hint .material-symbols-outlined {
+  font-size: 14px;
 }
 
 .empty-text {
   margin: 0;
   padding: 6px 0;
-  color: #6b7a75;
+  color: var(--outline);
   font-size: 14px;
   line-height: 1.6;
 }
 
 .inline-error {
   margin: 8px 0 0;
-  color: #b3261e;
+  color: var(--error);
   font-size: 13px;
   line-height: 1.5;
 }
 
 .note {
   margin: 10px 0 0;
-  color: #6b7a75;
+  color: var(--outline);
   font-size: 12px;
   line-height: 1.5;
 }
 
-.count-grid {
+/* ---------- metric cards ---------- */
+.metric-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
 
-.count-item {
+.metric {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  background: var(--surface-low);
+  transition: transform 0.2s, background 0.2s;
+}
+
+.metric:hover {
+  background: var(--surface-container);
+  transform: translateY(-2px);
+}
+
+.metric-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.metric-label {
+  font-size: 12px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.metric-icon {
+  font-size: 18px;
+  opacity: 0.9;
+}
+
+.metric-value-row {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.metric-value {
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.metric-unit {
+  font-size: 12px;
+  color: var(--on-surface-variant);
+}
+
+.metric-share {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.tone-ok { color: var(--secondary); }
+.tone-muted { color: var(--outline); }
+.tone-warn { color: #a75c11; }
+.tone-info { color: #1f5f9c; }
+.tone-error { color: var(--error); }
+
+.metric.tone-warn .metric-value,
+.metric.tone-info .metric-value {
+  color: inherit;
+}
+
+.metric.tone-warn { border-color: rgba(238, 193, 75, 0.45); }
+.metric.tone-info { border-color: rgba(144, 212, 192, 0.5); }
+
+/* ---------- donut + quorum ---------- */
+.donut-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--surface-container);
+}
+
+.donut-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  padding: 14px;
+  border-radius: 14px;
+  background: var(--surface-low);
+  min-width: 0;
+}
+
+.donut {
+  position: relative;
+  width: 112px;
+  height: 112px;
+  flex: 0 0 112px;
+}
+
+.donut-svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.donut-track {
+  stroke: var(--surface-variant);
+}
+
+.donut-svg circle:not(.donut-track) {
+  transition: stroke-dasharray 0.7s ease, stroke-dashoffset 0.7s ease;
+}
+
+.donut-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.donut-num {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--primary);
+}
+
+.donut-sub {
+  font-size: 10px;
+  color: var(--on-surface-variant);
+}
+
+.donut-legend {
+  flex: 1 1 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.legend-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--surface-high);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.legend-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.legend-dot {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 10px;
+  border-radius: 999px;
+}
+
+.legend-label {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.legend-value {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.legend-value em {
+  font-style: normal;
+  font-weight: 400;
+  color: var(--on-surface-variant);
+}
+
+.quorum-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 14px;
+  background: var(--surface-low);
+  min-width: 0;
+}
+
+.quorum-text {
   display: flex;
   flex-direction: column;
   gap: 4px;
   min-width: 0;
-  padding: 10px 12px;
-  border: 1px solid #eef1ef;
-  border-radius: 12px;
 }
 
-.count-label {
-  font-size: 12px;
-  color: #5d6d67;
+.quorum-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 600;
 }
 
-.count-value {
-  font-size: 22px;
+.quorum-title .material-symbols-outlined {
+  font-size: 16px;
+  color: var(--secondary);
+}
+
+.quorum-sub {
+  font-size: 13px;
+  color: var(--on-surface-variant);
+}
+
+.quorum-badge {
+  align-self: flex-start;
+  margin-top: 2px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--error-container);
+  color: var(--error);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.quorum-badge.is-ok {
+  background: rgba(0, 107, 86, 0.14);
+  color: var(--secondary);
+}
+
+.gauge {
+  position: relative;
+  width: 84px;
+  height: 84px;
+  flex: 0 0 84px;
+}
+
+.gauge-svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.gauge-track {
+  stroke: var(--surface-variant);
+}
+
+.gauge-fill {
+  stroke: var(--primary);
+  transition: stroke-dashoffset 1s ease;
+}
+
+.gauge-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.gauge-num {
+  font-size: 14px;
   font-weight: 700;
-  line-height: 1.1;
+  color: var(--primary);
 }
 
-.tone-ok .count-value {
-  color: #176c5b;
+.gauge-target {
+  font-size: 9px;
+  color: var(--on-surface-variant);
 }
 
-.tone-muted .count-value {
-  color: #6b7a75;
-}
-
-.tone-warn .count-value {
-  color: #c46a12;
-}
-
-.tone-info .count-value {
-  color: #1f5f9c;
-}
-
-.notyet-row {
+.summary-banner {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 14px;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
+  gap: 8px 12px;
   margin-top: 12px;
-  padding: 10px 12px;
-  border: 1px solid #eef1ef;
-  border-radius: 12px;
-  background: #f7faf8;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--surface-container);
   font-size: 14px;
 }
 
-.notyet-main {
+.summary-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
   font-weight: 600;
-  color: #115447;
 }
 
-.notyet-sub {
-  color: #6b7a75;
-  font-variant-numeric: tabular-nums;
+.summary-pct {
+  font-weight: 400;
+  color: var(--on-surface-variant);
+  font-size: 13px;
 }
 
+.summary-pending {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 10px;
+  background: #ffffff;
+  color: var(--error);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.summary-pending .material-symbols-outlined {
+  font-size: 16px;
+}
+
+/* ---------- department table ---------- */
 .table-wrap {
   width: 100%;
   max-width: 100%;
@@ -1186,17 +1773,26 @@ loadDashboard()
 
 .table th {
   padding: 8px 10px;
-  border-bottom: 1px solid #e3e8e6;
-  color: #5d6d67;
+  border-bottom: 1px solid var(--surface-high);
+  background: var(--surface-low);
+  color: var(--on-surface-variant);
   font-size: 12px;
   font-weight: 600;
   text-align: left;
   white-space: nowrap;
 }
 
+.table th:first-child {
+  border-radius: 10px 0 0 10px;
+}
+
+.table th:last-child {
+  border-radius: 0 10px 10px 0;
+}
+
 .table td {
   padding: 10px;
-  border-bottom: 1px solid #f1f4f2;
+  border-bottom: 1px solid var(--surface-container);
   vertical-align: middle;
 }
 
@@ -1206,21 +1802,37 @@ loadDashboard()
 
 .row-click {
   cursor: pointer;
+  transition: background 0.2s;
 }
 
 .row-click:hover td {
-  background: #f4f8f5;
+  background: var(--surface-low);
 }
 
 .row-click:focus-visible {
-  outline: 2px solid #176c5b;
+  outline: 2px solid var(--secondary);
   outline-offset: -2px;
 }
 
+.row-active td {
+  background: #eaf3ef;
+}
+
 .cell-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-weight: 500;
-  color: #12251f;
+  color: var(--on-surface);
   overflow-wrap: anywhere;
+}
+
+.dept-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  border-radius: 999px;
+  background: var(--secondary);
 }
 
 .cell-num {
@@ -1232,6 +1844,58 @@ loadDashboard()
   white-space: nowrap;
 }
 
+.pill {
+  display: inline-flex;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.pill-error {
+  background: var(--error-container);
+  color: #93000a;
+}
+
+.pill-muted {
+  background: var(--surface-container);
+  color: var(--on-surface-variant);
+}
+
+.rate {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 140px;
+}
+
+.rate-track {
+  position: relative;
+  flex: 1;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--surface-high);
+  overflow: hidden;
+}
+
+.rate-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--secondary);
+  transition: width 0.8s ease-out;
+}
+
+.rate-text {
+  min-width: 46px;
+  color: var(--on-surface-variant);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
 .top-name {
   display: block;
   font-weight: 500;
@@ -1240,48 +1904,42 @@ loadDashboard()
 
 .top-meta {
   display: block;
-  color: #6b7a75;
+  color: var(--outline);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
 
-.rate {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 130px;
+.sub-title {
+  margin: 18px 0 10px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--primary);
 }
 
-.rate-track {
-  position: relative;
-  flex: 1;
-  height: 8px;
-  border-radius: 999px;
-  background: #eef1ef;
-  overflow: hidden;
-}
-
-.rate-fill {
-  display: block;
-  height: 100%;
-  border-radius: 999px;
-  background: #176c5b;
-}
-
-.rate-text {
-  min-width: 42px;
-  color: #5d6d67;
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
-
-.history-controls {
+/* ---------- history ---------- */
+.history-tools {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px 14px;
-  align-items: flex-end;
-  margin-bottom: 14px;
+  align-items: center;
+  gap: 8px;
+}
+
+.select,
+.input {
+  max-width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #d8e4de;
+  border-radius: 10px;
+  background: #ffffff;
+  color: var(--on-surface);
+  font-family: inherit;
+  font-size: 14px;
+}
+
+.select:focus,
+.input:focus {
+  outline: 2px solid var(--secondary);
+  outline-offset: 1px;
 }
 
 .field {
@@ -1289,245 +1947,198 @@ loadDashboard()
   flex-direction: column;
   gap: 4px;
   min-width: 0;
-  flex: 1 1 190px;
+  margin-bottom: 12px;
 }
 
 .field-label {
-  color: #5d6d67;
+  color: var(--on-surface-variant);
   font-size: 12px;
   font-weight: 600;
 }
 
-.select,
 .input {
   width: 100%;
-  max-width: 100%;
-  padding: 9px 12px;
-  border: 1px solid #d8e4de;
-  border-radius: 12px;
-  background: #ffffff;
-  color: #12251f;
-  font-family: inherit;
-  font-size: 14px;
-}
-
-.select:focus,
-.input:focus {
-  outline: 2px solid #176c5b;
-  outline-offset: 1px;
 }
 
 .mode-group {
-  display: flex;
-  gap: 4px;
-  padding: 4px;
-  border: 1px solid #e3e8e6;
+  display: inline-flex;
+  padding: 3px;
   border-radius: 999px;
-  background: #f7faf8;
+  background: var(--surface-container);
 }
 
 .mode-btn {
-  padding: 6px 14px;
+  padding: 5px 12px;
   border: 0;
   border-radius: 999px;
   background: transparent;
-  color: #3d4f49;
+  color: var(--on-surface-variant);
   font-family: inherit;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   cursor: pointer;
 }
 
 .mode-active {
-  background: #176c5b;
-  color: #ffffff;
-}
-
-.chart-wrap {
-  width: 100%;
-  max-width: 100%;
-  overflow-x: auto;
-}
-
-.chart {
-  display: flex;
-  align-items: flex-end;
-  gap: 6px;
-  min-width: 440px;
-  padding: 4px 2px 0;
-}
-
-.chart-col {
-  display: flex;
-  flex: 1 1 0;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  min-width: 26px;
-}
-
-.chart-total {
-  color: #5d6d67;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
-
-.chart-track {
-  display: flex;
-  align-items: flex-end;
-  width: 100%;
-  height: 130px;
-}
-
-.chart-bar {
-  display: flex;
-  flex-direction: column-reverse;
-  width: 100%;
-  overflow: hidden;
-  border-radius: 6px 6px 0 0;
-  background: #eef1ef;
-}
-
-.chart-seg {
-  display: block;
-  width: 100%;
-  min-height: 0;
-}
-
-.seg-ok {
-  background: #176c5b;
-}
-
-.seg-muted {
-  background: #b3bdb8;
-}
-
-.seg-warn {
-  background: #e39a4d;
-}
-
-.seg-info {
-  background: #5b93c9;
-}
-
-.chart-label {
-  max-width: 100%;
-  color: #6b7a75;
-  font-size: 11px;
-  line-height: 1.3;
-  text-align: center;
-  overflow-wrap: anywhere;
-}
-
-.sub-title {
-  margin: 18px 0 10px;
-  font-size: 15px;
-  font-weight: 600;
-  color: #115447;
-}
-
-.drawer-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 40;
-  display: flex;
-  justify-content: flex-end;
-  background: rgba(16, 40, 35, 0.35);
-}
-
-.drawer {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  width: min(460px, 100%);
-  max-width: 100%;
-  height: 100%;
-  padding: 18px;
-  overflow-y: auto;
   background: #ffffff;
-  border-left: 1px solid #e3e8e6;
+  color: var(--primary);
+  box-shadow: 0 1px 3px rgba(16, 40, 35, 0.12);
 }
 
-.drawer-head {
+.history-legend {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin-bottom: 12px;
+}
+
+.legend-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--on-surface);
+}
+
+.legend-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 4px;
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
   gap: 10px;
 }
 
-.drawer-head-text {
-  min-width: 0;
-}
-
-.drawer-sub {
-  margin: 4px 0 0;
-  color: #6b7a75;
-  font-size: 13px;
-  overflow-wrap: anywhere;
-}
-
-.icon-btn {
+.history-row {
   display: grid;
-  place-items: center;
-  width: 36px;
-  height: 36px;
-  flex: 0 0 36px;
-  border: 1px solid #e3e8e6;
-  border-radius: 999px;
-  background: #ffffff;
-  color: #115447;
-  cursor: pointer;
+  grid-template-columns: 88px minmax(0, 1fr) 56px;
+  align-items: center;
+  gap: 10px;
 }
 
-.drawer-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.drawer-counts {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.drawer-count {
+.history-label {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  min-width: 0;
-  padding: 8px 10px;
-  border: 1px solid #eef1ef;
-  border-radius: 12px;
-  background: #f7faf8;
-}
-
-.drawer-count-label {
-  font-size: 11px;
-  color: #5d6d67;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
   overflow-wrap: anywhere;
 }
 
-.drawer-count-value {
-  font-size: 18px;
+.history-track {
+  display: flex;
+  height: 28px;
+  padding: 2px;
+  gap: 2px;
+  border-radius: 8px;
+  background: var(--surface-container);
+  overflow: hidden;
+}
+
+.history-seg {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  height: 100%;
+  border-radius: 6px;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  overflow: hidden;
+}
+
+.history-seg:empty {
+  width: 0;
+}
+
+.history-total {
+  text-align: right;
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.seg-ok { background: var(--secondary); }
+.seg-muted { background: var(--outline-variant); color: var(--on-surface); }
+.seg-warn { background: var(--tertiary-fixed-dim); color: #251a00; }
+.seg-info { background: var(--primary-fixed-dim); color: #002019; }
+
+/* ---------- side panel ---------- */
+.side-card {
+  position: relative;
+}
+
+.side-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+  color: var(--outline);
+}
+
+.side-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.side-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.side-icon {
+  color: var(--secondary);
+  font-size: 20px;
+}
+
+.mini-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(68px, 1fr));
+  gap: 8px;
+  margin: 14px 0;
+}
+
+.mini {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 4px;
+  border-radius: 12px;
+  background: var(--surface-low);
+  text-align: center;
+}
+
+.mini-value {
+  font-size: 20px;
   font-weight: 700;
   line-height: 1.1;
+  font-variant-numeric: tabular-nums;
 }
 
-.drawer-count.tone-ok .drawer-count-value {
-  color: #176c5b;
+.mini-label {
+  font-size: 11px;
+  color: var(--on-surface-variant);
 }
 
-.drawer-count.tone-muted .drawer-count-value {
-  color: #6b7a75;
-}
-
-.drawer-count.tone-warn .drawer-count-value {
-  color: #c46a12;
-}
-
-.drawer-count.tone-info .drawer-count-value {
-  color: #1f5f9c;
+.people-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 520px;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .group {
@@ -1535,22 +2146,9 @@ loadDashboard()
 }
 
 .group-title {
-  margin: 6px 0 8px;
-  font-size: 14px;
+  margin: 4px 0 8px;
+  font-size: 13px;
   font-weight: 600;
-  color: #5d6d67;
-}
-
-.group-title.tone-ok {
-  color: #176c5b;
-}
-
-.group-title.tone-warn {
-  color: #c46a12;
-}
-
-.group-title.tone-info {
-  color: #1f5f9c;
 }
 
 .people {
@@ -1568,9 +2166,8 @@ loadDashboard()
   gap: 6px;
   min-width: 0;
   padding: 10px 12px;
-  border: 1px solid #eef1ef;
   border-radius: 12px;
-  background: #f7faf8;
+  background: var(--surface-low);
 }
 
 .person-row {
@@ -1596,7 +2193,7 @@ loadDashboard()
 
 .person-sub {
   font-size: 12px;
-  color: #6b7a75;
+  color: var(--outline);
   overflow-wrap: anywhere;
 }
 
@@ -1605,8 +2202,8 @@ loadDashboard()
   padding: 8px 10px;
   border-radius: 10px;
   background: #ffffff;
-  border: 1px solid #e3e8e6;
-  color: #12251f;
+  border: 1px solid var(--surface-high);
+  color: var(--on-surface);
   font-size: 13px;
   line-height: 1.5;
   overflow-wrap: anywhere;
@@ -1615,11 +2212,12 @@ loadDashboard()
 .reason-label {
   display: inline-block;
   margin-right: 6px;
-  color: #6b7a75;
+  color: var(--outline);
   font-size: 12px;
   font-weight: 600;
 }
 
+/* ---------- modal ---------- */
 .modal-backdrop {
   position: fixed;
   inset: 0;
@@ -1647,12 +2245,12 @@ loadDashboard()
   margin: 0;
   font-size: 18px;
   font-weight: 600;
-  color: #115447;
+  color: var(--primary);
 }
 
 .modal-text {
   margin: 0;
-  color: #3d4f49;
+  color: var(--on-surface-variant);
   font-size: 14px;
   line-height: 1.6;
   overflow-wrap: anywhere;
@@ -1665,8 +2263,9 @@ loadDashboard()
   gap: 8px;
 }
 
+/* ---------- responsive ---------- */
 @media (min-width: 480px) {
-  .count-grid {
+  .metric-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
@@ -1680,6 +2279,17 @@ loadDashboard()
 @media (min-width: 900px) {
   .page-head h1 {
     font-size: 26px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .layout {
+    grid-template-columns: minmax(0, 8fr) minmax(0, 4fr);
+  }
+
+  .side-card {
+    position: sticky;
+    top: 20px;
   }
 }
 
@@ -1719,11 +2329,9 @@ loadDashboard()
     display: block;
     margin-bottom: 10px;
     padding: 10px 12px;
-    border: 1px solid #eef1ef;
     border-radius: 12px;
-    background: #f7faf8;
+    background: var(--surface-low);
     min-width: 0;
-    overflow-wrap: anywhere;
   }
 
   .table tbody tr:last-child {
@@ -1735,7 +2343,6 @@ loadDashboard()
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 8px;
     align-items: center;
-    min-width: 0;
     padding: 3px 0;
     border-bottom: 0;
     white-space: normal;
@@ -1744,29 +2351,21 @@ loadDashboard()
 
   .table td::before {
     content: attr(data-label);
-    min-width: 0;
-    color: #6b7a75;
+    color: var(--outline);
     font-size: 12px;
     font-weight: 600;
-    overflow-wrap: anywhere;
   }
 
   .table td.cell-name {
-    display: block;
+    display: flex;
     padding: 0 0 6px;
-    color: #115447;
+    color: var(--secondary);
     font-size: 14px;
     font-weight: 700;
   }
 
   .table td.cell-name::before {
     content: none;
-  }
-
-  .table td.cell-num,
-  .table td.cell-top {
-    text-align: left;
-    white-space: normal;
   }
 
   .table td.cell-top::before {
@@ -1777,52 +2376,28 @@ loadDashboard()
     min-width: 0;
   }
 
-  .chart-wrap {
-    overflow-x: visible;
+  .history-row {
+    grid-template-columns: minmax(0, 1fr) 48px;
   }
 
-  .chart {
-    min-width: 0;
-    gap: 4px;
-    padding: 0;
+  .history-track {
+    grid-column: 1 / -1;
+    order: 3;
   }
 
-  .chart-col {
-    min-width: 0;
-    gap: 2px;
+  .history-label {
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
   }
 
-  .chart-total {
-    font-size: 10px;
+  .donut-row {
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .chart-track {
-    height: 96px;
-  }
-
-  .chart-bar,
-  .chart-seg {
-    min-width: 0;
-  }
-
-  .chart-label {
-    font-size: 10px;
-    line-height: 1.2;
-    overflow-wrap: anywhere;
-  }
-
-  .chart-col:nth-child(even) .chart-label {
-    display: none;
-  }
-
-  .card,
-  .state-box,
-  .history-controls,
-  .field,
-  .select,
-  .input {
-    min-width: 0;
-    overflow-wrap: anywhere;
+  .quorum-card {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
 
