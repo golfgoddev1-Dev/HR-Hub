@@ -4,7 +4,8 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently -n api,web -c blue,green \"npm:dev:api\" \"npm:dev:web\"",
+    "dev": "concurrently -n worker,web -c magenta,green \"npm:dev:worker\" \"npm:dev:web\"",
+    "dev:worker": "npm --prefix worker run dev",
     "dev:api": "node --watch server/index.js",
     "dev:web": "vite",
     "build": "vite build",
