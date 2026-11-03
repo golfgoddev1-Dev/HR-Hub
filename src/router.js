@@ -11,6 +11,7 @@ import ControllerDashboardPage from './pages/ControllerDashboardPage.vue'
 import MeetingBackfillHistoryPage from './pages/MeetingBackfillHistoryPage.vue'
 import MeetingBackfillImportPage from './pages/MeetingBackfillImportPage.vue'
 import RegistrantsPage from './pages/RegistrantsPage.vue'
+import HrHomePage from './pages/HrHomePage.vue'
 import HrEmployeeImportPage from './pages/HrEmployeeImportPage.vue'
 import HrEmployeeDetailPage from './pages/HrEmployeeDetailPage.vue'
 import HrEmployeesPage from './pages/HrEmployeesPage.vue'
@@ -20,7 +21,7 @@ import ControllerEmployeeDataPage from './pages/ControllerEmployeeDataPage.vue'
 const allowedPathsByRole = {
   employee: ['/leave', '/leave/approvals'],
   // HR lands on the employee import page: the HR leave page does not exist yet.
-  hr: ['/hr/employees', '/hr/employees/import'],
+  hr: ['/hr', '/hr/employees', '/hr/employees/import'],
   meeting_controller: [
     '/meeting/controller',
     '/meeting/controller/qr',
@@ -55,6 +56,7 @@ export const router = createRouter({
     { path: '/meeting/controller/backfill', component: MeetingBackfillHistoryPage, meta: { requiresAuth: true } },
     { path: '/meeting/controller/backfill/import', component: MeetingBackfillImportPage, meta: { requiresAuth: true } },
     { path: '/meeting/register', component: RegisterPage },
+    { path: '/hr', component: HrHomePage, meta: { requiresAuth: true } },
     { path: '/hr/employees', component: HrEmployeesPage, meta: { requiresAuth: true } },
     { path: '/hr/employees/manage', component: HrEmployeeDataPage, meta: { requiresAuth: true } },
     { path: '/hr/employees/import', component: HrEmployeeImportPage, meta: { requiresAuth: true } },

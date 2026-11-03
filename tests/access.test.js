@@ -11,7 +11,7 @@ describe('landingPathFor', () => {
   })
 
   it('routes HR to the employee import page', () => {
-    expect(landingPathFor('hr', false)).toBe('/hr/employees/import')
+    expect(landingPathFor('hr', false)).toBe('/hr')
   })
 
   it('routes meeting controllers to the meeting overview page', () => {

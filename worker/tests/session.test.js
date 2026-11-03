@@ -189,7 +189,7 @@ test("readSession: success touches last_active_at", async (t) => {
     ok: true,
     employeeId: EMPLOYEE_ID,
     role: "hr",
-    redirectTo: "/hr/employees/import",
+    redirectTo: "/hr",
   });
   assert.equal(fake.calls.length, 4);
   assert.equal(fake.calls[3].init.method, "PATCH");
@@ -283,7 +283,7 @@ test("allowedLoginTypesFor: maps each table and falls back to employee", async (
 test("landingPathFor handles every role and its aliases", () => {
   assert.equal(landingPathFor("employee", true), "/leave/approvals");
   assert.equal(landingPathFor("employee", false), "/leave");
-  assert.equal(landingPathFor("hr", false), "/hr/employees/import");
+  assert.equal(landingPathFor("hr", false), "/hr");
   assert.equal(landingPathFor("meeting_controller", false), "/meeting/controller");
   assert.equal(landingPathFor("controller", false), "/meeting/controller");
   assert.equal(landingPathFor("system_admin", false), "/admin");
@@ -291,8 +291,8 @@ test("landingPathFor handles every role and its aliases", () => {
   assert.equal(landingPathFor("unknown", false), "/login");
 });
 test("landingPathFor: hr lands on the employee import page, other roles unchanged", () => {
-  assert.equal(landingPathFor("hr", false), "/hr/employees/import");
-  assert.equal(landingPathFor("hr", true), "/hr/employees/import");
+  assert.equal(landingPathFor("hr", false), "/hr");
+  assert.equal(landingPathFor("hr", true), "/hr");
   assert.equal(landingPathFor("employee", false), "/leave");
   assert.equal(landingPathFor("employee", true), "/leave/approvals");
   assert.equal(landingPathFor("meeting_controller", false), "/meeting/controller");

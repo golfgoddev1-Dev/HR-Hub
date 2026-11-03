@@ -1,5 +1,6 @@
 <script setup>
 const navItems = [
+  { label: 'หน้าหลัก', to: '/hr', icon: 'home' },
   { label: 'รายชื่อพนักงาน', to: '/hr/employees', icon: 'groups' },
   { label: 'นำเข้าพนักงาน', to: '/hr/employees/import', icon: 'upload_file' },
   { label: 'จัดการข้อมูลพนักงาน', to: '/hr/employees/manage', icon: 'edit' },
