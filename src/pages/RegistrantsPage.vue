@@ -26,6 +26,7 @@ const SHIFT_VALUES = ['กะ A', 'กะ B']
 const REASON_MAX_LENGTH = 200
 const SAVE_ERROR_MESSAGE = 'ไม่สามารถบันทึกสถานะได้ กรุณาลองใหม่'
 const SAVED_MESSAGE = 'บันทึกสถานะแล้ว'
+const CLOSE_ERROR_MESSAGE = 'ไม่สามารถปิดรอบได้ กรุณาลองใหม่'
 
 // Same tab labels as the dashboard page.
 const TABS = [
@@ -46,7 +47,7 @@ const code = ref('sup')
 const cycle = ref('')
 const filter = ref(ALL_FILTER)
 
-const summary = ref({ statuses: [], options: [], currentKey: '' })
+const summary = ref({ statuses: [], options: [], currentKey: '', todayKey: '', rosterCount: 0 })
 const loading = ref(true)
 const errorMessage = ref('')
 const items = ref([])
@@ -60,6 +61,10 @@ const editShift = ref('')
 const editReason = ref('')
 const editError = ref('')
 const saving = ref(false)
+const overview = ref(null)
+const closeOpen = ref(false)
+const closeError = ref('')
+const closing = ref(false)
 
 let requestSeq = 0
 
@@ -77,6 +82,35 @@ const counts = computed(() => {
 const filteredItems = computed(() => {
   if (filter.value === ALL_FILTER) return items.value
   return items.value.filter((item) => item.status === filter.value)
+})
+
+const todayKey = computed(() => summary.value.todayKey || '')
+
+// Only the cycle happening today can still be before its cutoff; any older cycle
+// is closable in the UI and the server checks the same rule again.
+const isCurrentCycle = computed(() => {
+  if (!cycle.value || !todayKey.value) return false
+  return code.value === 'sup'
+    ? cycle.value === todayKey.value
+    : cycle.value === todayKey.value.slice(0, 7)
+})
+
+// phase 'closed' from the overview endpoint means the session cutoff passed.
+const closeBlockReason = computed(() => {
+  if (!cycle.value) return 'ยังไม่ได้เลือกรอบประชุม'
+  if (!isCurrentCycle.value) return ''
+  if (overview.value?.phase === 'closed') return ''
+  const at = overview.value?.cutoffTime ?? ''
+  return at ? `ยังไม่ถึงเวลาปิดลงทะเบียน (ปิดรับ ${at} น.)` : 'ยังไม่ถึงเวลาปิดลงทะเบียน'
+})
+
+const closeDisabled = computed(
+  () => closing.value || loading.value || !cycle.value || closeBlockReason.value !== '',
+)
+
+const closeCount = computed(() => {
+  const roster = Number(summary.value.rosterCount) || 0
+  return Math.max(roster - items.value.length, 0)
 })
 
 function toneOfStatus(label) {
@@ -150,7 +184,67 @@ async function saveEdit() {
 }
 
 function serverMessage(data, fallback) {
-  return typeof data?.message === 'string' && data.message.length > 0 ? data.message : fallback
+  if (typeof data?.message === 'string' && data.message.length > 0) return data.message
+  if (typeof data?.error === 'string' && data.error.length > 0) return data.error
+  return fallback
+}
+
+async function loadOverview(seq) {
+  try {
+    const { ok, data } = await requestJson('/api/meeting/overview')
+    if (seq !== requestSeq || !ok || data.ok !== true) {
+      overview.value = null
+      return
+    }
+    const info = data.today && typeof data.today === 'object' ? data.today[code.value] : null
+    overview.value = info
+      ? {
+          hasSession: info.hasSession === true,
+          phase: typeof info.phase === 'string' ? info.phase : '',
+          cutoffTime: typeof info.cutoffTime === 'string' ? info.cutoffTime : '',
+        }
+      : null
+  } catch {
+    overview.value = null
+  }
+}
+
+function openClose() {
+  if (closeDisabled.value) return
+  closeError.value = ''
+  notice.value = ''
+  closeOpen.value = true
+}
+
+function cancelClose() {
+  if (closing.value) return
+  closeOpen.value = false
+}
+
+async function confirmClose() {
+  if (closing.value || !cycle.value) return
+  closing.value = true
+  closeError.value = ''
+  try {
+    const { status, data } = await postJson('/api/meeting/dashboard/close-cycle', {
+      code: code.value,
+      cycle: cycle.value,
+    })
+    if (status !== 200 || data.ok !== true) {
+      closeError.value = serverMessage(data, CLOSE_ERROR_MESSAGE)
+      return
+    }
+    const inserted = Number.isFinite(Number(data.inserted)) ? Number(data.inserted) : 0
+    closeOpen.value = false
+    const seq = ++requestSeq
+    errorMessage.value = ''
+    await loadRegistrants(seq, cycle.value)
+    notice.value = `ตัดสถานะแล้ว ${inserted} คน`
+  } catch {
+    closeError.value = CLOSE_ERROR_MESSAGE
+  } finally {
+    closing.value = false
+  }
 }
 
 async function requestJson(url) {
@@ -216,7 +310,13 @@ async function loadPage() {
     const statuses = Array.isArray(data.statuses) ? data.statuses : []
     const options = Array.isArray(data.history?.options) ? data.history.options : []
     const currentKey = typeof data.current?.key === 'string' ? data.current.key : ''
-    summary.value = { statuses, options, currentKey }
+    summary.value = {
+      statuses,
+      options,
+      currentKey,
+      todayKey: typeof data.todayKey === 'string' ? data.todayKey : '',
+      rosterCount: Number.isFinite(data.rosterCount) ? data.rosterCount : 0,
+    }
 
     const keys = options.map((option) => option.key)
     const nextCycle = keys.includes(cycle.value)
@@ -224,6 +324,7 @@ async function loadPage() {
       : currentKey || keys[keys.length - 1] || ''
     cycle.value = nextCycle
 
+    await loadOverview(seq)
     if (nextCycle) await loadRegistrants(seq, nextCycle)
   } catch {
     if (seq !== requestSeq) return
@@ -298,6 +399,18 @@ loadPage()
             </label>
 
             <span v-if="cycleLabel" class="count-tag">{{ cycleLabel }}</span>
+
+            <div class="close-row">
+              <button
+                type="button"
+                class="edit-btn close-btn"
+                :disabled="closeDisabled"
+                @click="openClose"
+              >
+                ปิดรอบ: ตัดคนที่ยังไม่ลงทะเบียนเป็นไม่เข้าร่วม
+              </button>
+              <span v-if="closeBlockReason" class="gate-note">{{ closeBlockReason }}</span>
+            </div>
           </div>
 
           <div class="chips" role="group" aria-label="กรองตามสถานะ">
@@ -373,6 +486,32 @@ loadPage()
             ทั้งหมด {{ total }} คน
           </p>
         </section>
+        <div v-if="closeOpen" class="modal-backdrop" @click.self="cancelClose">
+          <div class="modal" role="dialog" aria-modal="true" aria-labelledby="close-cycle-title">
+            <h2 id="close-cycle-title" class="modal-title">ปิดรอบและตัดสถานะไม่เข้าร่วม</h2>
+            <p class="modal-subject">{{ cycleLabel || cycle }}</p>
+
+            <p class="close-summary">
+              จะตัด <strong>{{ closeCount }}</strong> คน ที่ยังไม่มีรายชื่อในรอบนี้เป็น “ไม่เข้าร่วม”
+              (จาก roster ทั้งหมด {{ summary.rosterCount }} คน)
+            </p>
+            <p class="close-summary close-warn">
+              แถวที่มีสถานะอยู่แล้วจะไม่ถูกแก้ไข และกดซ้ำจะไม่เพิ่มรายชื่อใหม่
+            </p>
+
+            <p v-if="closeError" class="inline-error" role="alert">{{ closeError }}</p>
+
+            <div class="modal-actions">
+              <button type="button" class="btn-secondary" :disabled="closing" @click="cancelClose">
+                ยกเลิก
+              </button>
+              <button type="button" class="btn-primary" :disabled="closing" @click="confirmClose">
+                {{ closing ? 'กำลังตัดสถานะ…' : 'ยืนยันปิดรอบ' }}
+              </button>
+            </div>
+          </div>
+        </div>
+
         <div v-if="editOpen" class="modal-backdrop" @click.self="closeEdit">
           <div class="modal" role="dialog" aria-modal="true" aria-labelledby="edit-status-title">
             <h2 id="edit-status-title" class="modal-title">แก้ไขสถานะการเข้าร่วมประชุม</h2>
@@ -880,5 +1019,45 @@ loadPage()
   .select {
     font-size: 16px;
   }
+}
+.close-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  flex-basis: 100%;
+}
+
+.close-btn {
+  border-color: #e0b4b0;
+  color: #8f1d17;
+  font-size: 13px;
+}
+
+.close-btn:hover:enabled {
+  background: #fdecea;
+}
+
+.close-btn:disabled {
+  border-color: #d8e4de;
+  color: #9aa8a3;
+}
+
+.gate-note {
+  color: #8a4b12;
+  font-size: 12px;
+}
+
+.close-summary {
+  margin: 0;
+  color: #3d4f49;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.close-warn {
+  color: #6b7a75;
+  font-size: 13px;
 }
 </style>

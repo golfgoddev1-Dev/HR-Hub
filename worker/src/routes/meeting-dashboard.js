@@ -32,6 +32,12 @@ import {
 } from "../meeting-dashboard.js";
 import { STATUS_LABEL_BY_CODE } from "../meeting-overview.js";
 import { normalizeStatusUpdate } from "../attendance-status.js";
+import {
+  CLOSE_ACTION,
+  CLOSE_AUDIT_ENTITY,
+  closeCycle,
+  normalizeCutoffTime,
+} from "../cycle-close.js";
 
 // --- Manual status change (POST /attendance-status) -------------------------
 // The controller may correct one person's status for the round the page shows.
@@ -293,6 +299,97 @@ export async function loadContext(db, code) {
 /* ------------------------------------------------------------------ */
 /* Local response builders                                             */
 /* ------------------------------------------------------------------ */
+
+/* ------------------------------------------------------------------ */
+/* Close cycle (POST /close-cycle)                                     */
+/* ------------------------------------------------------------------ */
+
+const CLOSE_TYPE_COLUMNS = "id,code,name,default_cutoff_time";
+const CLOSE_SESSION_COLUMNS = "id,session_date,meeting_type_id,cutoff_time";
+const CLOSE_ROSTER_COLUMNS =
+  "employee_id,employees!meeting_roster_employee_id_fkey!inner(department_id,position_id)";
+
+// Session lookup for close-cycle: the same query /registrants runs, plus the
+// cutoff time (the session's own value, else the type default). No session is
+// ever created here.
+async function loadCloseSessions(db, { code, cycle }) {
+  const type = await db.select(TYPES_TABLE, {
+    columns: CLOSE_TYPE_COLUMNS,
+    filters: [["code", "eq", code]],
+    single: true,
+  });
+  if (!type) return [];
+
+  const rows =
+    code === "sup"
+      ? await db.select(SESSIONS_TABLE, {
+          columns: CLOSE_SESSION_COLUMNS,
+          filters: [
+            ["meeting_type_id", "eq", type.id],
+            ["session_date", "eq", cycle],
+          ],
+        })
+      : await db.select(SESSIONS_TABLE, {
+          columns: CLOSE_SESSION_COLUMNS,
+          filters: [
+            ["meeting_type_id", "eq", type.id],
+            ["session_date", "gte", `${cycle}-01`],
+            ["session_date", "lt", `${nextMonthKey(cycle)}-01`],
+          ],
+        });
+
+  return rows.map((row) => ({
+    ...row,
+    meeting_type_id: row.meeting_type_id ?? type.id,
+    cutoff_time: normalizeCutoffTime(row.cutoff_time) ?? type.default_cutoff_time ?? null,
+  }));
+}
+
+async function loadCloseRoster(db, session) {
+  const rows = await db.select(ROSTER_TABLE, {
+    columns: CLOSE_ROSTER_COLUMNS,
+    filters: [
+      ["meeting_type_id", "eq", session.meeting_type_id],
+      ["is_active", "eq", true],
+    ],
+  });
+  return rows.map((row) => {
+    const employee = firstEmbedded(row.employees);
+    return {
+      employeeId: row.employee_id,
+      departmentId: employee?.department_id ?? null,
+      positionId: employee?.position_id ?? null,
+    };
+  });
+}
+
+async function loadCloseAttendance(db, sessionId) {
+  return db.select(ATTENDANCE_TABLE, {
+    columns: "employee_id",
+    filters: [["session_id", "eq", sessionId]],
+  });
+}
+
+// ignoreDuplicates keeps an existing row untouched; the returned rows are the
+// ones actually inserted, which is the number the response reports.
+async function insertAbsentRows(db, rows) {
+  const saved = ensureOk(
+    await db.insertMany(ATTENDANCE_TABLE, rows, { returning: true, ignoreDuplicates: true }),
+  );
+  return Array.isArray(saved.data) ? saved.data.length : rows.length;
+}
+
+async function writeCloseAudit(db, { actorId, entityId, detail }) {
+  ensureOk(
+    await db.insert(AUDIT_TABLE, {
+      actor_id: actorId,
+      action: CLOSE_ACTION,
+      entity: CLOSE_AUDIT_ENTITY,
+      entity_id: entityId,
+      detail,
+    }),
+  );
+}
 
 function emptyLabelCounts() {
   return {
@@ -735,6 +832,35 @@ dashboard.post("/attendance-status", async (c) => {
     logError(error);
     return reject(c, 500, SERVER_ERROR_MESSAGE);
   }
+});
+
+/* ------------------------------------------------------------------ */
+/* POST /api/meeting/dashboard/close-cycle                             */
+/* ------------------------------------------------------------------ */
+
+dashboard.post("/close-cycle", async (c) => {
+  const guardResult = await guard(c);
+  if (!guardResult.ok) return reject(c, guardResult.status, guardResult.message);
+
+  // The strict body is exactly { code, cycle }; anything else is a 400, the
+  // same rule server/cycle-close.js applies on the Express side.
+  const body = await readStrictJson(c);
+  const db = createDb(c.env);
+  const outcome = await closeCycle({
+    body,
+    now: new Date(),
+    actorId: guardResult.session.employeeId,
+    loadSessions: (args) => loadCloseSessions(db, args),
+    loadRoster: (session) => loadCloseRoster(db, session),
+    loadAttendance: (sessionId) => loadCloseAttendance(db, sessionId),
+    insertAbsent: (rows) => insertAbsentRows(db, rows),
+    writeAudit: (args) => writeCloseAudit(db, args),
+  });
+
+  if (outcome.body.ok !== true) return reject(c, outcome.status, outcome.body.message);
+  return c.json({ ok: true, inserted: outcome.body.inserted }, 200, {
+    "Cache-Control": "no-store",
+  });
 });
 
 export default dashboard;

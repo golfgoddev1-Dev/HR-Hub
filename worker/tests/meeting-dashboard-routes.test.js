@@ -190,11 +190,15 @@ function createBackend(options = {}) {
 
     // ---- meeting_attendance ----
     if (table === "meeting_attendance" && method === "GET") {
-      const inFilter = params.get("session_id") ?? "";
-      if (!inFilter.startsWith("in.(")) return jsonResponse([]);
-      const ids = inFilter.slice(4, -1).split(",").filter(Boolean);
-      const allRows = [...SUP_ATTENDANCE, ...MONTHLY_ATTENDANCE];
-      return jsonResponse(allRows.filter((row) => ids.includes(row.session_id)));
+      const filter = params.get("session_id") ?? "";
+      // /registrants reads a list of sessions, close-cycle reads one session.
+      if (filter.startsWith("eq.")) {
+        const sessionId = filter.slice(3);
+        return jsonResponse(state.attendanceRows.filter((row) => row.session_id === sessionId));
+      }
+      if (!filter.startsWith("in.(")) return jsonResponse([]);
+      const ids = filter.slice(4, -1).split(",").filter(Boolean);
+      return jsonResponse(state.attendanceRows.filter((row) => ids.includes(row.session_id)));
     }
 
     // ---- meeting_attendance: manual status update (PATCH) ----
@@ -202,6 +206,28 @@ function createBackend(options = {}) {
       const idFilter = params.get("id")?.replace("eq.", "");
       state.attendanceWrites.push({ id: idFilter, body: JSON.parse(init.body ?? "{}") });
       return jsonResponse([{ id: idFilter }]);
+    }
+
+    // ---- meeting_attendance: close-cycle insert (POST, ignore-duplicates) ----
+    if (table === "meeting_attendance" && method === "POST") {
+      const rows = JSON.parse(init.body ?? "[]");
+      const list = Array.isArray(rows) ? rows : [rows];
+      const prefer = String(init.headers?.Prefer ?? "");
+      const inserted = [];
+      for (const row of list) {
+        const exists = state.attendanceRows.some(
+          (item) => item.session_id === row.session_id && item.employee_id === row.employee_id,
+        );
+        if (exists) {
+          if (prefer.includes("resolution=ignore-duplicates")) continue;
+          throw new Error("fake duplicate insert");
+        }
+        const saved = { id: `att-close-${state.attendanceRows.length + 1}`, ...row };
+        state.attendanceRows.push(saved);
+        inserted.push(saved);
+      }
+      state.closeInserts.push(list);
+      return jsonResponse(inserted);
     }
 
     // ---- meeting_roster ----
@@ -224,6 +250,8 @@ function createBackend(options = {}) {
 
   const state = {
     attendanceWrites: [],
+    attendanceRows: [...SUP_ATTENDANCE, ...MONTHLY_ATTENDANCE],
+    closeInserts: [],
     sessionsByType: {
       [TYPE_S]: SUP_SESSIONS,
       [TYPE_M]: MONTHLY_SESSIONS,
@@ -944,6 +972,211 @@ test("POST /api/meeting/dashboard/reason is mounted (Phase 3b) and needs a contr
   const res = await app.request("/api/meeting/dashboard/reason", { method: "POST" }, ENV);
   assert.equal(res.status, 401);
   assert.deepEqual(await res.json(), { ok: false, error: UNAUTHENTICATED });
+});
+
+/* --------------------------- POST /close-cycle --------------------------- */
+
+const CLOSE_NOT_YET = "ยังไม่ถึงเวลาปิดลงทะเบียน";
+const CLOSE_NO_CYCLE = "ไม่พบรอบประชุมนี้";
+
+async function postClose(body, cookie = CONTROLLER_COOKIE) {
+  const headers = { "Content-Type": "application/json" };
+  if (cookie) headers.Cookie = cookie;
+  return app.request(
+    "/api/meeting/dashboard/close-cycle",
+    { method: "POST", headers, body: typeof body === "string" ? body : JSON.stringify(body) },
+    ENV,
+  );
+}
+
+/** One past sup session, so the cutoff gate lets the click through. */
+function usePastSupSession(backend, sessionDate = "2026-11-03", cutoffTime = "12:00") {
+  backend.state.sessionsByType[TYPE_S] = [
+    {
+      id: "sess-close",
+      session_date: sessionDate,
+      meeting_type_id: TYPE_S,
+      cutoff_time: cutoffTime,
+    },
+  ];
+}
+
+test("POST /close-cycle needs a controller session", async () => {
+  const res = await postClose({ code: "sup", cycle: "2026-11-03" }, null);
+  assert.equal(res.status, 401);
+  assert.deepEqual(await res.json(), { ok: false, error: UNAUTHENTICATED });
+});
+
+test("POST /close-cycle: only active roster members with no row are inserted", async (t) => {
+  freeze(t);
+  const backend = createBackend();
+  try {
+    usePastSupSession(backend);
+    const res = await postClose({ code: "sup", cycle: "2026-11-03" });
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("Cache-Control"), "no-store");
+    assert.deepEqual(await res.json(), { ok: true, inserted: 3 });
+
+    assert.equal(backend.state.closeInserts.length, 1);
+    const rows = backend.state.closeInserts[0];
+    assert.deepEqual(rows.map((row) => row.employee_id), [EMP_A, EMP_B, EMP_C]);
+    for (const row of rows) {
+      assert.equal(row.session_id, "sess-close");
+      assert.equal(row.status_code, "not_attended");
+      assert.equal(row.reason, null);
+      assert.equal(row.shift, null);
+      assert.equal(row.department_id, null);
+      assert.equal(row.position_id, null);
+      assert.equal(row.registered_at, new Date(NOW_MS).toISOString());
+    }
+
+    assert.equal(backend.auditCalls.length, 1);
+    const audit = JSON.parse(backend.auditCalls[0].body);
+    assert.equal(audit.action, "meeting_cycle_closed");
+    assert.equal(audit.entity, "meeting_sessions");
+    assert.equal(audit.entity_id, "sess-close");
+    assert.equal(audit.detail, JSON.stringify({ inserted: 3 }));
+    assert.equal(audit.actor_id, EMPLOYEE_ID);
+    // The detail carries a count only: no name, no employee id, no reason text.
+    assert.equal(audit.detail.includes(EMP_A), false);
+    assert.equal(audit.detail.includes("คนเอ"), false);
+  } finally {
+    backend.restore();
+  }
+});
+
+test("POST /close-cycle: an existing row is kept as it is", async (t) => {
+  freeze(t);
+  const backend = createBackend();
+  try {
+    usePastSupSession(backend);
+    backend.state.attendanceRows.push({
+      id: "att-old",
+      session_id: "sess-close",
+      employee_id: EMP_A,
+      status_code: "attended",
+      reason: null,
+      shift: "กะเช้า",
+      registered_at: "2026-11-03T02:00:00.000Z",
+    });
+
+    const res = await postClose({ code: "sup", cycle: "2026-11-03" });
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { ok: true, inserted: 2 });
+
+    // The person who already has a row is never sent to the insert.
+    const rows = backend.state.closeInserts[0];
+    assert.deepEqual(rows.map((row) => row.employee_id), [EMP_B, EMP_C]);
+
+    const kept = backend.state.attendanceRows.find((row) => row.id === "att-old");
+    assert.equal(kept.status_code, "attended");
+    assert.equal(kept.shift, "กะเช้า");
+  } finally {
+    backend.restore();
+  }
+});
+
+test("POST /close-cycle: a second click inserts 0 rows", async (t) => {
+  freeze(t);
+  const backend = createBackend();
+  try {
+    usePastSupSession(backend);
+
+    const first = await postClose({ code: "sup", cycle: "2026-11-03" });
+    assert.deepEqual(await first.json(), { ok: true, inserted: 3 });
+
+    const second = await postClose({ code: "sup", cycle: "2026-11-03" });
+    assert.equal(second.status, 200);
+    assert.deepEqual(await second.json(), { ok: true, inserted: 0 });
+
+    // The second click performs no attendance write at all and still audits.
+    assert.equal(backend.state.closeInserts.length, 1);
+    assert.equal(backend.auditCalls.length, 2);
+    assert.equal(JSON.parse(backend.auditCalls[1].body).detail, JSON.stringify({ inserted: 0 }));
+  } finally {
+    backend.restore();
+  }
+});
+
+test("POST /close-cycle: before the cutoff answers 400 and writes nothing", async (t) => {
+  freeze(t);
+  const backend = createBackend();
+  try {
+    usePastSupSession(backend, TODAY_KEY, "12:00");
+    const res = await postClose({ code: "sup", cycle: TODAY_KEY });
+
+    assert.equal(res.status, 400);
+    assert.equal(res.headers.get("Cache-Control"), "no-store");
+    assert.deepEqual(await res.json(), { ok: false, error: CLOSE_NOT_YET });
+    assert.equal(backend.state.closeInserts.length, 0);
+    assert.equal(backend.auditCalls.length, 0);
+  } finally {
+    backend.restore();
+  }
+});
+
+test("POST /close-cycle: a cycle with no session answers 404", async (t) => {
+  freeze(t);
+  const backend = createBackend();
+  try {
+    const res = await postClose({ code: "sup", cycle: "2026-10-06" });
+    assert.equal(res.status, 404);
+    assert.deepEqual(await res.json(), { ok: false, error: CLOSE_NO_CYCLE });
+    assert.equal(backend.state.closeInserts.length, 0);
+    assert.equal(backend.auditCalls.length, 0);
+  } finally {
+    backend.restore();
+  }
+});
+
+test("POST /close-cycle: a month with several sessions is refused", async (t) => {
+  freeze(t);
+  const backend = createBackend();
+  try {
+    const res = await postClose({ code: "monthly", cycle: "2026-11" });
+    assert.equal(res.status, 400);
+    assert.deepEqual(await res.json(), { ok: false, error: INVALID_INPUT });
+    assert.equal(backend.state.closeInserts.length, 0);
+  } finally {
+    backend.restore();
+  }
+});
+
+test("POST /close-cycle: a non-strict body is rejected before any read", async (t) => {
+  freeze(t);
+  const backend = createBackend();
+  try {
+    usePastSupSession(backend);
+    for (const body of [
+      { code: "sup", cycle: "2026-11-03", extra: 1 },
+      { code: "sup", cycle: "2026-1" },
+      { code: "hr", cycle: "2026-11-03" },
+      { code: "sup" },
+    ]) {
+      const res = await postClose(body);
+      assert.equal(res.status, 400, JSON.stringify(body));
+      assert.deepEqual(await res.json(), { ok: false, error: INVALID_INPUT }, JSON.stringify(body));
+    }
+    assert.equal(backend.state.closeInserts.length, 0);
+    assert.equal(backend.auditCalls.length, 0);
+  } finally {
+    backend.restore();
+  }
+});
+
+test("POST /close-cycle: a failed read answers 500 with the Thai server message", async (t) => {
+  freeze(t);
+  const backend = createBackend({ failTable: "meeting_roster" });
+  try {
+    usePastSupSession(backend);
+    const res = await postClose({ code: "sup", cycle: "2026-11-03" });
+    assert.equal(res.status, 500);
+    assert.deepEqual(await res.json(), { ok: false, error: SERVER_ERROR });
+    assert.equal(backend.auditCalls.length, 0);
+  } finally {
+    backend.restore();
+  }
 });
 
 /** Backend where the dashboard group fails at the type lookup. */

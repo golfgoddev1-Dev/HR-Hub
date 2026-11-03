@@ -186,11 +186,18 @@ export function createDb(env) {
   /**
    * POST an array of rows in one request. With `returning: true` every
    * inserted row comes back, which the employee import needs to map new
-   * employee codes to the ids the database generated.
+   * employee codes to the ids the database generated. With
+   * `ignoreDuplicates: true` existing rows are kept and excluded from the
+   * returned rows (used by the close-cycle route to report what it inserted).
    */
-  async function insertMany(table, rows, { returning = false } = {}) {
+  async function insertMany(table, rows, { returning = false, ignoreDuplicates = false } = {}) {
     const requestHeaders = headers();
-    if (returning) requestHeaders.Prefer = "return=representation";
+    const prefer = [];
+    if (returning) prefer.push("return=representation");
+    // resolution=ignore-duplicates keeps rows that already exist untouched and
+    // returns only the inserted ones, which is how a caller counts a batch.
+    if (ignoreDuplicates) prefer.push("resolution=ignore-duplicates");
+    if (prefer.length > 0) requestHeaders.Prefer = prefer.join(",");
 
     const response = await fetch(url(table), {
       method: "POST",
