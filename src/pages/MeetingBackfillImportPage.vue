@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import * as XLSX from 'xlsx'
 import ControllerNav from '../components/ControllerNav.vue'
+import ControllerTopbar from '../components/ControllerTopbar.vue'
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024
 const BATCH_ROWS = 500
@@ -391,155 +392,159 @@ const modeLabel = (mode) => ({ new: 'รอบใหม่', existing: 'ใช�
 
 <template>
   <div class="page">
-    <ControllerNav />
+    <ControllerTopbar />
 
-    <main class="content">
-      <div class="page-head">
-        <div>
-          <h1 class="page-title">นำเข้าข้อมูลย้อนหลัง</h1>
-          <p class="page-sub">
-            อัปโหลดไฟล์ .xlsx ตามเทมเพลตเพื่อบันทึกการเข้าร่วมประชุมย้อนหลัง
-            เบราว์เซอร์อ่านไฟล์และส่งให้เซิร์ฟเวอร์ตรวจทีละ 500 แถว
+    <div class="shell">
+      <ControllerNav />
+
+      <main class="content">
+        <div class="page-head">
+          <div>
+            <h1 class="page-title">นำเข้าข้อมูลย้อนหลัง</h1>
+            <p class="page-sub">
+              อัปโหลดไฟล์ .xlsx ตามเทมเพลตเพื่อบันทึกการเข้าร่วมประชุมย้อนหลัง
+              เบราว์เซอร์อ่านไฟล์และส่งให้เซิร์ฟเวอร์ตรวจทีละ 500 แถว
+            </p>
+          </div>
+          <a class="template-link" href="/api/meeting/backfill/template">
+            <v-icon icon="download" size="18" />
+            ดาวน์โหลดเทมเพลต .xlsx
+          </a>
+        </div>
+
+        <v-alert v-if="errorMessage" type="error" variant="tonal" class="mb-4">{{ errorMessage }}</v-alert>
+        <v-alert v-if="fileError" type="warning" variant="tonal" class="mb-4">{{ fileError }}</v-alert>
+
+        <section class="card">
+          <h2 class="card-title">1. เลือกไฟล์</h2>
+          <p class="hint">
+            หัวคอลัมน์ A–L ตามเทมเพลต: ประเภทการประชุม, วันที่ประชุม, เวลา, สถานที่, ชื่อพนักงาน, สถานะ,
+            กะที่ลา, แผนก, ระดับ, รหัสการประชุม, ตรวจสอบ, เหตุผล · ไม่เกิน 5 MB · ไม่เกิน 5,000 แถว ·
+            รับเฉพาะ .xlsx
           </p>
-        </div>
-        <a class="template-link" href="/api/meeting/backfill/template">
-          <v-icon icon="download" size="18" />
-          ดาวน์โหลดเทมเพลต .xlsx
-        </a>
-      </div>
 
-      <v-alert v-if="errorMessage" type="error" variant="tonal" class="mb-4">{{ errorMessage }}</v-alert>
-      <v-alert v-if="fileError" type="warning" variant="tonal" class="mb-4">{{ fileError }}</v-alert>
-
-      <section class="card">
-        <h2 class="card-title">1. เลือกไฟล์</h2>
-        <p class="hint">
-          หัวคอลัมน์ A–L ตามเทมเพลต: ประเภทการประชุม, วันที่ประชุม, เวลา, สถานที่, ชื่อพนักงาน, สถานะ,
-          กะที่ลา, แผนก, ระดับ, รหัสการประชุม, ตรวจสอบ, เหตุผล · ไม่เกิน 5 MB · ไม่เกิน 5,000 แถว ·
-          รับเฉพาะ .xlsx
-        </p>
-
-        <div class="file-row">
-          <label class="file-pick">
-            <input
-              type="file"
-              accept=".xlsx"
-              :disabled="stage === 'checking' || stage === 'saving'"
-              @change="onFileChange"
-            />
-            <span>เลือกไฟล์</span>
-          </label>
-          <span v-if="selectedFile" class="file-name">{{ selectedFile.name }}</span>
-        </div>
-
-        <p v-if="stage === 'checking'" class="hint">
-          กำลังตรวจไฟล์… {{ batchCount > 1 ? `(ส่งตรวจ ${batchCount} ชุด ชุดละไม่เกิน 500 แถว)` : '' }}
-        </p>
-      </section>
-
-      <section v-if="preview && summary" class="card">
-        <h2 class="card-title">2. ตัวอย่างผลตรวจ</h2>
-
-        <div class="stats">
-          <div class="stat"><span class="stat-value">{{ summary.dataRows }}</span><span class="stat-label">แถวในไฟล์</span></div>
-          <div class="stat"><span class="stat-value">{{ summary.rounds }}</span><span class="stat-label">รอบ</span></div>
-          <div class="stat"><span class="stat-value">{{ summary.newRounds }}</span><span class="stat-label">รอบใหม่</span></div>
-          <div class="stat"><span class="stat-value">{{ summary.existingRounds }}</span><span class="stat-label">รอบที่มีอยู่แล้ว</span></div>
-          <div class="stat"><span class="stat-value">{{ summary.writeRows }}</span><span class="stat-label">แถวที่จะบันทึก</span></div>
-          <div class="stat"><span class="stat-value">{{ summary.skipped }}</span><span class="stat-label">แถวที่ข้าม</span></div>
-        </div>
-
-        <div class="block">
-          <h3 class="block-title">รอบทั้งหมด ({{ rounds.length }})</h3>
-          <div class="table-wrap">
-            <table class="table">
-              <thead>
-                <tr>
-                  <th>วันที่</th><th>ประเภท</th><th>เวลาในไฟล์</th>
-                  <th>เข้าร่วม</th><th>ลา (A/B)</th><th>ไม่เข้าร่วม</th><th>ติดงานด่วน</th><th>สถานะรอบ</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="round in rounds" :key="round.key">
-                  <td>{{ round.dateIso }}</td>
-                  <td>{{ round.typeName }}</td>
-                  <td>{{ round.times?.length ? round.times.join(', ') : '—' }}</td>
-                  <td>{{ round.statusCounts.attended }}</td>
-                  <td>{{ round.statusCounts.leave }} ({{ round.shiftCounts['กะ A'] }}/{{ round.shiftCounts['กะ B'] }})</td>
-                  <td>{{ round.statusCounts.not_attended }}</td>
-                  <td>{{ round.statusCounts.urgent_busy }}</td>
-                  <td><span class="badge" :class="`badge-${round.mode}`">{{ modeLabel(round.mode) }}</span></td>
-                </tr>
-              </tbody>
-            </table>
+          <div class="file-row">
+            <label class="file-pick">
+              <input
+                type="file"
+                accept=".xlsx"
+                :disabled="stage === 'checking' || stage === 'saving'"
+                @change="onFileChange"
+              />
+              <span>เลือกไฟล์</span>
+            </label>
+            <span v-if="selectedFile" class="file-name">{{ selectedFile.name }}</span>
           </div>
-        </div>
 
-        <div v-if="preview.skipped?.length" class="block">
-          <h3 class="block-title">แถวที่ถูกข้าม ({{ summary.skipped }})</h3>
-          <div class="table-wrap">
-            <table class="table">
-              <thead>
-                <tr><th>แถว</th><th>ประเภท</th><th>วันที่</th><th>ชื่อ</th><th>เหตุผล</th></tr>
-              </thead>
-              <tbody>
-                <tr v-for="item in preview.skipped" :key="`${item.row}-${item.reason}`">
-                  <td>{{ item.row }}</td>
-                  <td>{{ item.typeName || '—' }}</td>
-                  <td>{{ item.dateIso || '—' }}</td>
-                  <td>{{ item.name || '—' }}</td>
-                  <td>{{ item.reason }}</td>
-                </tr>
-              </tbody>
-            </table>
+          <p v-if="stage === 'checking'" class="hint">
+            กำลังตรวจไฟล์… {{ batchCount > 1 ? `(ส่งตรวจ ${batchCount} ชุด ชุดละไม่เกิน 500 แถว)` : '' }}
+          </p>
+        </section>
+
+        <section v-if="preview && summary" class="card">
+          <h2 class="card-title">2. ตัวอย่างผลตรวจ</h2>
+
+          <div class="stats">
+            <div class="stat"><span class="stat-value">{{ summary.dataRows }}</span><span class="stat-label">แถวในไฟล์</span></div>
+            <div class="stat"><span class="stat-value">{{ summary.rounds }}</span><span class="stat-label">รอบ</span></div>
+            <div class="stat"><span class="stat-value">{{ summary.newRounds }}</span><span class="stat-label">รอบใหม่</span></div>
+            <div class="stat"><span class="stat-value">{{ summary.existingRounds }}</span><span class="stat-label">รอบที่มีอยู่แล้ว</span></div>
+            <div class="stat"><span class="stat-value">{{ summary.writeRows }}</span><span class="stat-label">แถวที่จะบันทึก</span></div>
+            <div class="stat"><span class="stat-value">{{ summary.skipped }}</span><span class="stat-label">แถวที่ข้าม</span></div>
           </div>
-        </div>
 
-        <div class="actions">
-          <v-btn color="primary" :disabled="stage === 'saving'" :loading="stage === 'saving'" @click="confirmImport">
-            ยืนยันการบันทึก
-          </v-btn>
-          <v-btn variant="text" :disabled="stage === 'saving'" @click="reset">เลือกไฟล์ใหม่</v-btn>
-        </div>
-      </section>
-
-      <section v-if="result && result.summary" class="card">
-        <h2 class="card-title">3. บันทึกเรียบร้อย</h2>
-        <ul class="plain-list">
-          <li>สร้างรอบใหม่ {{ result.summary.sessionsCreated }} รอบ</li>
-          <li>ใช้รอบเดิม {{ result.summary.sessionsReused }} รอบ</li>
-          <li>บันทึกสถานะ {{ result.summary.attendanceWritten }} แถว</li>
-          <li>ข้ามแถว {{ result.summary.skipped }} แถว</li>
-        </ul>
-
-        <div v-if="result.summary.skippedRows?.length" class="block">
-          <h3 class="block-title">แถวที่ไม่ได้บันทึก</h3>
-          <div class="table-wrap">
-            <table class="table">
-              <thead>
-                <tr><th>แถว</th><th>ประเภท</th><th>วันที่</th><th>ชื่อ</th><th>เหตุผล</th></tr>
-              </thead>
-              <tbody>
-                <tr v-for="item in result.summary.skippedRows" :key="`${item.row}-${item.reason}`">
-                  <td>{{ item.row }}</td>
-                  <td>{{ item.typeName || '—' }}</td>
-                  <td>{{ item.dateIso || '—' }}</td>
-                  <td>{{ item.name || '—' }}</td>
-                  <td>{{ item.reason }}</td>
-                </tr>
-              </tbody>
-            </table>
+          <div class="block">
+            <h3 class="block-title">รอบทั้งหมด ({{ rounds.length }})</h3>
+            <div class="table-wrap">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>วันที่</th><th>ประเภท</th><th>เวลาในไฟล์</th>
+                    <th>เข้าร่วม</th><th>ลา (A/B)</th><th>ไม่เข้าร่วม</th><th>ติดงานด่วน</th><th>สถานะรอบ</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="round in rounds" :key="round.key">
+                    <td>{{ round.dateIso }}</td>
+                    <td>{{ round.typeName }}</td>
+                    <td>{{ round.times?.length ? round.times.join(', ') : '—' }}</td>
+                    <td>{{ round.statusCounts.attended }}</td>
+                    <td>{{ round.statusCounts.leave }} ({{ round.shiftCounts['กะ A'] }}/{{ round.shiftCounts['กะ B'] }})</td>
+                    <td>{{ round.statusCounts.not_attended }}</td>
+                    <td>{{ round.statusCounts.urgent_busy }}</td>
+                    <td><span class="badge" :class="`badge-${round.mode}`">{{ modeLabel(round.mode) }}</span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
 
-        <div class="actions">
-          <v-btn variant="outlined" @click="reset">นำเข้าไฟล์อื่น</v-btn>
-          <RouterLink to="/meeting/controller/backfill">
-            <v-btn variant="text">ดูข้อมูลย้อนหลัง</v-btn>
-          </RouterLink>
-        </div>
-      </section>
-    </main>
+          <div v-if="preview.skipped?.length" class="block">
+            <h3 class="block-title">แถวที่ถูกข้าม ({{ summary.skipped }})</h3>
+            <div class="table-wrap">
+              <table class="table">
+                <thead>
+                  <tr><th>แถว</th><th>ประเภท</th><th>วันที่</th><th>ชื่อ</th><th>เหตุผล</th></tr>
+                </thead>
+                <tbody>
+                  <tr v-for="item in preview.skipped" :key="`${item.row}-${item.reason}`">
+                    <td>{{ item.row }}</td>
+                    <td>{{ item.typeName || '—' }}</td>
+                    <td>{{ item.dateIso || '—' }}</td>
+                    <td>{{ item.name || '—' }}</td>
+                    <td>{{ item.reason }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="actions">
+            <v-btn color="primary" :disabled="stage === 'saving'" :loading="stage === 'saving'" @click="confirmImport">
+              ยืนยันการบันทึก
+            </v-btn>
+            <v-btn variant="text" :disabled="stage === 'saving'" @click="reset">เลือกไฟล์ใหม่</v-btn>
+          </div>
+        </section>
+
+        <section v-if="result && result.summary" class="card">
+          <h2 class="card-title">3. บันทึกเรียบร้อย</h2>
+          <ul class="plain-list">
+            <li>สร้างรอบใหม่ {{ result.summary.sessionsCreated }} รอบ</li>
+            <li>ใช้รอบเดิม {{ result.summary.sessionsReused }} รอบ</li>
+            <li>บันทึกสถานะ {{ result.summary.attendanceWritten }} แถว</li>
+            <li>ข้ามแถว {{ result.summary.skipped }} แถว</li>
+          </ul>
+
+          <div v-if="result.summary.skippedRows?.length" class="block">
+            <h3 class="block-title">แถวที่ไม่ได้บันทึก</h3>
+            <div class="table-wrap">
+              <table class="table">
+                <thead>
+                  <tr><th>แถว</th><th>ประเภท</th><th>วันที่</th><th>ชื่อ</th><th>เหตุผล</th></tr>
+                </thead>
+                <tbody>
+                  <tr v-for="item in result.summary.skippedRows" :key="`${item.row}-${item.reason}`">
+                    <td>{{ item.row }}</td>
+                    <td>{{ item.typeName || '—' }}</td>
+                    <td>{{ item.dateIso || '—' }}</td>
+                    <td>{{ item.name || '—' }}</td>
+                    <td>{{ item.reason }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="actions">
+            <v-btn variant="outlined" @click="reset">นำเข้าไฟล์อื่น</v-btn>
+            <RouterLink to="/meeting/controller/backfill">
+              <v-btn variant="text">ดูข้อมูลย้อนหลัง</v-btn>
+            </RouterLink>
+          </div>
+        </section>
+      </main>
+    </div>
   </div>
 </template>
 
@@ -547,6 +552,9 @@ const modeLabel = (mode) => ({ new: 'รอบใหม่', existing: 'ใช�
 .page {
   min-height: 100vh;
   background: #f3f6f5;
+}
+
+.shell {
   display: flex;
   gap: 18px;
   padding: 20px;
@@ -749,7 +757,7 @@ const modeLabel = (mode) => ({ new: 'รอบใหม่', existing: 'ใช�
 }
 
 @media (max-width: 900px) {
-  .page {
+  .shell {
     flex-direction: column;
     padding: 12px;
   }

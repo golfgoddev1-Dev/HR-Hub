@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import ControllerNav from '../components/ControllerNav.vue'
+import ControllerTopbar from '../components/ControllerTopbar.vue'
 
 const MIN_SEARCH_LENGTH = 2
 const SEARCH_DEBOUNCE_MS = 300
@@ -155,19 +156,7 @@ loadMembers()
 
 <template>
   <div class="page">
-    <header class="topbar">
-      <div class="brand">
-        <div class="brand-mark">HR</div>
-        <div class="brand-text">
-          <span class="brand-title">ระบบบริการงานบุคคลและสวัสดิการพนักงาน</span>
-          <span class="brand-sub">Meeting Controller Console</span>
-        </div>
-      </div>
-      <div class="role-chip">
-        <span class="material-symbols-outlined role-chip-icon">groups</span>
-        <span>ผู้ควบคุมการประชุม</span>
-      </div>
-    </header>
+    <ControllerTopbar />
 
     <div class="shell">
       <ControllerNav />
@@ -306,77 +295,6 @@ loadMembers()
   text-transform: none;
   white-space: nowrap;
   font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
-}
-
-.topbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 16px 22px;
-  background: #ffffff;
-  border-bottom: 1px solid #e3e8e6;
-}
-
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-}
-
-.brand-mark {
-  width: 42px;
-  height: 42px;
-  flex: 0 0 42px;
-  display: grid;
-  place-items: center;
-  border-radius: 12px;
-  background: #176c5b;
-  color: #ffffff;
-  font-family: 'Sarabun', sans-serif;
-  font-size: 14px;
-  font-weight: 700;
-  letter-spacing: 0.5px;
-}
-
-.brand-text {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.brand-title {
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 1.4;
-  color: #115447;
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-
-.brand-sub {
-  font-size: 12px;
-  line-height: 1.4;
-  color: #6b7a75;
-}
-
-.role-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 14px;
-  border-radius: 999px;
-  background: #eaf3ef;
-  color: #115447;
-  font-size: 13px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.role-chip-icon {
-  font-size: 18px;
 }
 
 .shell {
@@ -600,7 +518,7 @@ loadMembers()
 
 @media (max-width: 899px) {
   .shell { flex-direction: column; padding: 14px; }
-  .topbar { padding: 12px 14px; }
+
   .panels { grid-template-columns: minmax(0, 1fr); }
   .list { max-height: none; }
 }

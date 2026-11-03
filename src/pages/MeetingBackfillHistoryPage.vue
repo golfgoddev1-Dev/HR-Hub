@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import ControllerNav from '../components/ControllerNav.vue'
+import ControllerTopbar from '../components/ControllerTopbar.vue'
 
 const LOAD_ERROR = 'โหลดข้อมูลไม่สำเร็จ กรุณาลองใหม่'
 
@@ -154,200 +155,204 @@ onMounted(async () => {
 
 <template>
   <div class="page">
-    <ControllerNav />
+    <ControllerTopbar />
 
-    <main class="content">
-      <div class="page-head">
-        <div>
-          <h1 class="page-title">ข้อมูลย้อนหลัง</h1>
-          <p class="page-sub">
-            สรุปการประชุมย้อนหลังรายรอบและรายคน พร้อมตัวกรองและส่งออกเป็นไฟล์ Excel ที่นำกลับเข้าได้
-          </p>
-        </div>
-        <a class="export-link" :href="exportHref">
-          <v-icon icon="download" size="18" />
-          ส่งออก Excel ตามตัวกรอง
-        </a>
-      </div>
+    <div class="shell">
+      <ControllerNav />
 
-      <v-alert v-if="errorMessage" type="error" variant="tonal" class="mb-4">{{ errorMessage }}</v-alert>
-
-      <section class="card">
-        <h2 class="card-title">ตัวกรอง</h2>
-        <div class="filter-grid">
-          <label class="field">
-            <span>ปี (ค.ศ.)</span>
-            <input v-model="filters.year" type="number" min="2000" max="2200" placeholder="2026" />
-          </label>
-          <label class="field">
-            <span>เดือน</span>
-            <input v-model="filters.month" type="month" />
-          </label>
-          <label class="field">
-            <span>ตั้งแต่วันที่</span>
-            <input v-model="filters.from" type="date" />
-          </label>
-          <label class="field">
-            <span>ถึงวันที่</span>
-            <input v-model="filters.to" type="date" />
-          </label>
-          <label class="field">
-            <span>ประเภท</span>
-            <select v-model="filters.type">
-              <option value="">ทั้งหมด</option>
-              <option v-for="type in meta.types" :key="type.code" :value="type.code">{{ type.name }}</option>
-            </select>
-          </label>
-          <label class="field">
-            <span>สถานที่</span>
-            <input v-model="filters.location" type="text" maxlength="120" />
-          </label>
-          <label class="field">
-            <span>แผนก</span>
-            <select v-model="filters.dept">
-              <option value="">ทั้งหมด</option>
-              <option v-for="dept in meta.departments" :key="dept.id" :value="dept.id">{{ dept.name }}</option>
-            </select>
-          </label>
-          <label class="field">
-            <span>ระดับ</span>
-            <select v-model="filters.position">
-              <option value="">ทั้งหมด</option>
-              <option v-for="position in meta.positions" :key="position.id" :value="position.id">{{ position.name }}</option>
-            </select>
-          </label>
-          <label class="field">
-            <span>สถานะ</span>
-            <select v-model="filters.status">
-              <option value="">ทั้งหมด</option>
-              <option v-for="status in meta.statuses" :key="status.code" :value="status.code">{{ status.label }}</option>
-            </select>
-          </label>
-          <label class="field">
-            <span>กะ (ลาประชุม)</span>
-            <select v-model="filters.shift">
-              <option value="">ทั้งหมด</option>
-              <option v-for="shift in meta.shifts" :key="shift" :value="shift">{{ shift }}</option>
-            </select>
-          </label>
+      <main class="content">
+        <div class="page-head">
+          <div>
+            <h1 class="page-title">ข้อมูลย้อนหลัง</h1>
+            <p class="page-sub">
+              สรุปการประชุมย้อนหลังรายรอบและรายคน พร้อมตัวกรองและส่งออกเป็นไฟล์ Excel ที่นำกลับเข้าได้
+            </p>
+          </div>
+          <a class="export-link" :href="exportHref">
+            <v-icon icon="download" size="18" />
+            ส่งออก Excel ตามตัวกรอง
+          </a>
         </div>
 
-        <div class="actions">
-          <v-btn color="primary" size="small" @click="loadRounds(1); person && loadPerson(1)">ใช้ตัวกรอง</v-btn>
-          <v-btn variant="text" size="small" @click="clearFilters">ล้างตัวกรอง</v-btn>
-          <span class="hint-inline">ค่าเริ่มต้นไม่กรองวันที่ และแสดงทีละ 20 รอบ</span>
+        <v-alert v-if="errorMessage" type="error" variant="tonal" class="mb-4">{{ errorMessage }}</v-alert>
+
+        <section class="card">
+          <h2 class="card-title">ตัวกรอง</h2>
+          <div class="filter-grid">
+            <label class="field">
+              <span>ปี (ค.ศ.)</span>
+              <input v-model="filters.year" type="number" min="2000" max="2200" placeholder="2026" />
+            </label>
+            <label class="field">
+              <span>เดือน</span>
+              <input v-model="filters.month" type="month" />
+            </label>
+            <label class="field">
+              <span>ตั้งแต่วันที่</span>
+              <input v-model="filters.from" type="date" />
+            </label>
+            <label class="field">
+              <span>ถึงวันที่</span>
+              <input v-model="filters.to" type="date" />
+            </label>
+            <label class="field">
+              <span>ประเภท</span>
+              <select v-model="filters.type">
+                <option value="">ทั้งหมด</option>
+                <option v-for="type in meta.types" :key="type.code" :value="type.code">{{ type.name }}</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>สถานที่</span>
+              <input v-model="filters.location" type="text" maxlength="120" />
+            </label>
+            <label class="field">
+              <span>แผนก</span>
+              <select v-model="filters.dept">
+                <option value="">ทั้งหมด</option>
+                <option v-for="dept in meta.departments" :key="dept.id" :value="dept.id">{{ dept.name }}</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>ระดับ</span>
+              <select v-model="filters.position">
+                <option value="">ทั้งหมด</option>
+                <option v-for="position in meta.positions" :key="position.id" :value="position.id">{{ position.name }}</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>สถานะ</span>
+              <select v-model="filters.status">
+                <option value="">ทั้งหมด</option>
+                <option v-for="status in meta.statuses" :key="status.code" :value="status.code">{{ status.label }}</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>กะ (ลาประชุม)</span>
+              <select v-model="filters.shift">
+                <option value="">ทั้งหมด</option>
+                <option v-for="shift in meta.shifts" :key="shift" :value="shift">{{ shift }}</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="actions">
+            <v-btn color="primary" size="small" @click="loadRounds(1); person && loadPerson(1)">ใช้ตัวกรอง</v-btn>
+            <v-btn variant="text" size="small" @click="clearFilters">ล้างตัวกรอง</v-btn>
+            <span class="hint-inline">ค่าเริ่มต้นไม่กรองวันที่ และแสดงทีละ 20 รอบ</span>
+          </div>
+        </section>
+
+        <div class="tabs">
+          <button type="button" class="tab" :class="{ 'tab-active': tab === 'rounds' }" @click="tab = 'rounds'">
+            สรุปรายรอบ
+          </button>
+          <button type="button" class="tab" :class="{ 'tab-active': tab === 'person' }" @click="tab = 'person'">
+            ประวัติรายคน
+          </button>
         </div>
-      </section>
 
-      <div class="tabs">
-        <button type="button" class="tab" :class="{ 'tab-active': tab === 'rounds' }" @click="tab = 'rounds'">
-          สรุปรายรอบ
-        </button>
-        <button type="button" class="tab" :class="{ 'tab-active': tab === 'person' }" @click="tab = 'person'">
-          ประวัติรายคน
-        </button>
-      </div>
-
-      <section v-if="tab === 'rounds'" class="card">
-        <h2 class="card-title">สรุปรายรอบ</h2>
-        <div class="table-wrap">
-          <table class="table">
-            <thead>
-              <tr>
-                <th>วันที่</th><th>ประเภท</th><th>เวลา</th><th>สถานที่</th>
-                <th>เข้าร่วม</th><th>ลาประชุม (A/B)</th><th>ไม่เข้าร่วม</th><th>ติดงานด่วน</th><th>รวม</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="round in roundsState.rows" :key="round.id">
-                <td>{{ round.date || '—' }}</td>
-                <td>{{ round.typeName || '—' }}</td>
-                <td>{{ round.time || '—' }}</td>
-                <td>{{ round.location || '—' }}</td>
-                <td>{{ round.counts.attended }}</td>
-                <td>{{ round.counts.leave }} ({{ round.counts.leaveShift['กะ A'] }}/{{ round.counts.leaveShift['กะ B'] }})</td>
-                <td>{{ round.counts.not_attended }}</td>
-                <td>{{ round.counts.urgent_busy }}</td>
-                <td>{{ round.counts.total }}</td>
-              </tr>
-              <tr v-if="roundsState.rows.length === 0">
-                <td colspan="9" class="empty">{{ roundsState.loading ? 'กำลังโหลด…' : 'ไม่พบข้อมูลตามตัวกรอง' }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <div class="actions">
-          <v-btn variant="text" size="small" :disabled="roundsState.page <= 1 || roundsState.loading" @click="loadRounds(roundsState.page - 1)">
-            ก่อนหน้า
-          </v-btn>
-          <span class="hint-inline">หน้า {{ roundsState.page }}</span>
-          <v-btn variant="text" size="small" :disabled="!roundsState.hasMore || roundsState.loading" @click="loadRounds(roundsState.page + 1)">
-            ถัดไป
-          </v-btn>
-        </div>
-      </section>
-
-      <section v-else class="card">
-        <h2 class="card-title">ประวัติรายคน</h2>
-        <div class="search-row">
-          <input
-            v-model="personQuery"
-            type="text"
-            placeholder="พิมพ์ชื่อพนักงานอย่างน้อย 2 ตัวอักษร"
-            maxlength="120"
-            @keyup.enter="searchPeople"
-          />
-          <v-btn color="primary" size="small" @click="searchPeople">ค้นหา</v-btn>
-        </div>
-        <p v-if="peopleError" class="hint">{{ peopleError }}</p>
-
-        <ul v-if="people.length" class="people-list">
-          <li v-for="entry in people" :key="entry.id">
-            <button type="button" class="person-button" :class="{ 'person-selected': person?.id === entry.id }" @click="choosePerson(entry)">
-              <span class="person-name">{{ entry.name }}</span>
-              <span class="person-sub">{{ entry.departmentName || '—' }} · {{ entry.positionName || '—' }}</span>
-            </button>
-          </li>
-        </ul>
-
-        <div v-if="person" class="block">
-          <h3 class="block-title">ประวัติของ {{ person.name }}</h3>
+        <section v-if="tab === 'rounds'" class="card">
+          <h2 class="card-title">สรุปรายรอบ</h2>
           <div class="table-wrap">
             <table class="table">
               <thead>
-                <tr><th>วันที่</th><th>ประเภท</th><th>เวลา</th><th>สถานที่</th><th>สถานะ</th><th>กะ</th><th>เหตุผล</th></tr>
+                <tr>
+                  <th>วันที่</th><th>ประเภท</th><th>เวลา</th><th>สถานที่</th>
+                  <th>เข้าร่วม</th><th>ลาประชุม (A/B)</th><th>ไม่เข้าร่วม</th><th>ติดงานด่วน</th><th>รวม</th>
+                </tr>
               </thead>
               <tbody>
-                <tr v-for="item in personState.items" :key="item.attendanceId">
-                  <td>{{ item.date || '—' }}</td>
-                  <td>{{ item.typeName || '—' }}</td>
-                  <td>{{ item.time || '—' }}</td>
-                  <td>{{ item.location || '—' }}</td>
-                  <td>{{ item.statusLabel || '—' }}</td>
-                  <td>{{ item.shift || '—' }}</td>
-                  <td>{{ item.reason || '—' }}</td>
+                <tr v-for="round in roundsState.rows" :key="round.id">
+                  <td>{{ round.date || '—' }}</td>
+                  <td>{{ round.typeName || '—' }}</td>
+                  <td>{{ round.time || '—' }}</td>
+                  <td>{{ round.location || '—' }}</td>
+                  <td>{{ round.counts.attended }}</td>
+                  <td>{{ round.counts.leave }} ({{ round.counts.leaveShift['กะ A'] }}/{{ round.counts.leaveShift['กะ B'] }})</td>
+                  <td>{{ round.counts.not_attended }}</td>
+                  <td>{{ round.counts.urgent_busy }}</td>
+                  <td>{{ round.counts.total }}</td>
                 </tr>
-                <tr v-if="personState.items.length === 0">
-                  <td colspan="7" class="empty">{{ personState.loading ? 'กำลังโหลด…' : 'ไม่พบข้อมูลตามตัวกรอง' }}</td>
+                <tr v-if="roundsState.rows.length === 0">
+                  <td colspan="9" class="empty">{{ roundsState.loading ? 'กำลังโหลด…' : 'ไม่พบข้อมูลตามตัวกรอง' }}</td>
                 </tr>
               </tbody>
             </table>
           </div>
 
           <div class="actions">
-            <v-btn variant="text" size="small" :disabled="personState.page <= 1 || personState.loading" @click="loadPerson(personState.page - 1)">
+            <v-btn variant="text" size="small" :disabled="roundsState.page <= 1 || roundsState.loading" @click="loadRounds(roundsState.page - 1)">
               ก่อนหน้า
             </v-btn>
-            <span class="hint-inline">หน้า {{ personState.page }}</span>
-            <v-btn variant="text" size="small" :disabled="!personState.hasMore || personState.loading" @click="loadPerson(personState.page + 1)">
+            <span class="hint-inline">หน้า {{ roundsState.page }}</span>
+            <v-btn variant="text" size="small" :disabled="!roundsState.hasMore || roundsState.loading" @click="loadRounds(roundsState.page + 1)">
               ถัดไป
             </v-btn>
-            <a class="export-link" :href="exportHref">ส่งออก Excel ของคนนี้</a>
           </div>
-        </div>
-      </section>
-    </main>
+        </section>
+
+        <section v-else class="card">
+          <h2 class="card-title">ประวัติรายคน</h2>
+          <div class="search-row">
+            <input
+              v-model="personQuery"
+              type="text"
+              placeholder="พิมพ์ชื่อพนักงานอย่างน้อย 2 ตัวอักษร"
+              maxlength="120"
+              @keyup.enter="searchPeople"
+            />
+            <v-btn color="primary" size="small" @click="searchPeople">ค้นหา</v-btn>
+          </div>
+          <p v-if="peopleError" class="hint">{{ peopleError }}</p>
+
+          <ul v-if="people.length" class="people-list">
+            <li v-for="entry in people" :key="entry.id">
+              <button type="button" class="person-button" :class="{ 'person-selected': person?.id === entry.id }" @click="choosePerson(entry)">
+                <span class="person-name">{{ entry.name }}</span>
+                <span class="person-sub">{{ entry.departmentName || '—' }} · {{ entry.positionName || '—' }}</span>
+              </button>
+            </li>
+          </ul>
+
+          <div v-if="person" class="block">
+            <h3 class="block-title">ประวัติของ {{ person.name }}</h3>
+            <div class="table-wrap">
+              <table class="table">
+                <thead>
+                  <tr><th>วันที่</th><th>ประเภท</th><th>เวลา</th><th>สถานที่</th><th>สถานะ</th><th>กะ</th><th>เหตุผล</th></tr>
+                </thead>
+                <tbody>
+                  <tr v-for="item in personState.items" :key="item.attendanceId">
+                    <td>{{ item.date || '—' }}</td>
+                    <td>{{ item.typeName || '—' }}</td>
+                    <td>{{ item.time || '—' }}</td>
+                    <td>{{ item.location || '—' }}</td>
+                    <td>{{ item.statusLabel || '—' }}</td>
+                    <td>{{ item.shift || '—' }}</td>
+                    <td>{{ item.reason || '—' }}</td>
+                  </tr>
+                  <tr v-if="personState.items.length === 0">
+                    <td colspan="7" class="empty">{{ personState.loading ? 'กำลังโหลด…' : 'ไม่พบข้อมูลตามตัวกรอง' }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="actions">
+              <v-btn variant="text" size="small" :disabled="personState.page <= 1 || personState.loading" @click="loadPerson(personState.page - 1)">
+                ก่อนหน้า
+              </v-btn>
+              <span class="hint-inline">หน้า {{ personState.page }}</span>
+              <v-btn variant="text" size="small" :disabled="!personState.hasMore || personState.loading" @click="loadPerson(personState.page + 1)">
+                ถัดไป
+              </v-btn>
+              <a class="export-link" :href="exportHref">ส่งออก Excel ของคนนี้</a>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
   </div>
 </template>
 
@@ -355,6 +360,9 @@ onMounted(async () => {
 .page {
   min-height: 100vh;
   background: #f3f6f5;
+}
+
+.shell {
   display: flex;
   gap: 18px;
   padding: 20px;
@@ -580,7 +588,7 @@ onMounted(async () => {
 }
 
 @media (max-width: 900px) {
-  .page {
+  .shell {
     flex-direction: column;
     padding: 12px;
   }

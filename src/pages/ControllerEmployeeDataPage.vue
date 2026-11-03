@@ -1,23 +1,12 @@
 <script setup>
 import ControllerNav from '../components/ControllerNav.vue'
+import ControllerTopbar from '../components/ControllerTopbar.vue'
 import EmployeeDirectoryManager from '../components/EmployeeDirectoryManager.vue'
 </script>
 
 <template>
   <div class="page">
-    <header class="topbar">
-      <div class="brand">
-        <div class="brand-mark">HR</div>
-        <div class="brand-text">
-          <span class="brand-title">ระบบบริการงานบุคคลและสวัสดิการพนักงาน</span>
-          <span class="brand-sub">Meeting Controller Console</span>
-        </div>
-      </div>
-      <div class="role-chip">
-        <span class="material-symbols-outlined role-chip-icon">manage_accounts</span>
-        <span>ผู้ควบคุมการประชุม</span>
-      </div>
-    </header>
+    <ControllerTopbar />
 
     <div class="shell">
       <ControllerNav />
@@ -48,70 +37,6 @@ import EmployeeDirectoryManager from '../components/EmployeeDirectoryManager.vue
   overflow-x: hidden;
   background: #f4f8f5;
   color: #12251f;
-}
-
-.topbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px 22px;
-  background: #ffffff;
-  border-bottom: 1px solid #e3e8e6;
-}
-
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-}
-
-.brand-mark {
-  display: grid;
-  place-items: center;
-  width: 42px;
-  height: 42px;
-  border-radius: 12px;
-  background: #176c5b;
-  color: #ffffff;
-  font-weight: 700;
-  letter-spacing: 0.5px;
-}
-
-.brand-text {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.brand-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #115447;
-}
-
-.brand-sub {
-  font-size: 12px;
-  color: #6b7a75;
-}
-
-.role-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 14px;
-  border-radius: 999px;
-  background: #eaf3ef;
-  color: #115447;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.role-chip-icon {
-  font-size: 18px;
-  line-height: 1;
 }
 
 .shell {
@@ -173,8 +98,5 @@ import EmployeeDirectoryManager from '../components/EmployeeDirectoryManager.vue
     padding: 14px;
   }
 
-  .topbar {
-    padding: 12px 14px;
-  }
 }
 </style>

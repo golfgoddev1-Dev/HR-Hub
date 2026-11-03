@@ -1,6 +1,7 @@
 <script setup>
 import { computed, reactive, ref } from 'vue'
 import ControllerNav from '../components/ControllerNav.vue'
+import ControllerTopbar from '../components/ControllerTopbar.vue'
 
 const LOAD_ERROR_MESSAGE = 'ไม่สามารถโหลดแดชบอร์ดได้ กรุณาลองใหม่'
 const DEPT_ERROR_MESSAGE = 'ไม่สามารถโหลดรายชื่อแผนกได้ กรุณาลองใหม่'
@@ -438,19 +439,7 @@ loadDashboard()
 
 <template>
   <div class="page">
-    <header class="topbar">
-      <div class="brand">
-        <div class="brand-mark">HR</div>
-        <div class="brand-text">
-          <span class="brand-title">ระบบบริการงานบุคคลและสวัสดิการพนักงาน</span>
-          <span class="brand-sub">Meeting Controller Console</span>
-        </div>
-      </div>
-      <div class="role-chip">
-        <span class="material-symbols-outlined role-chip-icon">insights</span>
-        <span>ผู้ควบคุมการประชุม</span>
-      </div>
-    </header>
+    <ControllerTopbar />
 
     <div class="shell">
       <ControllerNav />
@@ -1021,74 +1010,6 @@ loadDashboard()
 }
 
 /* ---------- shell ---------- */
-.topbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 16px 22px;
-  background: #ffffff;
-  border-bottom: 1px solid #e3e8e6;
-}
-
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-}
-
-.brand-mark {
-  width: 42px;
-  height: 42px;
-  flex: 0 0 42px;
-  display: grid;
-  place-items: center;
-  border-radius: 12px;
-  background: var(--primary);
-  color: #ffffff;
-  font-size: 14px;
-  font-weight: 700;
-  letter-spacing: 0.5px;
-}
-
-.brand-text {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.brand-title {
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 1.4;
-  color: var(--secondary);
-  overflow-wrap: anywhere;
-}
-
-.brand-sub {
-  font-size: 12px;
-  line-height: 1.4;
-  color: var(--outline);
-}
-
-.role-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 14px;
-  border-radius: 999px;
-  background: #eaf3ef;
-  color: var(--primary);
-  font-size: 13px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.role-chip-icon {
-  font-size: 18px;
-}
 
 .shell {
   display: flex;
@@ -2299,9 +2220,6 @@ loadDashboard()
     padding: 14px;
   }
 
-  .topbar {
-    padding: 12px 14px;
-  }
 }
 
 @media (max-width: 600px) {
