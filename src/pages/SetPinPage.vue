@@ -777,4 +777,101 @@ async function submitSetPin() {
   font-size: 11px;
   color: #44474d;
 }
+
+/* ===== Motion ===== */
+
+@keyframes m-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes m-fade-in-down {
+  from { opacity: 0; transform: translateY(-16px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes m-fade-in-up {
+  from { opacity: 0; transform: translateY(18px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes m-scale-in {
+  from { opacity: 0; transform: scale(0.97) translateY(14px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes m-shake {
+  10%, 90% { transform: translate3d(-1px, 0, 0); }
+  20%, 80% { transform: translate3d(2px, 0, 0); }
+  30%, 50%, 70% { transform: translate3d(-3px, 0, 0); }
+  40%, 60% { transform: translate3d(3px, 0, 0); }
+}
+@keyframes m-pop {
+  0% { transform: scale(0.6); opacity: 0; }
+  60% { transform: scale(1.12); opacity: 1; }
+  100% { transform: scale(1); }
+}
+@keyframes m-counter-pop {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.15); }
+  100% { transform: scale(1.04); }
+}
+@keyframes m-shine {
+  0%, 70% { transform: translateX(-120%) rotate(26deg); opacity: 0; }
+  75% { opacity: 1; }
+  100% { transform: translateX(420%) rotate(26deg); opacity: 0; }
+}
+
+/* 1) เข้าฉาก */
+.topbar { animation: m-fade-in-down 0.8s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.ssl-pill { animation: m-fade-in 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.15s both; }
+.card { animation: m-scale-in 0.8s cubic-bezier(0.16, 1, 0.3, 1) 0.1s both; }
+
+/* 2) ส่วนหัวการ์ดและช่องกรอกทยอยขึ้น */
+.card-icon { animation: m-pop 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) 0.25s both; }
+.card-header h1 { animation: m-fade-in-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.3s both; }
+.card-header p { animation: m-fade-in-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.36s both; }
+.field { animation: m-fade-in-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.form > .field:nth-child(1) { animation-delay: 0.42s; }
+.form > .field:nth-child(2) { animation-delay: 0.5s; }
+.form > .field:nth-child(3) { animation-delay: 0.58s; }
+.form > .field:nth-child(4) { animation-delay: 0.66s; }
+.submit { animation: m-fade-in-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.74s both; }
+.card-footer { animation: m-fade-in 0.6s ease 0.85s both; }
+.policy-note { animation: m-fade-in 0.7s ease 0.9s both; }
+.page-footer { animation: m-fade-in 0.8s ease 0.5s both; }
+
+/* 3) สถานะต่าง ๆ */
+.alert { animation: m-shake 0.45s cubic-bezier(0.36, 0.07, 0.19, 0.97) both; }
+.match { animation: m-fade-in 0.3s ease both; }
+.match-icon { animation: m-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+.counter { transition: background-color 0.25s ease, color 0.25s ease, transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.counter.full { animation: m-counter-pop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+.input { transition: background-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease; }
+.input:focus { transform: translateY(-1px); }
+.input-icon { transition: color 0.25s ease, transform 0.25s ease; }
+.input-wrap:focus-within .input-icon { transform: scale(1.1); color: #316bf3; }
+.back-link { transition: color 0.2s ease, background-color 0.2s ease, transform 0.2s ease; }
+.back-link:hover { transform: translateX(-3px); }
+.submit { position: relative; overflow: hidden; }
+.submit.ready { transition: background-color 0.3s ease, box-shadow 0.3s ease, transform 0.25s ease, opacity 0.3s ease; }
+.submit.ready:hover { transform: translateY(-2px); box-shadow: 0 8px 22px rgba(15, 33, 55, 0.3); }
+.submit.ready::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: 0;
+  width: 40%;
+  height: 200%;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.25) 50%, rgba(255, 255, 255, 0) 100%);
+  transform: rotate(26deg);
+  pointer-events: none;
+  animation: m-shine 3.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+/* 4) ปิดแอนิเมชันเมื่อผู้ใช้ตั้งค่า reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
 </style>
