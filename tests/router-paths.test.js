@@ -17,6 +17,7 @@ const LEAVE_NAV = readFileSync(new URL('../src/components/LeaveNav.vue', import.
 const CHANGE_PIN_PAGE = readFileSync(new URL('../src/pages/ChangePinPage.vue', import.meta.url), 'utf8')
 const SET_PIN_PAGE = readFileSync(new URL('../src/pages/SetPinPage.vue', import.meta.url), 'utf8')
 const LOGIN_PAGE = readFileSync(new URL('../src/pages/LoginPage.vue', import.meta.url), 'utf8')
+const PENDING_PAGE = readFileSync(new URL('../src/pages/PendingPage.vue', import.meta.url), 'utf8')
 const PAGES_DIR = new URL('../src/pages/', import.meta.url)
 
 /** The allow-list array of one role, as written in src/router.js. */
@@ -97,6 +98,25 @@ describe('system_admin landing page', () => {
 
   it('still has the catch-all so an unknown path is not a blank screen', () => {
     expect(ROUTER).toContain("path: '/:pathMatch(.*)*'")
+  })
+})
+
+describe('employee leave landing', () => {
+  it('routes /leave to the real leave page, not the placeholder', () => {
+    expect(ROUTER).toMatch(/import LeaveHomePage from '\.\/pages\/LeaveHomePage\.vue'/)
+    expect(ROUTER).toMatch(/\{ path: '\/leave', component: LeaveHomePage/)
+  })
+
+  it('lets the employee role stay on /leave', () => {
+    expect(allowListFor('employee')).toContain('/leave')
+  })
+
+  it('forwards /pending?to=/leave instead of showing the placeholder', () => {
+    // The API still sends employees to /pending?to=%2Fleave, so the placeholder
+    // must follow the route table rather than a list that can miss a new page.
+    expect(PENDING_PAGE).not.toContain('READY_ROUTES')
+    expect(PENDING_PAGE).toMatch(/router\.resolve\(/)
+    expect(PENDING_PAGE).toContain('meta?.catchAll')
   })
 })
 
