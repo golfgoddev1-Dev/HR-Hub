@@ -43,23 +43,21 @@ async function logout() {
 </script>
 
 <template>
-  <header class="leave-nav-wrapper">
+  <header class="leave-nav">
+    <!-- Top Ambient Accent Line -->
+    <div class="nav-accent-glow" aria-hidden="true"></div>
+
     <div class="nav-inner">
-      <!-- Brand Segment with Gradient Icon & Live Indicator -->
       <div class="nav-brand">
-        <div class="nav-brand-badge">
+        <div class="brand-icon-wrap">
           <v-icon icon="beach_access" size="22" />
         </div>
-        <div class="nav-title-box">
-          <div class="nav-title-row">
-            <span class="nav-title">ระบบใบลา</span>
-            <span class="live-dot" />
-          </div>
-          <span class="nav-subtitle">Employee Leave Portal</span>
+        <div class="brand-text">
+          <span class="nav-title">ระบบใบลา</span>
+          <span class="live-pulse" title="ออนไลน์"></span>
         </div>
       </div>
 
-      <!-- Navigation Links -->
       <nav class="nav-links">
         <RouterLink
           v-for="item in items"
@@ -70,15 +68,10 @@ async function logout() {
         >
           <v-icon :icon="item.icon" size="18" />
           <span>{{ item.label }}</span>
-          <!-- Active Glow Underline Indicator -->
-          <span class="active-underline" />
         </RouterLink>
 
-        <div class="nav-divider" />
-
-        <!-- Logout Button with Soft Red Accent -->
         <button type="button" class="nav-link nav-logout" @click="logout">
-          <v-icon icon="logout" size="16" />
+          <v-icon icon="logout" size="18" />
           <span>ออกจากระบบ</span>
         </button>
       </nav>
@@ -87,32 +80,48 @@ async function logout() {
 </template>
 
 <style scoped>
-/* Glassmorphism & Modern Header Container */
-.leave-nav-wrapper {
-  background: rgba(255, 255, 255, 0.9);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+/* 1. Header Surface & Premium Glassmorphism */
+.leave-nav {
+  position: relative;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  color: #0b1c30;
   border-radius: 16px;
-  border: 1px solid rgba(223, 231, 229, 0.8);
-  box-shadow: 0 4px 20px rgba(18, 52, 59, 0.05);
-  margin: 16px auto;
-  max-width: 1120px;
-  animation: navEntrance 0.7s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  box-shadow: 
+    0 10px 30px -10px rgba(15, 33, 55, 0.08),
+    0 2px 6px rgba(15, 33, 55, 0.02);
+  z-index: 50;
+  overflow: hidden;
 }
 
-@keyframes navEntrance {
-  from {
-    opacity: 0;
-    transform: translateY(-16px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+/* 2. Top Prismatic Ambient Accent Glow Line */
+.nav-accent-glow {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(
+    90deg,
+    rgba(16, 80, 78, 0) 0%,
+    rgba(16, 80, 78, 0.7) 25%,
+    rgba(133, 248, 196, 0.95) 50%,
+    rgba(40, 128, 125, 0.7) 75%,
+    rgba(16, 80, 78, 0) 100%
+  );
+  background-size: 200% 100%;
+  animation: glowSweep 8s ease-in-out infinite alternate;
+}
+
+@keyframes glowSweep {
+  0% { background-position: 0% 50%; opacity: 0.7; }
+  100% { background-position: 100% 50%; opacity: 1; }
 }
 
 .nav-inner {
-  padding: 12px 20px;
+  padding: 12px 24px;
   display: flex;
   flex-wrap: wrap;
   gap: 16px;
@@ -120,152 +129,174 @@ async function logout() {
   justify-content: space-between;
 }
 
+/* 3. Brand Identity with Tactile Hover Pop */
 .nav-brand {
   display: flex;
   align-items: center;
   gap: 12px;
   min-width: 0;
+  user-select: none;
 }
 
-.nav-brand-badge {
+.brand-icon-wrap {
   width: 40px;
   height: 40px;
   border-radius: 12px;
-  background: linear-gradient(135deg, #10504e 0%, #28807d 100%);
-  color: #85f8c4;
+  background: linear-gradient(135deg, #10504e 0%, #176562 100%);
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 12px rgba(16, 80, 78, 0.2);
-  transition: transform 0.25s ease;
+  color: #85f8c4;
+  box-shadow: 0 4px 14px rgba(16, 80, 78, 0.25);
+  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.35s ease;
 }
 
-.nav-brand-badge:hover {
-  transform: scale(1.05);
+.nav-brand:hover .brand-icon-wrap {
+  transform: scale(1.08) rotate(4deg);
+  box-shadow: 0 6px 18px rgba(16, 80, 78, 0.35);
 }
 
-.nav-title-box {
-  display: flex;
-  flex-direction: column;
-}
-
-.nav-title-row {
+.brand-text {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .nav-title {
-  font-size: 15px;
+  font-size: 17px;
   font-weight: 700;
   color: #12343b;
   letter-spacing: -0.01em;
   white-space: nowrap;
 }
 
-/* Pulsing Live Dot */
-.live-dot {
-  width: 6px;
-  height: 6px;
+.live-pulse {
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: #10504e;
-  box-shadow: 0 0 6px rgba(16, 80, 78, 0.6);
+  box-shadow: 0 0 8px rgba(16, 80, 78, 0.6);
   animation: pulseDot 2s ease-in-out infinite;
 }
 
 @keyframes pulseDot {
   0%, 100% { transform: scale(1); opacity: 1; }
-  50% { transform: scale(0.75); opacity: 0.5; }
+  50% { transform: scale(0.75); opacity: 0.4; }
 }
 
-.nav-subtitle {
-  font-size: 11px;
-  font-weight: 500;
-  color: #5c7176;
-}
-
+/* 4. Navigation Links Grid & Actions */
 .nav-links {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
   align-items: center;
+  gap: 8px;
 }
 
 .nav-link {
   position: relative;
+  overflow: hidden;
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 14px;
+  padding: 8px 16px;
   border-radius: 10px;
-  color: #5c7176;
+  color: #48615e;
   font-size: 14px;
-  font-weight: 500; /* ล็อกน้ำหนักฟอนต์ให้เท่ากันตลอดเพื่อป้องกันข้อความดีด/ขยับ */
+  font-weight: 500;
   text-decoration: none;
   background: transparent;
-  border: none;
+  border: 1px solid transparent;
   cursor: pointer;
   font-family: inherit;
-  transition: background-color 0.2s ease, color 0.2s ease;
-  backface-visibility: hidden;
-  -webkit-font-smoothing: antialiased;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.nav-link::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 60%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.4) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  transform: skewX(-20deg);
+  pointer-events: none;
+  opacity: 0;
 }
 
 .nav-link:hover {
-  background: rgba(231, 242, 240, 0.8);
+  background: rgba(16, 80, 78, 0.05);
   color: #10504e;
+  transform: translateY(-1.5px);
 }
 
+.nav-link:hover::after {
+  opacity: 1;
+  animation: navSheen 0.65s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.nav-link:active {
+  transform: translateY(0) scale(0.98);
+}
+
+/* Active State */
 .nav-link-active {
-  color: #10504e !important;
-  background: rgba(231, 242, 240, 0.8);
-  font-weight: 500; /* คงค่า 500 ไว้เท่าเดิม ไม่ให้ขนาดตัวอักษรเปลี่ยนไปมาตอนสลับหน้า */
+  background: #f0f7f6;
+  border-color: #d1e5e2;
+  color: #10504e;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(16, 80, 78, 0.06);
 }
 
-/* Mint Glow Underline Indicator */
-.active-underline {
+.nav-link-active::before {
+  content: '';
   position: absolute;
   bottom: 0;
-  left: 12px;
-  right: 12px;
-  height: 2.5px;
-  background: #85f8c4;
+  left: 20%;
+  right: 20%;
+  height: 2px;
   border-radius: 999px;
-  box-shadow: 0 0 8px #85f8c4;
-  opacity: 0;
-  transform: scaleX(0.4);
-  transition: transform 0.25s ease, opacity 0.25s ease;
-  pointer-events: none;
+  background: #10504e;
+  box-shadow: 0 0 6px rgba(16, 80, 78, 0.4);
 }
 
-.nav-link-active .active-underline {
-  opacity: 1;
-  transform: scaleX(1);
-}
-
-.nav-divider {
-  width: 1px;
-  height: 20px;
-  background: #dfe7e5;
-  margin: 0 4px;
-}
-
-/* Logout Button Styling */
+/* Logout Button */
 .nav-logout {
-  color: #be123c !important;
-  background: #fff1f2;
-  font-weight: 600;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  color: #ba1a1a;
+  background: rgba(186, 26, 26, 0.05);
+  border: 1px solid rgba(186, 26, 26, 0.15);
+  margin-left: 6px;
 }
 
 .nav-logout:hover {
-  background: #ffe4e6 !important;
-  color: #9f1239 !important;
+  background: rgba(186, 26, 26, 0.12);
+  border-color: rgba(186, 26, 26, 0.3);
+  color: #93000a;
+  box-shadow: 0 4px 12px rgba(186, 26, 26, 0.12);
+}
+
+.nav-logout:hover::after {
+  display: none;
+}
+
+@keyframes navSheen {
+  0% { left: -100%; }
+  100% { left: 200%; }
 }
 
 @media (max-width: 720px) {
-  .nav-subtitle {
-    display: none;
-  }
+  .nav-title { display: none; }
+  .nav-inner { padding: 10px 16px; }
+  .nav-link { padding: 7px 10px; font-size: 13px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav-accent-glow, .live-pulse { animation: none !important; }
+  .nav-link, .brand-icon-wrap { transition: none !important; }
 }
 </style>
