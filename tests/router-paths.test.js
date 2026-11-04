@@ -9,6 +9,11 @@ const ROUTER = readFileSync(new URL('../src/router.js', import.meta.url), 'utf8'
 const HR_NAV = readFileSync(new URL('../src/components/HrNav.vue', import.meta.url), 'utf8')
 const ADMIN_PAGE = readFileSync(new URL('../src/pages/AdminPage.vue', import.meta.url), 'utf8')
 const ADMIN_NAV = readFileSync(new URL('../src/components/AdminNav.vue', import.meta.url), 'utf8')
+// The role allow-lists now live in their own module, which the guard imports.
+const ROUTE_ACCESS = readFileSync(
+  new URL('../src/lib/route-access.js', import.meta.url),
+  'utf8'
+)
 const HR_PASSWORD_PAGE = readFileSync(
   new URL('../src/pages/HrPasswordPage.vue', import.meta.url),
   'utf8'
@@ -20,12 +25,12 @@ const LOGIN_PAGE = readFileSync(new URL('../src/pages/LoginPage.vue', import.met
 const PENDING_PAGE = readFileSync(new URL('../src/pages/PendingPage.vue', import.meta.url), 'utf8')
 const PAGES_DIR = new URL('../src/pages/', import.meta.url)
 
-/** The allow-list array of one role, as written in src/router.js. */
+/** The allow-list array of one role, as written in src/lib/route-access.js. */
 function allowListFor(role) {
-  const start = ROUTER.indexOf(`${role}: [`)
+  const start = ROUTE_ACCESS.indexOf(`${role}: [`)
   if (start === -1) return []
-  const end = ROUTER.indexOf(']', start)
-  return (ROUTER.slice(start, end).match(/'[^']+'/g) ?? []).map((value) => value.slice(1, -1))
+  const end = ROUTE_ACCESS.indexOf(']', start)
+  return (ROUTE_ACCESS.slice(start, end).match(/'[^']+'/g) ?? []).map((value) => value.slice(1, -1))
 }
 
 describe('HR allow-list', () => {
@@ -61,10 +66,19 @@ describe('system_admin landing page', () => {
     }
   })
 
-  it('shows the title, the in-progress notice and the admin menu', () => {
-    expect(ADMIN_PAGE).toContain('ผู้ดูแลระบบ')
-    expect(ADMIN_PAGE).toContain('หน้านี้อยู่ระหว่างพัฒนา')
+  it('shows the overview heading, the stat bar and the admin menu', () => {
+    expect(ADMIN_PAGE).toContain('ภาพรวมผู้ดูแล')
     expect(ADMIN_PAGE).toContain('AdminNav')
+    expect(ADMIN_PAGE).toContain('ADMIN_STATS')
+    expect(ADMIN_PAGE).toContain('ADMIN_SHORTCUTS')
+    // A card without a number must show a dash, never a substitute value.
+    expect(ADMIN_PAGE).toContain('ADMIN_NO_VALUE')
+    expect(ADMIN_PAGE).not.toContain('หน้านี้อยู่ระหว่างพัฒนา')
+  })
+
+  it('names the one admin menu item ภาพรวมผู้ดูแล and points it at /admin', () => {
+    expect(ADMIN_NAV).toContain('ภาพรวมผู้ดูแล')
+    expect(ADMIN_NAV).toContain('to="/admin"')
   })
 
   it('the admin menu links only to the page that exists', () => {

@@ -30,47 +30,9 @@ import { canPrintLeave } from './leave-print.js'
 import LeaveHomePage from './pages/LeaveHomePage.vue'
 import LeaveRequestPage from './pages/LeaveRequestPage.vue'
 import LeaveApprovalsPage from './pages/LeaveApprovalsPage.vue'
-
-const allowedPathsByRole = {
-  employee: ['/leave', '/leave/new', '/leave/approvals', '/change-pin'],
-  // HR landing plus every leave tool; all of them are linked from HrNav.
-  hr: [
-    '/hr',
-    '/hr/employees',
-    '/hr/employees/import',
-    '/hr/employees/manage',
-    '/hr/employees/password',
-    '/hr/leave',
-    '/hr/leave/backdated',
-    '/hr/leave/approvers',
-    '/hr/leave/holidays',
-    '/hr/leave/settings',
-  ],
-  meeting_controller: [
-    '/meeting/controller',
-    '/meeting/controller/qr',
-    '/meeting/controller/roster',
-    '/meeting/controller/dashboard',
-    '/meeting/controller/registrants',
-    '/meeting/controller/employees',
-    '/meeting/controller/backfill',
-    '/meeting/controller/backfill/import',
-  ],
-  system_admin: ['/admin'],
-}
-
-// Detail pages carry an id in the path, so exact-path matching is not enough.
-const allowedPrefixesByRole = {
-  hr: ['/hr/employees/', '/leave/hr/requests/'],
-}
-
-// Where a signed-in user goes when a page is not theirs.
-const homePathByRole = {
-  employee: '/leave',
-  hr: '/hr',
-  meeting_controller: '/meeting/controller',
-  system_admin: '/admin',
-}
+// The allow-lists live in src/lib/route-access.js so pages can ask the same
+// question the guard asks before offering a link.
+import { canOpenPath, homePathByRole } from './lib/route-access.js'
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -151,10 +113,7 @@ router.beforeEach(async (to) => {
     return homePathByRole[session.role] ?? '/login'
   }
 
-  const allowedPaths = allowedPathsByRole[session.role] ?? []
-  const allowedPrefixes = allowedPrefixesByRole[session.role] ?? []
-  const allowed =
-    allowedPaths.includes(to.path) || allowedPrefixes.some((prefix) => to.path.startsWith(prefix))
+  const allowed = canOpenPath(session.role, to.path)
 
   const redirectTo =
     typeof session.redirectTo === 'string' && session.redirectTo.startsWith('/')

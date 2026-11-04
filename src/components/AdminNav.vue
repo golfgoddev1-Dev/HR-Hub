@@ -26,8 +26,8 @@ async function logout() {
 
       <nav class="nav-links">
         <RouterLink to="/admin" class="nav-link" active-class="nav-link-active">
-          <v-icon icon="home" size="18" />
-          <span>หน้าหลัก</span>
+          <v-icon icon="space_dashboard" size="18" />
+          <span>ภาพรวมผู้ดูแล</span>
         </RouterLink>
 
         <span
