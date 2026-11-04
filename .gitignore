@@ -26,3 +26,11 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local-only files and scratch work (never commit)
+.cloud-attachments/
+scripts/spike/
+.freebuff/
+.dev.vars
+worker/.dev.vars
+.env.local
