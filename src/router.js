@@ -17,11 +17,32 @@ import HrEmployeeDetailPage from './pages/HrEmployeeDetailPage.vue'
 import HrEmployeesPage from './pages/HrEmployeesPage.vue'
 import HrEmployeeDataPage from './pages/HrEmployeeDataPage.vue'
 import ControllerEmployeeDataPage from './pages/ControllerEmployeeDataPage.vue'
+import HrLeaveRequestsPage from './pages/HrLeaveRequestsPage.vue'
+import HrLeaveBackdatedPage from './pages/HrLeaveBackdatedPage.vue'
+import HrLeaveApproversPage from './pages/HrLeaveApproversPage.vue'
+import HrLeaveHolidaysPage from './pages/HrLeaveHolidaysPage.vue'
+import HrLeaveSettingsPage from './pages/HrLeaveSettingsPage.vue'
+import HrLeavePrintPage from './pages/HrLeavePrintPage.vue'
+import AdminPage from './pages/AdminPage.vue'
+import { canPrintLeave } from './leave-print.js'
+import LeaveHomePage from './pages/LeaveHomePage.vue'
+import LeaveRequestPage from './pages/LeaveRequestPage.vue'
+import LeaveApprovalsPage from './pages/LeaveApprovalsPage.vue'
 
 const allowedPathsByRole = {
-  employee: ['/leave', '/leave/approvals'],
-  // HR lands on the employee import page: the HR leave page does not exist yet.
-  hr: ['/hr', '/hr/employees', '/hr/employees/import'],
+  employee: ['/leave', '/leave/new', '/leave/approvals'],
+  // HR landing plus every leave tool; all of them are linked from HrNav.
+  hr: [
+    '/hr',
+    '/hr/employees',
+    '/hr/employees/import',
+    '/hr/employees/manage',
+    '/hr/leave',
+    '/hr/leave/backdated',
+    '/hr/leave/approvers',
+    '/hr/leave/holidays',
+    '/hr/leave/settings',
+  ],
   meeting_controller: [
     '/meeting/controller',
     '/meeting/controller/qr',
@@ -37,7 +58,15 @@ const allowedPathsByRole = {
 
 // Detail pages carry an id in the path, so exact-path matching is not enough.
 const allowedPrefixesByRole = {
-  hr: ['/hr/employees/'],
+  hr: ['/hr/employees/', '/leave/hr/requests/'],
+}
+
+// Where a signed-in user goes when a page is not theirs.
+const homePathByRole = {
+  employee: '/leave',
+  hr: '/hr',
+  meeting_controller: '/meeting/controller',
+  system_admin: '/admin',
 }
 
 export const router = createRouter({
@@ -47,6 +76,9 @@ export const router = createRouter({
     { path: '/pending', component: PendingPage },
     { path: '/', redirect: '/login' },
     { path: '/set-pin', component: SetPinPage },
+    { path: '/leave', component: LeaveHomePage, meta: { requiresAuth: true } },
+    { path: '/leave/new', component: LeaveRequestPage, meta: { requiresAuth: true } },
+    { path: '/leave/approvals', component: LeaveApprovalsPage, meta: { requiresAuth: true } },
     { path: '/meeting/controller', component: ControllerOverviewPage, meta: { requiresAuth: true } },
     { path: '/meeting/controller/qr', component: ControllerQrPage, meta: { requiresAuth: true } },
     { path: '/meeting/controller/roster', component: ControllerRosterPage, meta: { requiresAuth: true } },
@@ -61,6 +93,13 @@ export const router = createRouter({
     { path: '/hr/employees/manage', component: HrEmployeeDataPage, meta: { requiresAuth: true } },
     { path: '/hr/employees/import', component: HrEmployeeImportPage, meta: { requiresAuth: true } },
     { path: '/hr/employees/:id', component: HrEmployeeDetailPage, meta: { requiresAuth: true } },
+    { path: '/hr/leave', component: HrLeaveRequestsPage, meta: { requiresAuth: true } },
+    { path: '/hr/leave/backdated', component: HrLeaveBackdatedPage, meta: { requiresAuth: true } },
+    { path: '/hr/leave/approvers', component: HrLeaveApproversPage, meta: { requiresAuth: true } },
+    { path: '/hr/leave/holidays', component: HrLeaveHolidaysPage, meta: { requiresAuth: true } },
+    { path: '/hr/leave/settings', component: HrLeaveSettingsPage, meta: { requiresAuth: true } },
+    { path: '/leave/hr/requests/:id/print', component: HrLeavePrintPage, meta: { requiresAuth: true } },
+    { path: '/admin', component: AdminPage, meta: { requiresAuth: true } },
     { path: '/:pathMatch(.*)*', component: PendingPage, meta: { requiresAuth: true, catchAll: true } },
   ],
 })
@@ -95,6 +134,11 @@ router.beforeEach(async (to) => {
 
   const session = await loadSession()
   if (!session) return '/login'
+
+  // The printed leave form is HR-only; another role is sent to its own home.
+  if (to.path.startsWith('/leave/hr/requests/') && !canPrintLeave(session.role)) {
+    return homePathByRole[session.role] ?? '/login'
+  }
 
   const allowedPaths = allowedPathsByRole[session.role] ?? []
   const allowedPrefixes = allowedPrefixesByRole[session.role] ?? []

@@ -4,6 +4,11 @@ const navItems = [
   { label: 'รายชื่อพนักงาน', to: '/hr/employees', icon: 'groups' },
   { label: 'นำเข้าพนักงาน', to: '/hr/employees/import', icon: 'upload_file' },
   { label: 'จัดการข้อมูลพนักงาน', to: '/hr/employees/manage', icon: 'edit' },
+  { label: 'ใบลาทั้งหมด', to: '/hr/leave', icon: 'event_note' },
+  { label: 'คีย์ใบลาย้อนหลัง', to: '/hr/leave/backdated', icon: 'edit_calendar' },
+  { label: 'วันหยุด', to: '/hr/leave/holidays', icon: 'event_busy' },
+  { label: 'ผู้อนุมัติ', to: '/hr/leave/approvers', icon: 'how_to_reg' },
+  { label: 'ตั้งค่าใบลา', to: '/hr/leave/settings', icon: 'settings' },
 ]
 
 async function logout() {
