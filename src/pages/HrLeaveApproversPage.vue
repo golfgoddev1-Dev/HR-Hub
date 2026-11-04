@@ -258,26 +258,59 @@ onMounted(async () => {
         <div v-else class="list">
           <div v-for="item in rows" :key="item.id" class="row" :class="{ 'row-off': !item.isActive }">
             <div class="row-main">
-              <span class="row-name">
-                <template v-if="isEmployeeScope">
-                  {{ item.employeeName || '—' }} → {{ item.approverName || '—' }}
-                </template>
-                <template v-else>
-                  {{ item.departmentName || '—' }} → {{ item.employeeName || '—' }}
-                </template>
+              <span class="row-name-line">
+                <span class="row-name">
+                  <template v-if="isEmployeeScope">
+                    {{ item.employeeName || '—' }} → {{ item.approverName || '—' }}
+                  </template>
+                  <template v-else>
+                    {{ item.departmentName || '—' }} → {{ item.employeeName || '—' }}
+                  </template>
+                </span>
+                <span class="status-chip" :class="item.isActive ? 'chip-on' : 'chip-off'">
+                  {{ approverStatusText(item.isActive) }}
+                </span>
               </span>
-              <span class="row-meta">
-                priority {{ item.priority }} · ใบลาค้าง {{ item.pendingCount }} ใบ ·
-                {{ approverStatusText(item.isActive) }}
-              </span>
+              <span class="row-meta"> priority {{ item.priority }} · ใบลาค้าง {{ item.pendingCount }} ใบ </span>
             </div>
             <button
               type="button"
-              class="ghost-btn"
+              class="toggle-btn"
+              :class="item.isActive ? 'toggle-btn-off' : 'toggle-btn-on'"
               :disabled="busyId === item.id"
               @click="toggle(item)"
             >
-              {{ busyId === item.id ? 'กำลังบันทึก…' : approverToggleLabel(item.isActive) }}
+              <svg
+                v-if="item.isActive"
+                class="btn-icon"
+                viewBox="0 0 24 24"
+                width="18"
+                height="18"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <path
+                  fill="currentColor"
+                  d="M17 7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h10c2.76 0 5-2.24 5-5s-2.24-5-5-5zM7 15c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3z"
+                />
+              </svg>
+              <svg
+                v-else
+                class="btn-icon"
+                viewBox="0 0 24 24"
+                width="18"
+                height="18"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <path
+                  fill="currentColor"
+                  d="M17 7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h10c2.76 0 5-2.24 5-5s-2.24-5-5-5zm0 8c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3z"
+                />
+              </svg>
+              <span class="btn-label">
+                {{ busyId === item.id ? 'กำลังบันทึก…' : approverToggleLabel(item.isActive) }}
+              </span>
             </button>
           </div>
         </div>
@@ -398,24 +431,65 @@ onMounted(async () => {
 }
 
 .row:last-child { border-bottom: none; }
-.row-off { opacity: 0.6; }
 
-.row-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.row-name { font-size: 14px; font-weight: 600; color: #12343b; }
+/* A switched-off approver keeps normal text; only a faint tint marks the row. */
+.row-off { background: #fafbfb; }
+
+.row-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1 1 220px; }
+.row-name-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.row-name { font-size: 14px; font-weight: 600; color: #12343b; overflow-wrap: anywhere; }
 .row-meta { font-size: 12.5px; color: #5c7176; }
 
-.ghost-btn {
-  min-height: 38px;
-  padding: 0 14px;
-  border: 1px solid #cfdcda;
-  border-radius: 9px;
-  background: #ffffff;
-  color: #12343b;
-  font-family: inherit;
-  font-size: 13px;
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 1px 10px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 12px;
   font-weight: 600;
-  cursor: pointer;
+  line-height: 1;
+  white-space: nowrap;
 }
 
-.ghost-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.chip-on { background: #e3f1ec; border-color: #b9d9cf; color: #10504e; }
+.chip-off { background: #edf1f1; border-color: #d9e2e0; color: #5c7176; }
+
+.toggle-btn {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 0 15px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.toggle-btn-on { background: #10504e; border-color: #10504e; color: #ffffff; }
+.toggle-btn-on:hover { background: #0b3f3d; border-color: #0b3f3d; box-shadow: 0 3px 10px rgba(16, 80, 78, 0.3); }
+.toggle-btn-on:active { background: #08302f; }
+
+.toggle-btn-off { background: #ffffff; border-color: #e2b6b6; color: #a01b1b; }
+.toggle-btn-off:hover { background: #fdf1f1; border-color: #c48181; box-shadow: 0 3px 10px rgba(160, 27, 27, 0.14); }
+.toggle-btn-off:active { background: #fbe6e6; }
+
+.toggle-btn:focus-visible { outline: 3px solid #0f6f63; outline-offset: 2px; }
+.toggle-btn:disabled { opacity: 0.6; cursor: not-allowed; box-shadow: none; }
+
+.btn-icon { flex: 0 0 auto; }
+
+@media (max-width: 520px) {
+  .row { align-items: flex-start; }
+  .row-main { flex-basis: 100%; }
+  .toggle-btn { width: 100%; }
+}
 </style>

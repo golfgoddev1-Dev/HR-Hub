@@ -8,7 +8,7 @@
 export const APPROVER_DEACTIVATE_LABEL = 'ปิดใช้งาน'
 export const APPROVER_REACTIVATE_LABEL = 'เปิดใช้งาน'
 export const APPROVER_ACTIVE_TEXT = 'ใช้งานอยู่'
-export const APPROVER_INACTIVE_TEXT = 'ปิดใช้งานแล้ว'
+export const APPROVER_INACTIVE_TEXT = 'ปิดใช้งาน'
 
 export const APPROVER_ACTION_DEACTIVATE = 'deactivate'
 export const APPROVER_ACTION_REACTIVATE = 'reactivate'

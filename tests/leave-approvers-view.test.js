@@ -26,7 +26,7 @@ describe('button label', () => {
   it('offers เปิดใช้งาน once the approver is switched off', () => {
     expect(approverToggleLabel(false)).toBe(APPROVER_REACTIVATE_LABEL)
     expect(approverToggleLabel(false)).toBe('เปิดใช้งาน')
-    expect(approverStatusText(false)).toBe('ปิดใช้งานแล้ว')
+    expect(approverStatusText(false)).toBe('ปิดใช้งาน')
   })
 
   it('treats a missing flag as switched off, so the button can only open it', () => {
