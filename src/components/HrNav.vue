@@ -28,7 +28,7 @@ async function logout() {
       <!-- Brand Segment with Gradient Icon & Badge -->
       <div class="nav-brand">
         <div class="nav-brand-badge-icon">
-          <v-icon icon="groups" size="22" />
+          <span class="material-symbols-outlined brand-icon">groups</span>
         </div>
         <div class="nav-title-box">
           <div class="nav-title-row">
@@ -48,7 +48,7 @@ async function logout() {
           class="nav-link"
           active-class="nav-link-active"
         >
-          <v-icon :icon="item.icon" size="18" />
+          <span class="material-symbols-outlined link-icon">{{ item.icon }}</span>
           <span>{{ item.label }}</span>
           <!-- Active Glow Underline Indicator -->
           <span class="active-underline" />
@@ -58,7 +58,7 @@ async function logout() {
 
         <!-- Logout Button with Soft Red Accent -->
         <button type="button" class="nav-link nav-logout" @click="logout">
-          <v-icon icon="logout" size="16" />
+          <span class="material-symbols-outlined link-icon-sm">logout</span>
           <span>ออกจากระบบ</span>
         </button>
       </nav>
@@ -67,6 +67,35 @@ async function logout() {
 </template>
 
 <style scoped>
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap');
+
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: 'liga';
+}
+
+.brand-icon {
+  font-size: 22px;
+}
+
+.link-icon {
+  font-size: 18px;
+}
+
+.link-icon-sm {
+  font-size: 16px;
+}
+
 /* Glassmorphism & Modern Header Container */
 .hr-nav-wrapper {
   background: rgba(255, 255, 255, 0.9);
