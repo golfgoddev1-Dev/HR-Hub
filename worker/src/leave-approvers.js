@@ -66,6 +66,15 @@ export function approverDeactivation({ pendingCount } = {}) {
 }
 
 /**
+ * What a reactivate request does. The row was kept when it was switched off,
+ * so switching it back on restores the same approval route; nothing is
+ * inserted and nothing is deleted.
+ */
+export function approverReactivation() {
+  return { patch: { is_active: true }, keepRow: true };
+}
+
+/**
  * True when `approverId` is an active approver of this employee: either listed
  * personally, or listed for the employee's department. HR may only backdate a
  * leave with someone who really is that person's approver.

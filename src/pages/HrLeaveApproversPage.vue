@@ -3,6 +3,14 @@ import { computed, onMounted, ref } from 'vue'
 import HrNav from '../components/HrNav.vue'
 import EmployeePicker from '../components/EmployeePicker.vue'
 import { postJson } from '../api.js'
+import {
+  applyApproverToggle,
+  approverRows,
+  approverStatusText,
+  approverToggleLabel,
+  approverToggleNotice,
+  approverTogglePath,
+} from '../lib/leave-approvers-view.js'
 
 const LOAD_ERROR = 'โหลดรายการผู้อนุมัติไม่สำเร็จ กรุณาลองใหม่'
 const SAVE_ERROR = 'บันทึกไม่สำเร็จ กรุณาลองใหม่'
@@ -49,9 +57,12 @@ async function loadOptions() {
   }
 }
 
-async function load() {
-  loading.value = true
-  errorMessage.value = ''
+async function load(options) {
+  const quiet = options?.quiet === true
+  if (!quiet) {
+    loading.value = true
+    errorMessage.value = ''
+  }
   try {
     const params = new URLSearchParams({ scope: scope.value })
     if (scope.value === 'department' && departmentFilter.value) {
@@ -63,14 +74,14 @@ async function load() {
     const data = await response.json().catch(() => ({}))
     if (!response.ok || data.ok !== true) {
       errorMessage.value = typeof data.message === 'string' ? data.message : LOAD_ERROR
-      rows.value = []
+      if (!quiet) rows.value = []
       return
     }
-    rows.value = Array.isArray(data.results) ? data.results : []
+    rows.value = approverRows(data.results)
   } catch {
     errorMessage.value = LOAD_ERROR
   } finally {
-    loading.value = false
+    if (!quiet) loading.value = false
   }
 }
 
@@ -113,25 +124,30 @@ async function add() {
   }
 }
 
-async function deactivate(item) {
+// Switches one row either way: active rows are deactivated, inactive rows are
+// switched back on. The row stays in the list in both cases.
+async function toggle(item) {
   if (busyId.value) return
   busyId.value = item.id
   notice.value = ''
   errorMessage.value = ''
+
   try {
     const { status, data } = await postJson(
-      `/api/leave/hr/approvers/${encodeURIComponent(item.id)}/deactivate?scope=${scope.value}`,
+      approverTogglePath(item.id, scope.value, item.isActive),
       {}
     )
     if (status !== 200 || data.ok !== true) {
       errorMessage.value = typeof data.message === 'string' ? data.message : SAVE_ERROR
       return
     }
-    notice.value =
-      data.pendingCount > 0
-        ? `ปิดใช้งานแล้ว · ยังมีใบลาค้าง ${data.pendingCount} ใบ (เก็บแถวไว้ ไม่ลบ)`
-        : 'ปิดใช้งานแล้ว'
-    await load()
+    // Update the row straight away; the reload below only reconciles the rest.
+    if (!applyApproverToggle(item, data)) {
+      errorMessage.value = SAVE_ERROR
+      return
+    }
+    notice.value = approverToggleNotice(item.isActive, item.pendingCount)
+    await load({ quiet: true })
   } catch {
     errorMessage.value = SAVE_ERROR
   } finally {
@@ -155,7 +171,7 @@ onMounted(async () => {
           <h1 class="title">ตั้งค่าผู้อนุมัติ</h1>
           <p class="sub">
             รายบุคคลจะถูกใช้ก่อนระดับแผนก · เลข priority น้อยกว่าถูกเลือกก่อน ·
-            ปิดใช้งานได้อย่างเดียว (ไม่ลบแถว) เพื่อไม่ให้ใบลาค้างอ้างถึงแถวที่หายไป
+            สลับเปิด/ปิดใช้งานได้ (ไม่ลบแถว) เพื่อไม่ให้ใบลาค้างอ้างถึงแถวที่หายไป
           </p>
         </div>
       </div>
@@ -252,16 +268,16 @@ onMounted(async () => {
               </span>
               <span class="row-meta">
                 priority {{ item.priority }} · ใบลาค้าง {{ item.pendingCount }} ใบ ·
-                {{ item.isActive ? 'ใช้งานอยู่' : 'ปิดใช้งานแล้ว' }}
+                {{ approverStatusText(item.isActive) }}
               </span>
             </div>
             <button
               type="button"
               class="ghost-btn"
-              :disabled="!item.isActive || busyId === item.id"
-              @click="deactivate(item)"
+              :disabled="busyId === item.id"
+              @click="toggle(item)"
             >
-              {{ item.isActive ? 'ปิดใช้งาน' : 'ปิดใช้งานแล้ว' }}
+              {{ busyId === item.id ? 'กำลังบันทึก…' : approverToggleLabel(item.isActive) }}
             </button>
           </div>
         </div>

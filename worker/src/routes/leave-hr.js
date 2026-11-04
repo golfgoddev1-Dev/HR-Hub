@@ -27,6 +27,7 @@ import {
   DEPARTMENT_APPROVERS_TABLE,
   EMPLOYEE_APPROVERS_TABLE,
   approverDeactivation,
+  approverReactivation,
   isApproverOfEmployee,
   normalizePriority,
 } from "../leave-approvers.js";
@@ -69,6 +70,7 @@ const APPROVER_LIST_LIMIT = 200;
 const ACTION_BACKDATED = "leave_backdated_created";
 const ACTION_APPROVER_ADDED = "leave_approver_added";
 const ACTION_APPROVER_DEACTIVATED = "leave_approver_deactivated";
+const ACTION_APPROVER_REACTIVATED = "leave_approver_reactivated";
 const ACTION_HOLIDAY_ADDED = "leave_holiday_added";
 const ACTION_HOLIDAY_DELETED = "leave_holiday_deleted";
 const ACTION_SETTINGS_UPDATED = "leave_settings_updated";
@@ -954,6 +956,62 @@ leaveHr.post("/approvers/:id/deactivate", async (c) => {
     );
   } catch (error) {
     logError("hr approver deactivate failed", error);
+    return c.json({ ok: false, message: MESSAGE.saveError }, 500);
+  }
+});
+
+// --- POST /api/leave/hr/approvers/:id/reactivate ----------------------------
+
+leaveHr.post("/approvers/:id/reactivate", async (c) => {
+  const denied = await guard(c);
+  if (denied) return denied.response;
+
+  const id = c.req.param("id");
+  if (!isUuid(id)) return invalidBody(c);
+
+  const scope = scopeOf(new URL(c.req.raw.url).searchParams.get("scope") ?? "department");
+  if (!scope) return c.json({ ok: false, message: MESSAGE.scopeInvalid }, 400);
+
+  try {
+    const db = c.get("hrLeaveDb");
+    const session = c.get("hrLeaveSession");
+    const table = scope === "employee" ? EMPLOYEE_APPROVERS_TABLE : DEPARTMENT_APPROVERS_TABLE;
+
+    const row = await db.select(table, {
+      columns:
+        scope === "employee"
+          ? "id,employee_id,approver_id,priority,is_active"
+          : "id,department_id,employee_id,priority,is_active",
+      filters: [["id", "eq", id]],
+      single: true,
+    });
+    if (!row) return c.json({ ok: false, message: MESSAGE.approverRowNotFound }, 404);
+
+    const approverId = scope === "employee" ? row.approver_id : row.employee_id;
+    const plan = approverReactivation();
+
+    const updated = await db.update(table, plan.patch, [["id", "eq", id]], {
+      returning: true,
+      columns: "id,is_active",
+    });
+    if (updated.error) {
+      throw Object.assign(new Error("approver reactivate failed"), { code: updated.error.code });
+    }
+    if (!Array.isArray(updated.data) || updated.data.length === 0) {
+      return c.json({ ok: false, message: MESSAGE.approverRowNotFound }, 404);
+    }
+
+    await writeAudit(db, {
+      actorId: session.employeeId,
+      action: ACTION_APPROVER_REACTIVATED,
+      entity: ENTITY_APPROVER,
+      entityId: id,
+      detail: { scope, approverId, rowKept: plan.keepRow },
+    });
+
+    return c.json({ ok: true, id, scope, isActive: true, rowKept: plan.keepRow }, 200);
+  } catch (error) {
+    logError("hr approver reactivate failed", error);
     return c.json({ ok: false, message: MESSAGE.saveError }, 500);
   }
 });

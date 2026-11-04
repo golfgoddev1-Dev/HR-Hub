@@ -8,6 +8,7 @@ import {
   MAX_PRIORITY,
   MIN_PRIORITY,
   approverDeactivation,
+  approverReactivation,
   normalizePriority,
   pickApprover,
   resolveApproverRow,
@@ -145,6 +146,21 @@ describe('deactivation', () => {
   it('reports zero when the pending count is unknown', () => {
     expect(approverDeactivation({}).pendingCount).toBe(0)
     expect(approverDeactivation().pendingCount).toBe(0)
+  })
+})
+
+describe('reactivation', () => {
+  it('switches the kept row back on and deletes nothing', () => {
+    const plan = approverReactivation()
+    expect(plan).toEqual({ patch: { is_active: true }, keepRow: true })
+    expect(Object.keys(plan.patch)).toEqual(['is_active'])
+    expect(plan.patch.is_active).toBe(true)
+  })
+
+  it('undoes a deactivation exactly', () => {
+    expect(approverReactivation().patch).toEqual({
+      is_active: !approverDeactivation({}).patch.is_active,
+    })
   })
 })
 
