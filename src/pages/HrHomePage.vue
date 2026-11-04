@@ -52,7 +52,7 @@ const cards = [
           :style="{ '--stagger': index }"
         >
           <span class="card-icon-wrap">
-            <v-icon :icon="card.icon" size="26" class="card-icon" />
+            <span class="material-symbols-outlined card-icon">{{ card.icon }}</span>
           </span>
           <span class="card-title">{{ card.title }}</span>
           <span class="card-desc">{{ card.description }}</span>
@@ -64,6 +64,23 @@ const cards = [
 </template>
 
 <style scoped>
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap');
+
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: 'liga';
+}
+
 .page {
   min-height: 100vh;
   background: #f3f6f5;
@@ -228,6 +245,7 @@ const cards = [
 }
 
 .card-icon {
+  font-size: 26px;
   color: #10504e;
   transition: color 0.3s ease;
 }
