@@ -7,6 +7,8 @@
 import app from "./app.js";
 import { AUTO_ABSENT_CRON, runAutoAbsentOnce } from "./auto-absent.js";
 import { KEEP_ALIVE_CRON, runKeepAlive } from "./keep-alive.js";
+import { CERT_CLEANUP_CRON, runCertificateCleanup } from "./leave-retention.js";
+import { NOTIFICATION_CRON, runNotificationQueue } from "./push/queue.js";
 
 export {
   ContextRateLimiter,
@@ -31,6 +33,32 @@ export default {
 
     if (cron === KEEP_ALIVE_CRON) {
       ctx.waitUntil(runKeepAlive(env));
+      return;
+    }
+
+    // Medical certificate retention. Separate from auto-absent and keep-alive:
+    // it only deletes Storage objects past the configured age, then clears the
+    // column, and is safe to re-run.
+    if (cron === CERT_CLEANUP_CRON) {
+      const now = new Date(event.scheduledTime);
+      ctx.waitUntil(
+        runCertificateCleanup(env, now).catch((error) => {
+          console.error("[cert-cleanup-error]", error?.code ?? error?.name);
+        })
+      );
+      return;
+    }
+
+    // Web Push queue (phase 3). Runs every five minutes on its own trigger, with
+    // its own cap per pass, and is safe to re-run: each row is claimed with a
+    // conditional update before anything is sent.
+    if (cron === NOTIFICATION_CRON) {
+      const now = new Date(event.scheduledTime);
+      ctx.waitUntil(
+        runNotificationQueue(env, now).catch((error) => {
+          console.error("[notification-cron-error]", error?.code ?? error?.name);
+        })
+      );
     }
   },
 };

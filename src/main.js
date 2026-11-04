@@ -14,3 +14,12 @@ const app = createApp(App)
 app.use(vuetify)
 app.use(router)
 app.mount('#app')
+
+// The service worker only handles Web Push; it caches nothing. Registration is
+// quiet on purpose: a failure (unsupported browser, insecure context) must not
+// disturb normal use of the app.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {})
+  })
+}

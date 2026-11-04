@@ -9,6 +9,12 @@ const apiTarget = process.env.VITE_API_TARGET || 'http://127.0.0.1:8787'
 
 export default defineConfig({
   plugins: [vue()],
+  // Vitest covers the browser-side tests in tests/. The Worker tests under
+  // worker/tests are node:test files with their own runner (`cd worker && npm test`),
+  // so they are deliberately out of scope here.
+  test: {
+    include: ['tests/**/*.test.js'],
+  },
   server: {
     port: 5173,
     proxy: {

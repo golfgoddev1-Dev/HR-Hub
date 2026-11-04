@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="HR Hub">
+  <rect width="512" height="512" rx="96" fill="#0f3d3e" />
+  <text x="256" y="296" font-family="system-ui, -apple-system, sans-serif" font-size="176" font-weight="700" fill="#ffffff" text-anchor="middle">HR</text>
+  <text x="256" y="382" font-family="system-ui, -apple-system, sans-serif" font-size="64" font-weight="500" fill="#cfe3d8" text-anchor="middle">Hub</text>
+</svg>

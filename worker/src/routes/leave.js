@@ -1,0 +1,870 @@
+// Leave routes, phase 1. Mounted at /api/leave by src/app.js.
+//
+// Scope kept on purpose:
+// - employee_id always comes from the session, never from the body;
+// - days, the return date/time and the shift end override are computed here
+//   with src/leave-rules.js, so a client value is never trusted;
+// - holidays are required: a failed read refuses the submission instead of
+//   counting days without them;
+// - the approver is resolved employee_approvers -> department_approvers, skipping
+//   inactive employees and the applicant, and "no approver configured" is 409;
+// - the medical certificate is uploaded to the private bucket and only the object
+//   path is stored; a signed URL (60s) is issued per viewer;
+// - a decision is a conditional update (status = 'pending'), so two approvers
+//   clicking at once cannot both win;
+// - every submit/approve/reject writes one audit_logs row.
+
+import { Hono } from "hono";
+
+import { createDb } from "../db.js";
+import { requireRole } from "../require-role.js";
+import {
+  DECISION_NOTE_MAX_LENGTH,
+  MESSAGES,
+  attachmentRequiredFor,
+  computeLeave,
+  isDateString,
+  isOtherType,
+} from "../leave-rules.js";
+import { activeEmployeeIds, findApproverId } from "../leave-approvers.js";
+import { normalizeOptionalFields } from "../leave-backdated.js";
+import { readLeaveSettings } from "../leave-settings.js";
+import { HOLIDAYS_UNAVAILABLE, readHolidays } from "../leave-holidays.js";
+import {
+  ATTACHMENT_MESSAGES,
+  MAX_ATTACHMENT_BYTES,
+  SIGNED_URL_EXPIRES_IN,
+  attachmentPath,
+  isCertificatePath,
+  safeAttachmentName,
+  validateAttachment,
+} from "../leave-attachment.js";
+import {
+  createCertificateSignedUrl,
+  deleteCertificate,
+  uploadCertificate,
+} from "../leave-storage.js";
+import { insertWithRequestCode } from "../leave-request-code.js";
+import { enqueueNotificationSafely } from "../push/queue.js";
+import { NOTIFICATION_KINDS } from "../push/payload.js";
+
+const leave = new Hono();
+
+// HR and meeting controllers are employees too, so they may file their own leave.
+const ALLOWED_ROLES = ["employee", "hr", "meeting_controller"];
+
+const LEAVE_REQUESTS_TABLE = "leave_requests";
+const LEAVE_TYPES_TABLE = "leave_types";
+const SHIFTS_TABLE = "shift_options";
+const EMPLOYEES_TABLE = "employees";
+const DEPARTMENTS_TABLE = "departments";
+const HR_ADMINS_TABLE = "hr_admins";
+const AUDIT_TABLE = "audit_logs";
+
+const ACTION_REQUESTED = "leave_requested";
+const ACTION_APPROVED = "leave_approved";
+const ACTION_REJECTED = "leave_rejected";
+const ENTITY = "leave_request";
+
+const LIST_LIMIT = 50;
+const MAX_BODY_BYTES = 8 * 1024;
+const MAX_MULTIPART_BYTES = MAX_ATTACHMENT_BYTES + 1024 * 1024;
+const SECRET_HEADER = "Cache-Control";
+
+const MESSAGE = {
+  invalid: "ข้อมูลไม่ถูกต้อง",
+  forbidden: "ไม่มีสิทธิ์เข้าถึงส่วนนี้",
+  saveError: "ระบบขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้ง",
+  typeUnknown: "ไม่พบประเภทการลาที่เลือก",
+  requestNotFound: "ไม่พบใบลานี้",
+  notApprover: "คุณไม่ใช่ผู้อนุมัติของใบลานี้",
+  alreadyDecided: "ใบลานี้ถูกดำเนินการแล้ว",
+  noApprover: "ยังไม่ได้กำหนดผู้อนุมัติ",
+  duplicateCode: "รหัสใบลาซ้ำ กรุณายื่นใหม่อีกครั้ง",
+};
+
+// `medicalCertificateUrl` is deliberately absent: a client-supplied public URL
+// is never stored. The certificate arrives as a multipart file instead.
+const ALLOWED_KEYS = [
+  "leaveTypeId",
+  "shiftCode",
+  "startDate",
+  "endDate",
+  "otOption",
+  "otherTypeDetail",
+  "reason",
+];
+
+const UUID_PATTERN =
+  /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/i;
+
+leave.use("*", async (c, next) => {
+  c.header(SECRET_HEADER, "no-store");
+  await next();
+});
+
+function isPlainObject(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isUuid(value) {
+  return typeof value === "string" && UUID_PATTERN.test(value);
+}
+
+function hasOnlyKeys(value, keys) {
+  if (!isPlainObject(value)) return false;
+  return Object.keys(value).every((key) => keys.includes(key));
+}
+
+function isJsonContentType(value) {
+  if (typeof value !== "string") return false;
+  return value.split(";")[0].trim().toLowerCase() === "application/json";
+}
+
+function isMultipartContentType(value) {
+  if (typeof value !== "string") return false;
+  return value.split(";")[0].trim().toLowerCase() === "multipart/form-data";
+}
+
+/** Logs only the error name and code; never a body or a person's data. */
+function logError(scope, error) {
+  console.error(scope, { name: error?.name, code: error?.code });
+}
+
+function ensureOk(result) {
+  if (result && result.error) {
+    const error = new Error("database write failed");
+    error.code = result.error.code;
+    throw error;
+  }
+  return result;
+}
+
+/** JSON object body, at most 8 KB, no other content type accepted. */
+async function readStrictJson(c) {
+  if (!isJsonContentType(c.req.header("Content-Type"))) return null;
+
+  const declaredLength = Number(c.req.header("Content-Length"));
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_BODY_BYTES) return null;
+
+  let text;
+  try {
+    text = await c.req.text();
+  } catch {
+    return null;
+  }
+  if (new TextEncoder().encode(text).length > MAX_BODY_BYTES) return null;
+  if (text.trim().length === 0) return {};
+
+  try {
+    const parsed = JSON.parse(text);
+    return isPlainObject(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Multipart body: text fields plus at most one file field named `certificate`.
+ * Returns { ok, fields, file } or { ok: false, reason }.
+ */
+async function readMultipartRequest(c) {
+  const declaredLength = Number(c.req.header("Content-Length"));
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_MULTIPART_BYTES) {
+    return { ok: false, reason: "tooLarge" };
+  }
+
+  let form;
+  try {
+    form = await c.req.formData();
+  } catch {
+    return { ok: false, reason: "invalid" };
+  }
+
+  const fields = {};
+  let file = null;
+
+  for (const [key, value] of form.entries()) {
+    if (typeof value === "string") {
+      if (Object.prototype.hasOwnProperty.call(fields, key)) return { ok: false, reason: "invalid" };
+      fields[key] = value;
+      continue;
+    }
+    if (key !== "certificate" || file !== null) return { ok: false, reason: "invalid" };
+    file = value;
+  }
+
+  return { ok: true, fields, file };
+}
+
+function invalidBody(c) {
+  return c.json({ ok: false, message: MESSAGE.invalid }, 400);
+}
+
+/** Role check plus a fresh employee read, so department_id is current. */
+async function guard(c) {
+  const auth = await requireRole(c.env, c.req.raw, ALLOWED_ROLES);
+  if (auth.status) {
+    return { response: c.json({ ok: false, message: auth.message }, auth.status) };
+  }
+
+  try {
+    const db = createDb(c.env);
+    const employee = await db.select(EMPLOYEES_TABLE, {
+      columns: "id,full_name,employee_code,department_id,is_active",
+      filters: [["id", "eq", auth.session.employeeId]],
+      single: true,
+    });
+    if (!employee || employee.is_active !== true) {
+      return { response: c.json({ ok: false, message: MESSAGE.forbidden }, 403) };
+    }
+
+    c.set("leaveDb", db);
+    c.set("leaveEmployee", employee);
+    c.set("leaveSession", auth.session);
+    return null;
+  } catch (error) {
+    logError("leave guard failed", error);
+    return { response: c.json({ ok: false, message: MESSAGE.saveError }, 500) };
+  }
+}
+
+function typeMapOf(rows) {
+  const map = new Map();
+  for (const row of rows) if (row?.id) map.set(row.id, row);
+  return map;
+}
+
+async function loadTypes(db) {
+  return db.select(LEAVE_TYPES_TABLE, {
+    columns: "id,name,requires_attachment,is_active,attachment_required_from_days",
+    order: "name.asc",
+  });
+}
+
+function publicType(row) {
+  return {
+    id: row.id,
+    name: row.name ?? "",
+    requiresAttachment: row.requires_attachment === true,
+    attachmentRequiredFromDays:
+      row.attachment_required_from_days === null || row.attachment_required_from_days === undefined
+        ? null
+        : Number(row.attachment_required_from_days),
+    isOther: isOtherType(row),
+    isActive: row.is_active !== false,
+  };
+}
+
+function publicRequest(row, types) {
+  const type = types.get(row.leave_type_id) ?? null;
+  const stored = typeof row.medical_certificate_url === "string" ? row.medical_certificate_url : null;
+  return {
+    id: row.id,
+    requestCode: row.request_code ?? null,
+    leaveTypeId: row.leave_type_id ?? null,
+    leaveTypeName: type?.name ?? null,
+    otherTypeDetail: row.other_type_detail ?? null,
+    startDate: row.start_date ?? null,
+    endDate: row.end_date ?? null,
+    days: row.days === null || row.days === undefined ? null : Number(row.days),
+    returnDate: row.return_date ?? null,
+    returnTime: row.return_time ?? null,
+    shiftCode: row.shift_option_code ?? null,
+    shiftEndOverride: row.shift_end_override ?? null,
+    otOption: row.ot_option ?? null,
+    reason: row.reason ?? null,
+    hasMedicalCertificate: row.has_medical_certificate === true,
+    attachmentPath: stored,
+    status: row.status ?? null,
+    decisionNote: row.decision_note ?? null,
+    decidedAt: row.decided_at ?? null,
+    createdAt: row.created_at ?? null,
+  };
+}
+
+// --- GET /api/leave/types ----------------------------------------------------
+
+leave.get("/types", async (c) => {
+  const denied = await guard(c);
+  if (denied) return denied.response;
+
+  try {
+    const db = c.get("leaveDb");
+    const [rows, settings] = await Promise.all([loadTypes(db), readLeaveSettings(db)]);
+    const types = rows.filter((row) => row.is_active !== false).map(publicType);
+    return c.json(
+      {
+        ok: true,
+        count: types.length,
+        certificateRetentionDays: settings.certificateRetentionDays,
+        types,
+      },
+      200
+    );
+  } catch (error) {
+    logError("leave types failed", error);
+    return c.json({ ok: false, message: MESSAGE.saveError }, 500);
+  }
+});
+
+// --- GET /api/leave/shifts ---------------------------------------------------
+
+leave.get("/shifts", async (c) => {
+  const denied = await guard(c);
+  if (denied) return denied.response;
+
+  try {
+    const rows = await c.get("leaveDb").select(SHIFTS_TABLE, {
+      columns: "code,label,time_from,time_to,is_half,sort_order",
+      order: "sort_order.asc",
+    });
+
+    const shifts = rows
+      .filter((row) => typeof row.code === "string" && row.code.length > 0)
+      .map((row) => ({
+        code: row.code,
+        label: row.label ?? row.code,
+        timeFrom: row.time_from ?? null,
+        timeTo: row.time_to ?? null,
+        isHalf: row.is_half === true,
+      }));
+
+    return c.json({ ok: true, count: shifts.length, shifts }, 200);
+  } catch (error) {
+    logError("leave shifts failed", error);
+    return c.json({ ok: false, message: MESSAGE.saveError }, 500);
+  }
+});
+
+// --- GET /api/leave/holidays -------------------------------------------------
+
+leave.get("/holidays", async (c) => {
+  const denied = await guard(c);
+  if (denied) return denied.response;
+
+  try {
+    const holidays = await readHolidays(c.get("leaveDb"));
+    return c.json({ ok: true, dates: holidays.dates }, 200);
+  } catch (error) {
+    logError("leave holidays failed", error);
+    return c.json({ ok: false, message: HOLIDAYS_UNAVAILABLE }, 503);
+  }
+});
+
+// --- POST /api/leave/requests ------------------------------------------------
+
+leave.post("/requests", async (c) => {
+  const denied = await guard(c);
+  if (denied) return denied.response;
+
+  const multipart = isMultipartContentType(c.req.header("Content-Type"));
+
+  let fields;
+  let file = null;
+  if (multipart) {
+    const parsed = await readMultipartRequest(c);
+    if (parsed.ok !== true) {
+      return parsed.reason === "tooLarge"
+        ? c.json({ ok: false, message: ATTACHMENT_MESSAGES.sizeTooLarge }, 413)
+        : invalidBody(c);
+    }
+    fields = parsed.fields;
+    file = parsed.file;
+  } else {
+    fields = await readStrictJson(c);
+  }
+
+  if (!hasOnlyKeys(fields, ALLOWED_KEYS)) return invalidBody(c);
+  if (!isUuid(fields.leaveTypeId)) return invalidBody(c);
+  if (
+    typeof fields.shiftCode !== "string" ||
+    fields.shiftCode.length === 0 ||
+    fields.shiftCode.length > 40
+  ) {
+    return invalidBody(c);
+  }
+
+  const db = c.get("leaveDb");
+  const employee = c.get("leaveEmployee");
+
+  try {
+    const leaveType = await db.select(LEAVE_TYPES_TABLE, {
+      columns: "id,name,requires_attachment,is_active,attachment_required_from_days",
+      filters: [["id", "eq", fields.leaveTypeId]],
+      single: true,
+    });
+    if (!leaveType || leaveType.is_active === false) {
+      return c.json({ ok: false, message: MESSAGE.typeUnknown }, 400);
+    }
+
+    const shift = await db.select(SHIFTS_TABLE, {
+      columns: "code,label,is_half",
+      filters: [["code", "eq", fields.shiftCode]],
+      single: true,
+    });
+    if (!shift) return c.json({ ok: false, message: MESSAGES.shiftUnknown }, 400);
+
+    const startDate = fields.startDate;
+    if (!isDateString(startDate)) return c.json({ ok: false, message: MESSAGES.dateFormat }, 400);
+
+    // Holidays are mandatory: without them the day count would be wrong, so the
+    // submission is refused rather than calculated.
+    let holidays;
+    try {
+      holidays = await readHolidays(db);
+    } catch (error) {
+      logError("leave holidays read failed", error);
+      return c.json({ ok: false, message: HOLIDAYS_UNAVAILABLE }, 503);
+    }
+
+    const computed = computeLeave({
+      startDate,
+      endDate: fields.endDate === undefined || fields.endDate === null ? startDate : fields.endDate,
+      shift,
+      otOption: fields.otOption,
+      holidays: new Set(holidays.dates),
+    });
+    if (computed.ok !== true) return c.json({ ok: false, message: computed.message }, 400);
+
+    // Same normalisation the HR backdated route uses (src/leave-backdated.js),
+    // minus the attachment URL: the certificate is a file in this route.
+    const optional = normalizeOptionalFields({
+      leaveType,
+      days: computed.days,
+      otherTypeDetail: fields.otherTypeDetail,
+      reason: fields.reason,
+      requireAttachment: false,
+    });
+    if (optional.ok !== true) {
+      return c.json({ ok: false, message: optional.message }, 400);
+    }
+
+    if (attachmentRequiredFor(leaveType, computed.days) && file === null) {
+      return c.json({ ok: false, message: MESSAGES.attachmentRequired }, 400);
+    }
+
+    let upload = null;
+    if (file !== null) {
+      if (typeof file.size === "number" && file.size > MAX_ATTACHMENT_BYTES) {
+        return c.json({ ok: false, message: ATTACHMENT_MESSAGES.sizeTooLarge }, 413);
+      }
+      let bytes;
+      try {
+        bytes = await file.arrayBuffer();
+      } catch {
+        return c.json({ ok: false, message: ATTACHMENT_MESSAGES.empty }, 400);
+      }
+      const validated = validateAttachment({
+        contentType: file.type,
+        size: bytes.byteLength,
+        bytes,
+      });
+      if (validated.ok !== true) {
+        return c.json({ ok: false, message: validated.message }, 400);
+      }
+      upload = {
+        bytes,
+        contentType: validated.contentType,
+        fileName: safeAttachmentName(file.name, validated.contentType),
+      };
+    }
+
+    const approverId = await findApproverId(db, employee);
+    if (!approverId) return c.json({ ok: false, message: MESSAGE.noApprover }, 409);
+
+    const now = new Date();
+    const nowIso = now.toISOString();
+
+    const baseRow = {
+      employee_id: employee.id,
+      leave_type_id: leaveType.id,
+      other_type_detail: optional.otherTypeDetail,
+      ot_option: computed.otOption,
+      start_date: startDate,
+      end_date: computed.days === 0.5 ? startDate : fields.endDate ?? startDate,
+      days: computed.days,
+      return_date: computed.returnDate,
+      return_time: computed.returnTime,
+      reason: optional.reason,
+      status: "pending",
+      has_medical_certificate: false,
+      approver_id: approverId,
+      shift_option_code: shift.code,
+      shift_end_override: computed.shiftEndOverride,
+      source: "employee",
+      entered_by_id: employee.id,
+      created_at: nowIso,
+      updated_at: nowIso,
+    };
+
+    let uploadedPath = null;
+
+    const result = await insertWithRequestCode(
+      db,
+      (requestCode) => ({
+        ...baseRow,
+        request_code: requestCode,
+        medical_certificate_url: uploadedPath,
+      }),
+      {
+        now,
+        beforeInsert: async (row) => {
+          if (upload === null) return { ok: true };
+
+          const path = attachmentPath({
+            employeeId: employee.id,
+            requestCode: row.request_code,
+            fileName: upload.fileName,
+          });
+          if (path === null) {
+            return { ok: false, message: ATTACHMENT_MESSAGES.invalidTarget };
+          }
+
+          const stored = await uploadCertificate(c.env, path, upload.bytes, upload.contentType);
+          if (stored.ok !== true) {
+            console.error("[leave-cert-upload]", { status: stored.status });
+            return { ok: false, message: ATTACHMENT_MESSAGES.uploadFailed, failed: true, error: { code: "storage" } };
+          }
+
+          row.medical_certificate_url = path;
+          row.has_medical_certificate = true;
+          uploadedPath = path;
+          return {
+            ok: true,
+            rollback: async () => {
+              // The row was not saved, so the object must not stay behind.
+              await deleteCertificate(c.env, path);
+              uploadedPath = null;
+            },
+          };
+        },
+      }
+    );
+
+    if (result.ok !== true) {
+      if (result.duplicate) return c.json({ ok: false, message: MESSAGE.duplicateCode }, 409);
+      if (typeof result.message === "string") {
+        return c.json({ ok: false, message: result.message }, result.failed ? 502 : 400);
+      }
+      throw Object.assign(new Error("leave insert failed"), { code: result.error?.code });
+    }
+
+    const row = result.row;
+    const inserted = result.inserted;
+
+    ensureOk(
+      await db.insert(AUDIT_TABLE, {
+        actor_id: employee.id,
+        action: ACTION_REQUESTED,
+        entity: ENTITY,
+        entity_id: inserted.data?.id ?? null,
+        detail: JSON.stringify({
+          requestCode: row.request_code,
+          leaveType: leaveType.name ?? null,
+          days: computed.days,
+          shift: shift.code,
+          hasAttachment: row.medical_certificate_url !== null,
+        }),
+      })
+    );
+
+    // The approver gets a push. A queue failure is logged, never returned: the
+    // leave itself is already saved and must not look broken.
+    await enqueueNotificationSafely(db, {
+      employeeId: approverId,
+      leaveRequestId: inserted.data?.id ?? null,
+      kind: NOTIFICATION_KINDS.SUBMITTED,
+    });
+
+    return c.json(
+      {
+        ok: true,
+        request: {
+          id: inserted.data?.id ?? null,
+          requestCode: row.request_code,
+          leaveTypeName: leaveType.name ?? null,
+          startDate: row.start_date,
+          endDate: row.end_date,
+          days: row.days,
+          returnDate: row.return_date,
+          returnTime: row.return_time,
+          shiftCode: row.shift_option_code,
+          shiftEndOverride: row.shift_end_override,
+          otOption: row.ot_option,
+          hasAttachment: row.medical_certificate_url !== null,
+          status: row.status,
+        },
+      },
+      201
+    );
+  } catch (error) {
+    logError("leave submit failed", error);
+    return c.json({ ok: false, message: MESSAGE.saveError }, 500);
+  }
+});
+
+// --- GET /api/leave/requests/mine -------------------------------------------
+
+leave.get("/requests/mine", async (c) => {
+  const denied = await guard(c);
+  if (denied) return denied.response;
+
+  try {
+    const db = c.get("leaveDb");
+    const employee = c.get("leaveEmployee");
+
+    const [rows, typeRows, settings] = await Promise.all([
+      db.select(LEAVE_REQUESTS_TABLE, {
+        columns:
+          "id,request_code,leave_type_id,other_type_detail,start_date,end_date,days,return_date,return_time,status,ot_option,shift_option_code,shift_end_override,reason,has_medical_certificate,medical_certificate_url,decision_note,decided_at,created_at",
+        filters: [["employee_id", "eq", employee.id]],
+        order: "created_at.desc",
+        limit: LIST_LIMIT,
+      }),
+      loadTypes(db),
+      readLeaveSettings(db),
+    ]);
+
+    const types = typeMapOf(typeRows);
+    const results = rows.map((row) => publicRequest(row, types));
+    return c.json(
+      {
+        ok: true,
+        limit: LIST_LIMIT,
+        count: results.length,
+        certificateRetentionDays: settings.certificateRetentionDays,
+        results,
+      },
+      200
+    );
+  } catch (error) {
+    logError("leave mine failed", error);
+    return c.json({ ok: false, message: MESSAGE.saveError }, 500);
+  }
+});
+
+// --- GET /api/leave/requests/:id/attachment ---------------------------------
+// The certificate is private: the viewer gets a signed URL that lives for 60
+// seconds. Allowed: the owner, the approver of that request, and HR.
+
+leave.get("/requests/:id/attachment", async (c) => {
+  const denied = await guard(c);
+  if (denied) return denied.response;
+
+  const id = c.req.param("id");
+  if (!isUuid(id)) return invalidBody(c);
+
+  try {
+    const db = c.get("leaveDb");
+    const employee = c.get("leaveEmployee");
+    const session = c.get("leaveSession");
+
+    const row = await db.select(LEAVE_REQUESTS_TABLE, {
+      columns: "id,employee_id,approver_id,medical_certificate_url",
+      filters: [["id", "eq", id]],
+      single: true,
+    });
+    if (!row) return c.json({ ok: false, message: MESSAGE.requestNotFound }, 404);
+
+    let allowed = row.employee_id === employee.id || row.approver_id === employee.id;
+
+    if (!allowed && session?.role === "hr") {
+      const member = await db.select(HR_ADMINS_TABLE, {
+        columns: "employee_id",
+        filters: [["employee_id", "eq", employee.id]],
+        single: true,
+      });
+      allowed = member !== null;
+    }
+
+    if (!allowed) return c.json({ ok: false, message: MESSAGE.forbidden }, 403);
+
+    const stored = row.medical_certificate_url;
+    if (typeof stored !== "string" || stored.trim().length === 0) {
+      return c.json({ ok: false, message: ATTACHMENT_MESSAGES.notFound }, 404);
+    }
+    if (isCertificatePath(stored) === false) {
+      return c.json({ ok: false, message: ATTACHMENT_MESSAGES.notStored }, 404);
+    }
+
+    const signed = await createCertificateSignedUrl(c.env, stored.trim(), SIGNED_URL_EXPIRES_IN);
+    if (signed.ok !== true) {
+      console.error("[leave-cert-sign]", { status: signed.status });
+      return c.json({ ok: false, message: MESSAGE.saveError }, 500);
+    }
+
+    return c.json(
+      { ok: true, url: signed.url, expiresIn: signed.expiresIn ?? SIGNED_URL_EXPIRES_IN },
+      200
+    );
+  } catch (error) {
+    logError("leave attachment failed", error);
+    return c.json({ ok: false, message: MESSAGE.saveError }, 500);
+  }
+});
+
+// --- GET /api/leave/approvals ------------------------------------------------
+
+leave.get("/approvals", async (c) => {
+  const denied = await guard(c);
+  if (denied) return denied.response;
+
+  try {
+    const db = c.get("leaveDb");
+    const employee = c.get("leaveEmployee");
+
+    const rows = await db.select(LEAVE_REQUESTS_TABLE, {
+      columns:
+        "id,request_code,employee_id,leave_type_id,other_type_detail,start_date,end_date,days,return_date,return_time,status,ot_option,shift_option_code,reason,has_medical_certificate,medical_certificate_url,created_at",
+      filters: [
+        ["approver_id", "eq", employee.id],
+        ["status", "eq", "pending"],
+      ],
+      order: "created_at.asc",
+      limit: LIST_LIMIT,
+    });
+
+    const employeeIds = [...new Set(rows.map((row) => row.employee_id).filter(Boolean))];
+    const typeRows = await loadTypes(db);
+    const requesters = employeeIds.length
+      ? await db.select(EMPLOYEES_TABLE, {
+          columns: "id,employee_code,name_prefix,full_name,department_id",
+          filters: [["id", "in", employeeIds]],
+        })
+      : [];
+
+    const departmentIds = [
+      ...new Set(requesters.map((row) => row.department_id).filter(Boolean)),
+    ];
+    const departments = departmentIds.length
+      ? await db.select(DEPARTMENTS_TABLE, {
+          columns: "id,name",
+          filters: [["id", "in", departmentIds]],
+        })
+      : [];
+
+    const departmentNames = new Map(departments.map((row) => [row.id, row.name ?? null]));
+    const requesterById = new Map(requesters.map((row) => [row.id, row]));
+    const types = typeMapOf(typeRows);
+
+    const results = rows.map((row) => {
+      const requester = requesterById.get(row.employee_id) ?? null;
+      return {
+        ...publicRequest(row, types),
+        requester: {
+          id: row.employee_id ?? null,
+          employeeCode: requester?.employee_code ?? null,
+          namePrefix: requester?.name_prefix ?? null,
+          fullName: requester?.full_name ?? null,
+          departmentName: requester?.department_id
+            ? departmentNames.get(requester.department_id) ?? null
+            : null,
+        },
+      };
+    });
+
+    return c.json({ ok: true, limit: LIST_LIMIT, count: results.length, results }, 200);
+  } catch (error) {
+    logError("leave approvals failed", error);
+    return c.json({ ok: false, message: MESSAGE.saveError }, 500);
+  }
+});
+
+// --- POST /api/leave/requests/:id/approve and /reject ------------------------
+
+async function decide(c, status) {
+  const denied = await guard(c);
+  if (denied) return denied.response;
+
+  const id = c.req.param("id");
+  if (!isUuid(id)) return invalidBody(c);
+
+  const db = c.get("leaveDb");
+  const employee = c.get("leaveEmployee");
+
+  let note = null;
+  if (status === "rejected") {
+    const body = await readStrictJson(c);
+    if (!hasOnlyKeys(body, ["reason"]) || typeof body.reason !== "string") {
+      return invalidBody(c);
+    }
+    note = body.reason.replace(/\s+/g, " ").trim();
+    if (note.length === 0) {
+      return c.json({ ok: false, message: MESSAGES.decisionNoteRequired }, 400);
+    }
+    if (Array.from(note).length > DECISION_NOTE_MAX_LENGTH) {
+      return c.json({ ok: false, message: MESSAGES.decisionNoteTooLong }, 400);
+    }
+  }
+
+  try {
+    const request = await db.select(LEAVE_REQUESTS_TABLE, {
+      columns: "id,request_code,employee_id,approver_id,status",
+      filters: [["id", "eq", id]],
+      single: true,
+    });
+    if (!request) return c.json({ ok: false, message: MESSAGE.requestNotFound }, 404);
+    if (request.approver_id !== employee.id) {
+      return c.json({ ok: false, message: MESSAGE.notApprover }, 403);
+    }
+    if (request.status !== "pending") {
+      return c.json({ ok: false, message: MESSAGE.alreadyDecided }, 409);
+    }
+
+    const nowIso = new Date().toISOString();
+    const updated = await db.update(
+      LEAVE_REQUESTS_TABLE,
+      {
+        status,
+        decided_at: nowIso,
+        decision_note: note,
+        updated_at: nowIso,
+      },
+      [
+        ["id", "eq", id],
+        ["status", "eq", "pending"],
+        ["approver_id", "eq", employee.id],
+      ],
+      { returning: true, columns: "id,status,decided_at" }
+    );
+    if (updated.error) {
+      throw Object.assign(new Error("leave decision failed"), { code: updated.error.code });
+    }
+    // Zero rows matched: someone else decided first, or the status changed.
+    if (!Array.isArray(updated.data) || updated.data.length === 0) {
+      return c.json({ ok: false, message: MESSAGE.alreadyDecided }, 409);
+    }
+
+    ensureOk(
+      await db.insert(AUDIT_TABLE, {
+        actor_id: employee.id,
+        action: status === "approved" ? ACTION_APPROVED : ACTION_REJECTED,
+        entity: ENTITY,
+        entity_id: id,
+        detail: JSON.stringify({
+          requestCode: request.request_code ?? null,
+          employeeId: request.employee_id ?? null,
+          note,
+        }),
+      })
+    );
+
+    await enqueueNotificationSafely(db, {
+      employeeId: request.employee_id,
+      leaveRequestId: id,
+      kind: NOTIFICATION_KINDS.DECIDED,
+      status,
+    });
+
+    return c.json({ ok: true, id, status, decidedAt: nowIso }, 200);
+  } catch (error) {
+    logError("leave decision failed", error);
+    return c.json({ ok: false, message: MESSAGE.saveError }, 500);
+  }
+}
+
+leave.post("/requests/:id/approve", (c) => decide(c, "approved"));
+leave.post("/requests/:id/reject", (c) => decide(c, "rejected"));
+
+export default leave;

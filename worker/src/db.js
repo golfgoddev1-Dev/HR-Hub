@@ -239,6 +239,25 @@ export function createDb(env) {
   }
 
   /**
+   * DELETE matching rows. With `returning: true` the deleted rows come back, so
+   * a caller can tell "deleted" from "nothing matched" (204 in both cases).
+   */
+  async function remove(table, filters = [], { returning = false, columns = "id" } = {}) {
+    const requestHeaders = headers();
+    if (returning) requestHeaders.Prefer = "return=representation";
+
+    const response = await fetch(
+      url(table, returning ? [`select=${columns}`, ...buildFilters(filters)] : buildFilters(filters)),
+      { method: "DELETE", headers: requestHeaders }
+    );
+    if (!response.ok) return { data: null, error: await readError(response) };
+    if (!returning) return { data: [], error: null };
+
+    const data = await response.json().catch(() => null);
+    return { data: Array.isArray(data) ? data : [], error: null };
+  }
+
+  /**
    * Calls a PostgREST RPC function. Used for the daily view counter, which has
    * to increment inside the database in a single statement.
    */
@@ -253,5 +272,5 @@ export function createDb(env) {
     return { data, error: null };
   }
 
-  return { select, insert, insertMany, update, upsert, upsertMany, rpc };
+  return { select, insert, insertMany, update, remove, upsert, upsertMany, rpc };
 }

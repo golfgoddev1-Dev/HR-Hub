@@ -15,11 +15,17 @@ import dashboardReason from "./routes/dashboard-reason.js";
 import hrEmployees from "./routes/hr-employees.js";
 import meetingBackfill from "./routes/backfill.js";
 import { createEmployeeDirectoryRoutes } from "./routes/employee-directory.js";
+import leave from "./routes/leave.js";
+import leaveHr from "./routes/leave-hr.js";
+import notifications from "./routes/notifications.js";
 
 const app = new Hono();
 
 app.route("/api/auth", auth);
 app.route("/api/register", register);
+app.route("/api/notifications", notifications);
+app.route("/api/leave/hr", leaveHr);
+app.route("/api/leave", leave);
 app.route("/api/meeting/monthly-session", monthlySession);
 app.route("/api/meeting/roster", meetingRoster);
 app.route("/api/meeting/overview", meetingOverview);
