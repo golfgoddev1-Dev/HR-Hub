@@ -50,7 +50,7 @@ async function logout() {
     <div class="nav-inner">
       <div class="nav-brand">
         <div class="brand-icon-wrap">
-          <v-icon icon="beach_access" size="22" />
+          <span class="material-symbols-outlined brand-icon">beach_access</span>
         </div>
         <div class="brand-text">
           <span class="nav-title">ระบบใบลา</span>
@@ -66,12 +66,12 @@ async function logout() {
           class="nav-link"
           active-class="nav-link-active"
         >
-          <v-icon :icon="item.icon" size="18" />
+          <span class="material-symbols-outlined link-icon">{{ item.icon }}</span>
           <span>{{ item.label }}</span>
         </RouterLink>
 
         <button type="button" class="nav-link nav-logout" @click="logout">
-          <v-icon icon="logout" size="18" />
+          <span class="material-symbols-outlined link-icon">logout</span>
           <span>ออกจากระบบ</span>
         </button>
       </nav>
@@ -80,6 +80,31 @@ async function logout() {
 </template>
 
 <style scoped>
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap');
+
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: 'liga';
+}
+
+.brand-icon {
+  font-size: 22px;
+}
+
+.link-icon {
+  font-size: 18px;
+}
+
 /* 1. Header Surface & Premium Glassmorphism */
 .leave-nav {
   position: relative;
@@ -89,7 +114,7 @@ async function logout() {
   color: #0b1c30;
   border-radius: 16px;
   border: 1px solid rgba(255, 255, 255, 0.85);
-  box-shadow: 
+  box-shadow:
     0 10px 30px -10px rgba(15, 33, 55, 0.08),
     0 2px 6px rgba(15, 33, 55, 0.02);
   z-index: 50;
