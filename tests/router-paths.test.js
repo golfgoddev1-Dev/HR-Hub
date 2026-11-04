@@ -13,6 +13,10 @@ const HR_PASSWORD_PAGE = readFileSync(
   new URL('../src/pages/HrPasswordPage.vue', import.meta.url),
   'utf8'
 )
+const LEAVE_NAV = readFileSync(new URL('../src/components/LeaveNav.vue', import.meta.url), 'utf8')
+const CHANGE_PIN_PAGE = readFileSync(new URL('../src/pages/ChangePinPage.vue', import.meta.url), 'utf8')
+const SET_PIN_PAGE = readFileSync(new URL('../src/pages/SetPinPage.vue', import.meta.url), 'utf8')
+const LOGIN_PAGE = readFileSync(new URL('../src/pages/LoginPage.vue', import.meta.url), 'utf8')
 const PAGES_DIR = new URL('../src/pages/', import.meta.url)
 
 /** The allow-list array of one role, as written in src/router.js. */
@@ -93,6 +97,43 @@ describe('system_admin landing page', () => {
 
   it('still has the catch-all so an unknown path is not a blank screen', () => {
     expect(ROUTER).toContain("path: '/:pathMatch(.*)*'")
+  })
+})
+
+describe('employee change-PIN menu', () => {
+  it('allows the employee role to reach /change-pin', () => {
+    expect(allowListFor('employee')).toContain('/change-pin')
+    expect(ROUTER).toMatch(/path: '\/change-pin'.*requiresAuth: true/)
+  })
+
+  it('links it from the employee menu', () => {
+    expect(LEAVE_NAV).toContain("to: '/change-pin'")
+    expect(LEAVE_NAV).toContain("label: 'เปลี่ยน PIN'")
+  })
+
+  it('renders the employee menu on the change-PIN page', () => {
+    expect(CHANGE_PIN_PAGE).toContain("import LeaveNav from '../components/LeaveNav.vue'")
+    expect(CHANGE_PIN_PAGE).toContain('<LeaveNav />')
+  })
+
+  it('is not offered to any other role', () => {
+    for (const role of ['hr', 'meeting_controller', 'system_admin']) {
+      expect(allowListFor(role), role).not.toContain('/change-pin')
+    }
+  })
+})
+
+describe('set-PIN success flow', () => {
+  it('replaces the set-PIN entry so back does not return to it', () => {
+    expect(SET_PIN_PAGE).toContain("router.replace('/login?reset=1')")
+    expect(SET_PIN_PAGE).not.toContain('router.push')
+  })
+
+  it('shows the confirmation banner on the login page without storing anything', () => {
+    expect(LOGIN_PAGE).toContain('role="status"')
+    expect(LOGIN_PAGE).toContain('ตั้ง PIN สำเร็จ กรุณาเข้าสู่ระบบด้วย PIN ใหม่')
+    expect(LOGIN_PAGE).not.toContain('localStorage')
+    expect(LOGIN_PAGE).not.toContain('sessionStorage')
   })
 })
 

@@ -20,6 +20,7 @@ const items = computed(() => {
   const list = [
     { label: 'ใบลาของฉัน', to: '/leave', icon: 'event_note' },
     { label: 'ยื่นใบลา', to: '/leave/new', icon: 'edit_calendar' },
+    { label: 'เปลี่ยน PIN', to: '/change-pin', icon: 'password' },
   ]
   if (pendingCount.value > 0) {
     list.push({

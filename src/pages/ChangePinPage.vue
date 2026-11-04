@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { postJson } from '../api.js'
+import LeaveNav from '../components/LeaveNav.vue'
 
 // Reached only when the session still carries a HR-issued PIN. The server blocks
 // every other API call until this succeeds; no old PIN is asked for because the
@@ -64,7 +65,9 @@ async function submit() {
 </script>
 
 <template>
-  <div class="page">
+  <div class="screen">
+    <LeaveNav />
+
     <main class="content">
       <section class="card">
         <h1 class="title">เปลี่ยน PIN ก่อนใช้งาน</h1>
@@ -121,18 +124,16 @@ async function submit() {
 </template>
 
 <style scoped>
-.page {
+.screen {
   min-height: 100vh;
   background: #f3f6f5;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px 16px;
 }
 
 .content {
   width: 100%;
   max-width: 440px;
+  margin: 0 auto;
+  padding: 24px 16px;
 }
 
 .card {

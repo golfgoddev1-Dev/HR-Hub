@@ -51,7 +51,9 @@ async function submitSetPin() {
       pinConfirm: pinConfirm.value,
     })
     if (status === 200 && data.ok === true) {
-      await router.push('/login?reset=1')
+      // replace(): the finished set-PIN screen must not stay in browser history,
+      // otherwise a back button press returns to it.
+      await router.replace('/login?reset=1')
       return
     }
     errorMessage.value = typeof data.message === 'string'

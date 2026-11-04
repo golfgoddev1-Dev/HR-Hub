@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { postJson } from '../api.js'
 import LockoutDialog from '../components/LockoutDialog.vue'
@@ -13,6 +13,9 @@ const pinVisible = ref(false)
 const loading = ref(false)
 const errorMessage = ref('')
 const lockoutOpen = ref(false)
+// Cleared after a successful set-PIN. Page state only (never storage), and the
+// query is stripped on mount so refreshing does not bring the banner back.
+const showResetSuccess = ref(route.query.reset === '1')
 const lockedUntil = ref('')
 const loginTypes = [
   { value: 'employee', title: 'พนักงานทั่วไป', description: 'ยื่นลา ดูรายการลาของตัวเอง และรายการรออนุมัติ', icon: 'badge' },
@@ -23,6 +26,11 @@ const loginTypes = [
 const canSubmit = computed(() => Boolean(loginType.value) && nationalId.value.length === 13 && pin.value.length === 6 && !loading.value)
 const citizenFull = computed(() => nationalId.value.length === 13)
 const pinFull = computed(() => pin.value.length === 6)
+
+onMounted(async () => {
+  if (!showResetSuccess.value) return
+  await router.replace({ path: '/login' })
+})
 
 function updateNationalId(event) {
   nationalId.value = event.target.value.replace(/\D/g, '').slice(0, 13)
@@ -174,12 +182,15 @@ async function submitLogin() {
               </div>
 
               <!-- success alert (reset=1) -->
-              <div v-if="route.query.reset === '1'" class="success-alert" role="status">
+              <div v-if="showResetSuccess" class="success-alert" role="status">
                 <span class="material-symbols-outlined success-icon">check_circle</span>
                 <div class="success-text">
-                  <p class="success-title">ตั้ง PIN สำเร็จ กรุณาเข้าสู่ระบบ</p>
+                  <p class="success-title">ตั้ง PIN สำเร็จ กรุณาเข้าสู่ระบบด้วย PIN ใหม่</p>
                   <p class="success-body">คุณสามารถใช้ PIN ใหม่ร่วมกับเลขบัตรประชาชนเพื่อเข้าสู่ระบบงานได้ทันที</p>
                 </div>
+                <button type="button" class="success-close" aria-label="ปิดข้อความ" @click="showResetSuccess = false">
+                  <span class="material-symbols-outlined">close</span>
+                </button>
               </div>
 
               <form class="form" @submit.prevent="submitLogin">
@@ -865,6 +876,30 @@ async function submitLogin() {
   color: #139a6d;
   margin-top: 2px;
   flex-shrink: 0;
+}
+
+.success-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.success-close {
+  margin-left: auto;
+  flex-shrink: 0;
+  background: none;
+  border: 0;
+  padding: 2px;
+  cursor: pointer;
+  color: #44474d;
+  display: flex;
+}
+
+.success-close:hover {
+  color: #0b1c30;
+}
+
+.success-close .material-symbols-outlined {
+  font-size: 18px;
 }
 
 .success-title {

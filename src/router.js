@@ -32,7 +32,7 @@ import LeaveRequestPage from './pages/LeaveRequestPage.vue'
 import LeaveApprovalsPage from './pages/LeaveApprovalsPage.vue'
 
 const allowedPathsByRole = {
-  employee: ['/leave', '/leave/new', '/leave/approvals'],
+  employee: ['/leave', '/leave/new', '/leave/approvals', '/change-pin'],
   // HR landing plus every leave tool; all of them are linked from HrNav.
   hr: [
     '/hr',
