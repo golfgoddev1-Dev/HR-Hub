@@ -313,7 +313,12 @@ test("HR searches an employee and sees department and position, with no ID card 
   assert.equal(body.results[0].positionName, "เจ้าหน้าที่");
   assert.equal(/national/i.test(text), false);
   assert.equal(/\d{13}/.test(text), false);
-  assert.equal(fake.calls.some((call) => call.url.includes("employee_credentials")), false);
+  // The directory itself never reads credentials; the only credentials read is the
+  // role guard's must_change_pin lookup.
+  const credentialReads = fake.calls.filter(
+    (call) => call.url.includes("employee_credentials") && !call.url.includes("select=must_change_pin")
+  );
+  assert.deepEqual(credentialReads, []);
 });
 
 test("the meeting controller reaches the same search through its own prefix", async (t) => {

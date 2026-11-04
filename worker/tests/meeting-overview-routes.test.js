@@ -352,7 +352,13 @@ test("overview GET has no side effects: read-only calls and nothing written", as
 
   // Every table call is a GET; the only non-GET anywhere is the session layer's
   // auth_sessions last-active touch, which is not part of the overview.
-  const writes = fake.state.writes.filter((row) => row.table !== "auth_sessions");
+  // The role guard's must_change_pin read is the one extra GET; nothing is
+  // written and the overview itself only reads.
+  const writes = fake.state.writes.filter(
+    (row) =>
+      row.table !== "auth_sessions" &&
+      !(row.table === "employee_credentials" && row.method === "GET")
+  );
   assert.deepEqual(writes, []);
   for (const call of fake.calls) {
     const method = call.init.method ?? "GET";

@@ -53,6 +53,8 @@ const LOGOUT_FAILED_MESSAGE = "ระบบขัดข้องชั่วค�
 const SET_PIN_INVALID_MESSAGE = "เลขบัตรประชาชนหรือรหัสจาก HR ไม่ถูกต้อง";
 const PIN_CONFIRM_MESSAGE = "PIN ทั้งสองช่องไม่ตรงกัน";
 const SET_PIN_FAILED_MESSAGE = "ไม่สามารถตั้ง PIN ได้ กรุณาลองใหม่";
+const PIN_CHANGE_NOT_REQUIRED_MESSAGE = "บัญชีนี้ตั้ง PIN ของตัวเองแล้ว กรุณาใช้ขั้นตอนตั้ง PIN ปกติ";
+const CHANGE_PIN_PATH = "/change-pin";
 
 function isPlainObject(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -185,8 +187,14 @@ auth.post("/login", async (c) => {
 
     const token = await createSession(env, employee.id, role);
 
+    // An initial PIN issued by HR is a one-time way in: the session may only
+    // change it, so that page is the landing path.
+    const mustChangePin = credential.must_change_pin === true;
+
     let redirectTo;
-    if (role === "employee") {
+    if (mustChangePin) {
+      redirectTo = CHANGE_PIN_PATH;
+    } else if (role === "employee") {
       const pending = await db.select("leave_requests", {
         columns: "id",
         filters: [
@@ -201,7 +209,7 @@ auth.post("/login", async (c) => {
     }
 
     setSessionCookie(c, env, token);
-    return c.json({ ok: true, redirectTo }, 200);
+    return c.json({ ok: true, redirectTo, mustChangePin }, 200);
   } catch (error) {
     logFailure("auth login failed", error);
     return c.json({ ok: false, message: CONNECTION_MESSAGE }, 500);
@@ -215,8 +223,26 @@ auth.get("/me", async (c) => {
     if (!session.ok) {
       return c.json({ ok: false, message: UNAUTHENTICATED_MESSAGE }, 401);
     }
+    let mustChangePin = false;
+    try {
+      const credential = await createDb(c.env).select(CREDENTIALS_TABLE, {
+        columns: "must_change_pin",
+        filters: [["employee_id", "eq", session.employeeId]],
+        single: true,
+      });
+      mustChangePin = credential ? credential.must_change_pin === true : false;
+    } catch {
+      // A read error leaves the session readable; every guarded route still asks.
+      mustChangePin = false;
+    }
+
     return c.json(
-      { ok: true, role: session.role, redirectTo: session.redirectTo },
+      {
+        ok: true,
+        role: session.role,
+        redirectTo: mustChangePin ? CHANGE_PIN_PATH : session.redirectTo,
+        mustChangePin,
+      },
       200
     );
   } catch (error) {
@@ -277,6 +303,95 @@ auth.post("/logout", async (c) => {
     logFailure("auth logout failed", error);
     c.header("Set-Cookie", clearSessionCookie(env));
     return c.json({ ok: false, message: LOGOUT_FAILED_MESSAGE }, 500);
+  }
+});
+
+// Replaces a HR-issued PIN with one the employee chose. No old PIN is asked for
+// because the HR-issued one may never have reached the employee. Only a session
+// that still has must_change_pin set may use this path.
+auth.post("/change-pin", async (c) => {
+  try {
+    const token = parseCookies(c.req.header("Cookie"))[sessionCookieName];
+    const session = await readSession(c.env, token);
+    if (!session.ok || !token) {
+      return c.json({ ok: false, message: UNAUTHENTICATED_MESSAGE }, 401);
+    }
+
+    const body = await readJson(c);
+    if (!hasExactStringKeys(body, ["pin", "pinConfirm"])) {
+      return c.json({ ok: false, message: INVALID_MESSAGE }, 400);
+    }
+
+    const validation = validatePin(body.pin);
+    if (!validation.ok) {
+      return c.json({ ok: false, message: validation.message }, 400);
+    }
+    if (body.pinConfirm !== body.pin) {
+      return c.json({ ok: false, message: PIN_CONFIRM_MESSAGE }, 400);
+    }
+
+    const db = createDb(c.env);
+    const credential = await db.select(CREDENTIALS_TABLE, {
+      columns: "employee_id,must_change_pin",
+      filters: [["employee_id", "eq", session.employeeId]],
+      single: true,
+    });
+    if (!credential) {
+      return c.json({ ok: false, message: UNAUTHENTICATED_MESSAGE }, 401);
+    }
+    if (credential.must_change_pin !== true) {
+      return c.json(
+        { ok: false, code: "pin_change_not_required", message: PIN_CHANGE_NOT_REQUIRED_MESSAGE },
+        409
+      );
+    }
+
+    const nowIso = new Date().toISOString();
+    const newPinHash = await pinHash(
+      getRequiredEnv(c.env, "PIN_PEPPER"),
+      session.employeeId,
+      body.pin
+    );
+
+    ensureOk(
+      await db.update(
+        CREDENTIALS_TABLE,
+        {
+          pin_hash: newPinHash,
+          pin_set_at: nowIso,
+          must_change_pin: false,
+          failed_attempts: 0,
+          locked_until: null,
+          updated_at: nowIso,
+        },
+        [["employee_id", "eq", session.employeeId]]
+      )
+    );
+
+    ensureOk(
+      await db.insert(AUDIT_TABLE, {
+        actor_id: session.employeeId,
+        action: "pin_changed",
+        entity: "employee",
+        entity_id: session.employeeId,
+        detail: null,
+      })
+    );
+
+    // Read the session again so the client lands on the real home path now that
+    // the gate above no longer applies to it.
+    const refreshed = await readSession(c.env, token);
+    return c.json(
+      {
+        ok: true,
+        mustChangePin: false,
+        redirectTo: refreshed.ok ? refreshed.redirectTo : "/login",
+      },
+      200
+    );
+  } catch (error) {
+    logFailure("auth change-pin failed", error);
+    return c.json({ ok: false, message: SET_PIN_FAILED_MESSAGE }, 500);
   }
 });
 
@@ -373,6 +488,9 @@ auth.post("/set-pin", async (c) => {
         {
           pin_hash: newPinHash,
           pin_set_at: nowIso,
+          // The employee chose this PIN themselves, so any HR-issued PIN no
+          // longer needs replacing (see worker/sql/employee-credentials-must-change-pin.sql).
+          must_change_pin: false,
           failed_attempts: 0,
           locked_until: null,
           updated_at: nowIso,

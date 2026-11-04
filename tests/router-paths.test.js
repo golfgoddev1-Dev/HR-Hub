@@ -9,6 +9,10 @@ const ROUTER = readFileSync(new URL('../src/router.js', import.meta.url), 'utf8'
 const HR_NAV = readFileSync(new URL('../src/components/HrNav.vue', import.meta.url), 'utf8')
 const ADMIN_PAGE = readFileSync(new URL('../src/pages/AdminPage.vue', import.meta.url), 'utf8')
 const ADMIN_NAV = readFileSync(new URL('../src/components/AdminNav.vue', import.meta.url), 'utf8')
+const HR_PASSWORD_PAGE = readFileSync(
+  new URL('../src/pages/HrPasswordPage.vue', import.meta.url),
+  'utf8'
+)
 const PAGES_DIR = new URL('../src/pages/', import.meta.url)
 
 /** The allow-list array of one role, as written in src/router.js. */
@@ -89,5 +93,29 @@ describe('system_admin landing page', () => {
 
   it('still has the catch-all so an unknown path is not a blank screen', () => {
     expect(ROUTER).toContain("path: '/:pathMatch(.*)*'")
+  })
+})
+
+describe('HR password page', () => {
+  it('is reachable for HR and linked from the HR menu', () => {
+    expect(allowListFor('hr')).toContain('/hr/employees/password')
+    expect(HR_NAV).toContain("to: '/hr/employees/password'")
+    expect(HR_NAV).toContain('จัดการรหัสผ่านพนักงาน')
+    expect(ROUTER).toContain("path: '/hr/employees/password'")
+    expect(ROUTER).toContain('HrPasswordPage')
+  })
+
+  it('keeps the one-time values on screen only and warns they are shown once', () => {
+    expect(HR_PASSWORD_PAGE).toContain('HrNav')
+    expect(HR_PASSWORD_PAGE).toContain('แสดงเพียงครั้งเดียว')
+    expect(HR_PASSWORD_PAGE).toContain('onBeforeUnmount')
+    expect(HR_PASSWORD_PAGE).not.toContain('localStorage')
+    expect(HR_PASSWORD_PAGE).not.toContain('sessionStorage')
+  })
+
+  it('is not offered to any other role', () => {
+    for (const role of ['employee', 'meeting_controller', 'system_admin']) {
+      expect(allowListFor(role), role).not.toContain('/hr/employees/password')
+    }
   })
 })

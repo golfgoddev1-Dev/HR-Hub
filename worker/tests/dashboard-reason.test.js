@@ -251,7 +251,12 @@ test("strict body rejects extras and malformed values with 400 before any PIN or
       const res = await post(undefined, { body: JSON.stringify(validBody(overrides)) });
       assert.equal(res.status, 400, JSON.stringify(overrides));
       assert.deepEqual(await res.json(), { ok: false, error: INVALID_INPUT });
-      assert.equal(tableCalls(backend, "employee_credentials").filter((call) => call.method !== "PATCH").length, 0);
+      // The role guard reads must_change_pin for every allowed session; this route
+      // still performs no PIN check or credential read of its own.
+      const credentialCalls = tableCalls(backend, "employee_credentials")
+        .filter((call) => call.method !== "PATCH")
+        .filter((call) => !call.url.includes("select=must_change_pin"));
+      assert.equal(credentialCalls.length, 0);
       assert.equal(tableCalls(backend, "meeting_types").length, 0);
       assert.equal(backend.auditCalls.length, 0);
       backend.calls.length = 0;
@@ -265,7 +270,10 @@ test("strict body rejects extras and malformed values with 400 before any PIN or
     const big = await post(undefined, { body: "a".repeat(4 * 1024 + 1) });
     assert.equal(big.status, 400);
     assert.deepEqual(await big.json(), { ok: false, error: INVALID_INPUT });
-    assert.equal(tableCalls(backend, "employee_credentials").filter((call) => call.method !== "PATCH").length, 0);
+    const rawCredentialCalls = tableCalls(backend, "employee_credentials")
+      .filter((call) => call.method !== "PATCH")
+      .filter((call) => !call.url.includes("select=must_change_pin"));
+    assert.equal(rawCredentialCalls.length, 0);
     assert.equal(tableCalls(backend, "meeting_types").length, 0);
     assert.equal(backend.auditCalls.length, 0);
   } finally {

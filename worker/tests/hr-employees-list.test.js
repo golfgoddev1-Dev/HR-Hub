@@ -235,8 +235,13 @@ test("HR searches employees by name without any national ID in the response", as
   assert.equal(body.results[0].isActive, true);
   assert.match(body.results[0].id, /^[0-9a-f-]{36}$/);
 
-  // No national ID, no credentials lookup at all.
-  assert.equal(fake.calls.some((call) => call.url.includes("employee_credentials")), false);
+  // No national ID, and the list itself never reads credentials: the only
+  // credentials read is the session guard's must_change_pin lookup.
+  const credentialReads = fake.calls.filter(
+    (call) =>
+      call.url.includes("employee_credentials") && !call.url.includes("select=must_change_pin")
+  );
+  assert.deepEqual(credentialReads, []);
   assert.equal(/national/i.test(text), false);
   assert.equal(/\d{13}/.test(text), false);
 });

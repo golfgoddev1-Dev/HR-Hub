@@ -424,7 +424,7 @@ test("login: correct PIN sets the session cookie and clears the counters", async
 
   const res = await login({ loginType: "hr", nationalId: FAKE_NATIONAL_ID, pin: PIN });
   assert.equal(res.status, 200);
-  assert.deepEqual(await res.json(), { ok: true, redirectTo: "/hr" });
+  assert.deepEqual(await res.json(), { ok: true, redirectTo: "/hr", mustChangePin: false });
 
   const setCookie = res.headers.get("set-cookie");
   assert.match(setCookie, /HttpOnly/);
@@ -471,6 +471,7 @@ test("login: employee with a pending approval is redirected to approvals", async
   assert.deepEqual(await res.json(), {
     ok: true,
     redirectTo: "/pending?to=%2Fleave%2Fapprovals",
+    mustChangePin: false,
   });
 });
 
@@ -552,6 +553,7 @@ test("me: a valid session returns role and redirectTo without employeeId", async
     ok: true,
     role: "employee",
     redirectTo: "/pending?to=%2Fleave",
+    mustChangePin: false,
   });
   assert.equal("employeeId" in body, false);
 });

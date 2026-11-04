@@ -3,6 +3,7 @@ import { getSession } from './api.js'
 import LoginPage from './pages/LoginPage.vue'
 import PendingPage from './pages/PendingPage.vue'
 import SetPinPage from './pages/SetPinPage.vue'
+import ChangePinPage from './pages/ChangePinPage.vue'
 import ControllerQrPage from './pages/ControllerQrPage.vue'
 import ControllerRosterPage from './pages/ControllerRosterPage.vue'
 import RegisterPage from './pages/RegisterPage.vue'
@@ -16,6 +17,7 @@ import HrEmployeeImportPage from './pages/HrEmployeeImportPage.vue'
 import HrEmployeeDetailPage from './pages/HrEmployeeDetailPage.vue'
 import HrEmployeesPage from './pages/HrEmployeesPage.vue'
 import HrEmployeeDataPage from './pages/HrEmployeeDataPage.vue'
+import HrPasswordPage from './pages/HrPasswordPage.vue'
 import ControllerEmployeeDataPage from './pages/ControllerEmployeeDataPage.vue'
 import HrLeaveRequestsPage from './pages/HrLeaveRequestsPage.vue'
 import HrLeaveBackdatedPage from './pages/HrLeaveBackdatedPage.vue'
@@ -37,6 +39,7 @@ const allowedPathsByRole = {
     '/hr/employees',
     '/hr/employees/import',
     '/hr/employees/manage',
+    '/hr/employees/password',
     '/hr/leave',
     '/hr/leave/backdated',
     '/hr/leave/approvers',
@@ -76,6 +79,7 @@ export const router = createRouter({
     { path: '/pending', component: PendingPage },
     { path: '/', redirect: '/login' },
     { path: '/set-pin', component: SetPinPage },
+    { path: '/change-pin', component: ChangePinPage, meta: { requiresAuth: true } },
     { path: '/leave', component: LeaveHomePage, meta: { requiresAuth: true } },
     { path: '/leave/new', component: LeaveRequestPage, meta: { requiresAuth: true } },
     { path: '/leave/approvals', component: LeaveApprovalsPage, meta: { requiresAuth: true } },
@@ -91,6 +95,7 @@ export const router = createRouter({
     { path: '/hr', component: HrHomePage, meta: { requiresAuth: true } },
     { path: '/hr/employees', component: HrEmployeesPage, meta: { requiresAuth: true } },
     { path: '/hr/employees/manage', component: HrEmployeeDataPage, meta: { requiresAuth: true } },
+    { path: '/hr/employees/password', component: HrPasswordPage, meta: { requiresAuth: true } },
     { path: '/hr/employees/import', component: HrEmployeeImportPage, meta: { requiresAuth: true } },
     { path: '/hr/employees/:id', component: HrEmployeeDetailPage, meta: { requiresAuth: true } },
     { path: '/hr/leave', component: HrLeaveRequestsPage, meta: { requiresAuth: true } },
@@ -134,6 +139,12 @@ router.beforeEach(async (to) => {
 
   const session = await loadSession()
   if (!session) return '/login'
+
+  // A HR-issued PIN must be replaced before any other page is reachable. The
+  // server enforces the same rule for every API call; this only avoids showing a
+  // screen that would fail.
+  if (to.path === '/change-pin') return true
+  if (session.mustChangePin === true) return '/change-pin'
 
   // The printed leave form is HR-only; another role is sent to its own home.
   if (to.path.startsWith('/leave/hr/requests/') && !canPrintLeave(session.role)) {

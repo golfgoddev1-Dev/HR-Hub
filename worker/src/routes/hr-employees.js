@@ -16,6 +16,8 @@ import { buildTemplateXlsx } from "../import/xlsx.js";
 import { checkRateLimit, clientIp, ipRateLimitKey } from "../rate-limit.js";
 import { bangkokToday } from "../register-window.js";
 import { requireRole } from "../require-role.js";
+import { hmacSha256Hex } from "../crypto.js";
+import { pinHash, validatePin } from "../pin-rules.js";
 
 const hrEmployees = new Hono();
 
@@ -23,6 +25,8 @@ const ROLE = "hr";
 const RATE_LIMIT_BINDING = "RL_CONTEXT_IP";
 const RATE_LIMIT_IMPORT = "hr-import";
 const RATE_LIMIT_REVEAL = "hr-national-id-reveal";
+const RATE_LIMIT_INITIAL_PIN = "hr-initial-pin";
+const RATE_LIMIT_RESET_CODE = "hr-reset-code";
 
 const EMPLOYEES_TABLE = "employees";
 const CREDENTIALS_TABLE = "employee_credentials";
@@ -30,9 +34,16 @@ const DEPARTMENTS_TABLE = "departments";
 const PREFIXES_TABLE = "name_prefixes";
 const AUDIT_TABLE = "audit_logs";
 const HR_ADMINS_TABLE = "hr_admins";
+const RESET_CODES_TABLE = "pin_reset_codes";
 
 const IMPORT_ACTION = "employees_imported";
 const IMPORT_ENTITY = "employee_import";
+const INITIAL_PIN_ACTION = "employee_initial_pin_issued";
+const RESET_CODE_ACTION = "pin_reset_code_issued";
+
+const INITIAL_PIN_DIGITS = 6;
+const RESET_CODE_DIGITS = 8;
+const RESET_CODE_TTL_MS = 24 * 60 * 60 * 1000;
 const VIEW_COUNTER_FUNCTION = "increment_national_id_view";
 
 const MAX_CHOICES = MAX_DATA_ROWS;
@@ -48,6 +59,7 @@ const NO_DEPARTMENTS_MESSAGE = "ยังไม่มีรายการแผ
 const DUPLICATE_ID_MESSAGE = "เลขบัตรประชาชนซ้ำกับพนักงานคนอื่นในระบบ";
 const FORBIDDEN_MESSAGE = "ไม่มีสิทธิ์เข้าถึงส่วนนี้";
 const SEARCH_TOO_SHORT_MESSAGE = "กรุณาพิมพ์อย่างน้อย 2 ตัวอักษรเพื่อค้นหา";
+const INACTIVE_MESSAGE = "พนักงานนี้ไม่ได้ใช้งานอยู่";
 
 // The HR index page: at least two characters, at most this many rows.
 const MIN_SEARCH_LENGTH = 2;
@@ -711,6 +723,189 @@ hrEmployees.post("/:id/reveal-national-id", async (c) => {
     return c.json({ ok: true, nationalId: digits }, 200);
   } catch (error) {
     logError("hr employee reveal failed", error);
+    return c.json({ ok: false, message: SAVE_ERROR_MESSAGE }, 500);
+  }
+});
+
+// --- PIN and reset code issuance -------------------------------------------
+// The generated values are returned once, in the response body. Only the hash
+// is written: the PIN as HMAC-SHA256 with PIN_PEPPER, the reset code as
+// HMAC-SHA256 with PIN_RESET_SECRET, both over "<employeeId>:<value>". The
+// audit rows carry the action only, never the value.
+
+// The largest multiple of 10 that fits in a uint32, so modulo is unbiased.
+const RANDOM_UINT32_LIMIT = 4_000_000_000;
+
+/** Cryptographically random decimal digits (leading zeros kept). */
+function randomDigits(length) {
+  let out = "";
+  const buffer = new Uint32Array(1);
+  while (out.length < length) {
+    crypto.getRandomValues(buffer);
+    if (buffer[0] >= RANDOM_UINT32_LIMIT) continue;
+    out += String(buffer[0] % 10);
+  }
+  return out;
+}
+
+/** A random PIN that also satisfies the rules the employee's own PIN follows. */
+function randomInitialPin() {
+  let pin = randomDigits(INITIAL_PIN_DIGITS);
+  while (!validatePin(pin).ok) pin = randomDigits(INITIAL_PIN_DIGITS);
+  return pin;
+}
+
+/** Reads the employee and refuses missing or inactive rows before any write. */
+async function loadActiveEmployee(db, employeeId) {
+  const employee = await db.select(EMPLOYEES_TABLE, {
+    columns: "id,employee_code,full_name,is_active",
+    filters: [["id", "eq", employeeId]],
+    single: true,
+  });
+  if (!employee) return { status: 404, message: NOT_FOUND_MESSAGE };
+  if (employee.is_active !== true) return { status: 400, message: INACTIVE_MESSAGE };
+  return { employee };
+}
+
+// POST /api/hr/employees/:id/initial-pin
+hrEmployees.post("/:id/initial-pin", async (c) => {
+  const denied = await guard(c);
+  if (denied) return denied;
+  const throttled = await limited(c, RATE_LIMIT_INITIAL_PIN);
+  if (throttled) return throttled;
+
+  const employeeId = c.req.param("id");
+  if (!UUID_PATTERN.test(employeeId)) {
+    return c.json({ ok: false, message: INVALID_MESSAGE }, 400);
+  }
+
+  try {
+    const db = createDb(c.env);
+    const found = await loadActiveEmployee(db, employeeId);
+    if (found.message) return c.json({ ok: false, message: found.message }, found.status);
+
+    const pin = randomInitialPin();
+    const nowIso = new Date().toISOString();
+    const hash = await pinHash(getRequiredEnv(c.env, "PIN_PEPPER"), employeeId, pin);
+
+    // Upsert so an employee whose credential row is missing still gets a PIN.
+    // The lock counters are cleared: the HR-issued PIN is the first way in.
+    ensureOk(
+      await db.upsert(
+        CREDENTIALS_TABLE,
+        {
+          employee_id: employeeId,
+          pin_hash: hash,
+          pin_set_at: nowIso,
+          must_change_pin: true,
+          failed_attempts: 0,
+          locked_until: null,
+          updated_at: nowIso,
+        },
+        { conflict: "employee_id", columns: "employee_id" }
+      )
+    );
+
+    ensureOk(
+      await db.insert(AUDIT_TABLE, {
+        actor_id: c.get("hrSession").employeeId,
+        action: INITIAL_PIN_ACTION,
+        entity: "employee",
+        entity_id: employeeId,
+        detail: null,
+      })
+    );
+
+    return c.json(
+      {
+        ok: true,
+        employeeId,
+        employeeCode: found.employee.employee_code ?? null,
+        pin,
+        mustChangePin: true,
+      },
+      200
+    );
+  } catch (error) {
+    logError("hr initial pin failed", error);
+    return c.json({ ok: false, message: SAVE_ERROR_MESSAGE }, 500);
+  }
+});
+
+// POST /api/hr/employees/:id/reset-code
+hrEmployees.post("/:id/reset-code", async (c) => {
+  const denied = await guard(c);
+  if (denied) return denied;
+  const throttled = await limited(c, RATE_LIMIT_RESET_CODE);
+  if (throttled) return throttled;
+
+  const employeeId = c.req.param("id");
+  if (!UUID_PATTERN.test(employeeId)) {
+    return c.json({ ok: false, message: INVALID_MESSAGE }, 400);
+  }
+
+  try {
+    const db = createDb(c.env);
+    const found = await loadActiveEmployee(db, employeeId);
+    if (found.message) return c.json({ ok: false, message: found.message }, found.status);
+
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const expiresAt = new Date(now.getTime() + RESET_CODE_TTL_MS).toISOString();
+    const code = randomDigits(RESET_CODE_DIGITS);
+    const codeHash = await hmacSha256Hex(
+      getRequiredEnv(c.env, "PIN_RESET_SECRET"),
+      `${employeeId}:${code}`
+    );
+
+    // Codes already issued to this employee stop working before the new one
+    // exists, so only the newest row can ever verify.
+    ensureOk(
+      await db.update(
+        RESET_CODES_TABLE,
+        { used_at: nowIso },
+        [
+          ["employee_id", "eq", employeeId],
+          ["used_at", "is", null],
+        ]
+      )
+    );
+
+    ensureOk(
+      await db.insert(RESET_CODES_TABLE, {
+        employee_id: employeeId,
+        code_hash: codeHash,
+        created_by: c.get("hrSession").employeeId,
+        created_at: nowIso,
+        expires_at: expiresAt,
+        used_at: null,
+        attempts: 0,
+      })
+    );
+
+    ensureOk(
+      await db.insert(AUDIT_TABLE, {
+        actor_id: c.get("hrSession").employeeId,
+        action: RESET_CODE_ACTION,
+        entity: "employee",
+        entity_id: employeeId,
+        detail: null,
+      })
+    );
+
+    return c.json(
+      {
+        ok: true,
+        employeeId,
+        employeeCode: found.employee.employee_code ?? null,
+        code,
+        expiresAt,
+        singleUse: true,
+      },
+      200
+    );
+  } catch (error) {
+    logError("hr reset code failed", error);
     return c.json({ ok: false, message: SAVE_ERROR_MESSAGE }, 500);
   }
 });
