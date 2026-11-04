@@ -28,7 +28,7 @@
     "vue": "^3.5.44",
     "vue-router": "^5.4.0",
     "vuetify": "^4.3.1",
-    "xlsx": "^0.18.5"
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.10",
