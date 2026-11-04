@@ -43,18 +43,18 @@ async function logout() {
 </script>
 
 <template>
-  <header class="leave-nav">
+  <header class="leave-nav-wrapper">
     <div class="nav-inner">
-      <!-- Brand Segment with Modern Gradient Icon & Live Indicator -->
+      <!-- Brand Segment with Gradient Icon & Live Indicator -->
       <div class="nav-brand">
-        <div class="nav-brand-icon">
+        <div class="nav-brand-badge">
           <v-icon icon="beach_access" size="22" />
         </div>
-        <div class="nav-title-wrap">
-          <span class="nav-title">
-            ระบบใบลา
+        <div class="nav-title-box">
+          <div class="nav-title-row">
+            <span class="nav-title">ระบบใบลา</span>
             <span class="live-dot" />
-          </span>
+          </div>
           <span class="nav-subtitle">Employee Leave Portal</span>
         </div>
       </div>
@@ -70,13 +70,15 @@ async function logout() {
         >
           <v-icon :icon="item.icon" size="18" />
           <span>{{ item.label }}</span>
-          <!-- Active Indicator Glow Line -->
-          <span class="active-indicator" />
+          <!-- Active Glow Underline Indicator -->
+          <span class="active-underline" />
         </RouterLink>
+
+        <div class="nav-divider" />
 
         <!-- Logout Button with Soft Red Accent -->
         <button type="button" class="nav-link nav-logout" @click="logout">
-          <v-icon icon="logout" size="18" />
+          <v-icon icon="logout" size="16" />
           <span>ออกจากระบบ</span>
         </button>
       </nav>
@@ -85,15 +87,16 @@ async function logout() {
 </template>
 
 <style scoped>
-/* Glassmorphism & Entrance Animation */
-.leave-nav {
-  position: relative;
-  z-index: 20;
+/* Glassmorphism & Modern Header Container */
+.leave-nav-wrapper {
   background: rgba(255, 255, 255, 0.9);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border-bottom: 1px solid #dfe7e5;
+  border-radius: 16px;
+  border: 1px solid rgba(223, 231, 229, 0.8);
   box-shadow: 0 4px 20px rgba(18, 52, 59, 0.05);
+  margin: 16px auto;
+  max-width: 1120px;
   animation: navEntrance 0.7s cubic-bezier(0.16, 1, 0.3, 1) backwards;
 }
 
@@ -109,12 +112,10 @@ async function logout() {
 }
 
 .nav-inner {
-  max-width: 1120px;
-  margin: 0 auto;
   padding: 12px 20px;
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 16px;
   align-items: center;
   justify-content: space-between;
 }
@@ -126,7 +127,7 @@ async function logout() {
   min-width: 0;
 }
 
-.nav-brand-icon {
+.nav-brand-badge {
   width: 40px;
   height: 40px;
   border-radius: 12px;
@@ -135,30 +136,31 @@ async function logout() {
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 12px rgba(16, 80, 78, 0.22);
-  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 4px 12px rgba(16, 80, 78, 0.2);
+  transition: transform 0.25s ease;
 }
 
-.nav-brand-icon:hover {
+.nav-brand-badge:hover {
   transform: scale(1.05);
 }
 
-.nav-title-wrap {
+.nav-title-box {
   display: flex;
   flex-direction: column;
+}
+
+.nav-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .nav-title {
   font-size: 15px;
   font-weight: 700;
   color: #12343b;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: flex;
-  align-items: center;
-  gap: 6px;
   letter-spacing: -0.01em;
+  white-space: nowrap;
 }
 
 /* Pulsing Live Dot */
@@ -204,53 +206,58 @@ async function logout() {
   border: none;
   cursor: pointer;
   font-family: inherit;
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: all 0.2s ease;
 }
 
 .nav-link:hover {
-  background: rgba(16, 80, 78, 0.08);
+  background: rgba(231, 242, 240, 0.8);
   color: #10504e;
-  transform: translateY(-1px);
 }
 
 .nav-link-active {
-  color: #10504e;
+  color: #10504e !important;
   font-weight: 600;
-  background: rgba(16, 80, 78, 0.08);
+  background: rgba(231, 242, 240, 0.8);
 }
 
-/* Animated Active Indicator Underline */
-.active-indicator {
+/* Mint Glow Underline Indicator */
+.active-underline {
   position: absolute;
   bottom: 0;
   left: 12px;
   right: 12px;
   height: 2.5px;
-  background: #10504e;
+  background: #85f8c4;
   border-radius: 999px;
+  box-shadow: 0 0 8px #85f8c4;
   opacity: 0;
   transform: scaleX(0.4);
-  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: all 0.25s ease;
 }
 
-.nav-link-active .active-indicator {
+.nav-link-active .active-underline {
   opacity: 1;
   transform: scaleX(1);
-  background: linear-gradient(90deg, #10504e 0%, #28807d 100%);
-  box-shadow: 0 0 8px rgba(133, 248, 196, 0.6);
+}
+
+.nav-divider {
+  width: 1px;
+  height: 20px;
+  background: #dfe7e5;
+  margin: 0 4px;
 }
 
 /* Logout Button Styling */
 .nav-logout {
-  color: #be123c;
-  background: rgba(255, 228, 230, 0.6);
+  color: #be123c !important;
+  background: #fff1f2;
   font-weight: 600;
-  margin-left: 4px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
 .nav-logout:hover {
-  background: rgba(255, 228, 230, 1);
-  color: #9f1239;
+  background: #ffe4e6 !important;
+  color: #9f1239 !important;
   transform: translateY(-1px);
 }
 
