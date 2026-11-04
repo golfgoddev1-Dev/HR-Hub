@@ -23,14 +23,23 @@ async function logout() {
 </script>
 
 <template>
-  <header class="hr-nav">
+  <header class="hr-nav-wrapper">
     <div class="nav-inner">
+      <!-- Brand Segment with Gradient Icon & Badge -->
       <div class="nav-brand">
-        <v-icon icon="groups" size="22" />
-        <span class="nav-title">ระบบบริการงานบุคคลและสวัสดิการพนักงาน</span>
-        <span class="nav-badge">HR</span>
+        <div class="nav-brand-badge-icon">
+          <v-icon icon="groups" size="22" />
+        </div>
+        <div class="nav-title-box">
+          <div class="nav-title-row">
+            <span class="nav-title">ระบบบริการงานบุคคลและสวัสดิการพนักงาน</span>
+            <span class="nav-badge">HR</span>
+          </div>
+          <span class="nav-subtitle">HR Management & Welfare Portal</span>
+        </div>
       </div>
 
+      <!-- Navigation Links -->
       <nav class="nav-links">
         <RouterLink
           v-for="item in navItems"
@@ -41,10 +50,15 @@ async function logout() {
         >
           <v-icon :icon="item.icon" size="18" />
           <span>{{ item.label }}</span>
+          <!-- Active Glow Underline Indicator -->
+          <span class="active-underline" />
         </RouterLink>
 
+        <div class="nav-divider" />
+
+        <!-- Logout Button with Soft Red Accent -->
         <button type="button" class="nav-link nav-logout" @click="logout">
-          <v-icon icon="logout" size="18" />
+          <v-icon icon="logout" size="16" />
           <span>ออกจากระบบ</span>
         </button>
       </nav>
@@ -53,19 +67,35 @@ async function logout() {
 </template>
 
 <style scoped>
-.hr-nav {
-  background: #0f3d3e;
-  color: #f5fbf9;
-  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.12);
+/* Glassmorphism & Modern Header Container */
+.hr-nav-wrapper {
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-radius: 16px;
+  border: 1px solid rgba(223, 231, 229, 0.8);
+  box-shadow: 0 4px 20px rgba(18, 52, 59, 0.05);
+  margin: 16px auto;
+  max-width: 1120px;
+  animation: navEntrance 0.7s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+@keyframes navEntrance {
+  from {
+    opacity: 0;
+    transform: translateY(-16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .nav-inner {
-  max-width: 1120px;
-  margin: 0 auto;
   padding: 12px 20px;
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 16px;
   align-items: center;
   justify-content: space-between;
 }
@@ -73,56 +103,151 @@ async function logout() {
 .nav-brand {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
   min-width: 0;
+}
+
+.nav-brand-badge-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #10504e 0%, #28807d 100%);
+  color: #85f8c4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(16, 80, 78, 0.2);
+  transition: transform 0.25s ease;
+  flex-shrink: 0;
+}
+
+.nav-brand-badge-icon:hover {
+  transform: scale(1.05);
+}
+
+.nav-title-box {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.nav-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .nav-title {
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 700;
+  color: #12343b;
+  letter-spacing: -0.01em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .nav-badge {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.08em;
   padding: 2px 6px;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.16);
+  border-radius: 6px;
+  background: #e7f2f0;
+  color: #10504e;
+  flex-shrink: 0;
+}
+
+.nav-subtitle {
+  font-size: 11px;
+  font-weight: 500;
+  color: #5c7176;
 }
 
 .nav-links {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 6px;
+  align-items: center;
 }
 
 .nav-link {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   padding: 8px 12px;
-  border-radius: 8px;
-  color: #d8ece8;
-  font-size: 14px;
+  border-radius: 10px;
+  color: #5c7176;
+  font-size: 13px;
+  font-weight: 500; /* ล็อกน้ำหนักฟอนต์ให้เท่ากันตลอดเพื่อป้องกันข้อความดีด/กระพริบ */
   text-decoration: none;
-  background: none;
+  background: transparent;
   border: none;
   cursor: pointer;
   font-family: inherit;
+  transition: background-color 0.2s ease, color 0.2s ease;
+  backface-visibility: hidden;
+  -webkit-font-smoothing: antialiased;
+  white-space: nowrap;
 }
 
-.nav-link:hover,
+.nav-link:hover {
+  background: rgba(231, 242, 240, 0.8);
+  color: #10504e;
+}
+
 .nav-link-active {
-  background: rgba(255, 255, 255, 0.14);
-  color: #ffffff;
+  color: #10504e !important;
+  background: rgba(231, 242, 240, 0.8);
+  font-weight: 500; /* คงค่า 500 ไว้เท่าเดิม ไม่ให้ขนาดตัวอักษรเปลี่ยนไปมาตอนสลับหน้า */
 }
 
+/* Mint Glow Underline Indicator */
+.active-underline {
+  position: absolute;
+  bottom: 0;
+  left: 10px;
+  right: 10px;
+  height: 2.5px;
+  background: #85f8c4;
+  border-radius: 999px;
+  box-shadow: 0 0 8px #85f8c4;
+  opacity: 0;
+  transform: scaleX(0.4);
+  transition: transform 0.25s ease, opacity 0.25s ease;
+  pointer-events: none;
+}
+
+.nav-link-active .active-underline {
+  opacity: 1;
+  transform: scaleX(1);
+}
+
+.nav-divider {
+  width: 1px;
+  height: 20px;
+  background: #dfe7e5;
+  margin: 0 4px;
+}
+
+/* Logout Button Styling */
 .nav-logout {
-  opacity: 0.9;
+  color: #be123c !important;
+  background: #fff1f2;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.nav-logout:hover {
+  background: #ffe4e6 !important;
+  color: #9f1239 !important;
+}
+
+@media (max-width: 960px) {
+  .nav-subtitle {
+    display: none;
+  }
 }
 
 @media (max-width: 720px) {
