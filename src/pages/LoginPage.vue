@@ -1437,4 +1437,81 @@ async function submitLogin() {
     animation: none !important;
   }
 }
+/* ===== Motion ===== */
+
+@keyframes m-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes m-fade-in-down {
+  from { opacity: 0; transform: translateY(-16px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes m-fade-in-up {
+  from { opacity: 0; transform: translateY(18px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes m-scale-in {
+  from { opacity: 0; transform: scale(0.98) translateY(12px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes m-slide-in {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes m-shake {
+  10%, 90% { transform: translate3d(-1px, 0, 0); }
+  20%, 80% { transform: translate3d(2px, 0, 0); }
+  30%, 50%, 70% { transform: translate3d(-3px, 0, 0); }
+  40%, 60% { transform: translate3d(3px, 0, 0); }
+}
+@keyframes m-role-pop {
+  0% { transform: translateY(-2px) scale(0.98); }
+  60% { transform: translateY(-2px) scale(1.015); }
+  100% { transform: translateY(-2px) scale(1); }
+}
+@keyframes m-counter-pop {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.15); }
+  100% { transform: scale(1.05); }
+}
+
+/* 1) เข้าฉาก */
+.topbar { animation: m-fade-in-down 0.8s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.split { animation: m-scale-in 0.9s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+/* 2) ฝั่งแบรนด์ ทยอยขึ้นทีละส่วน */
+.brand-top { animation: m-fade-in-up 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.15s both; }
+.brand-copy { animation: m-fade-in-up 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.25s both; }
+.benefit { animation: m-fade-in-up 0.7s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.benefit:nth-child(1) { animation-delay: 0.35s; }
+.benefit:nth-child(2) { animation-delay: 0.45s; }
+.benefit:nth-child(3) { animation-delay: 0.55s; }
+.brand-footnote { animation: m-fade-in-up 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.65s both; }
+
+/* 3) ฝั่งฟอร์ม */
+.login-head { animation: m-fade-in 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.2s both; }
+.form > .section { animation: m-fade-in-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.form > .section:nth-child(1) { animation-delay: 0.3s; }
+.form > .section:nth-child(2) { animation-delay: 0.38s; }
+.form > .section:nth-child(3) { animation-delay: 0.46s; }
+.success-alert { animation: m-slide-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.error-alert { animation: m-shake 0.45s cubic-bezier(0.36, 0.07, 0.19, 0.97) both; }
+
+/* 4) ตัวเลือกและช่องกรอก */
+.role-option--selected { animation: m-role-pop 0.35s cubic-bezier(0.16, 1, 0.3, 1); }
+.input-icon { transition: color 0.25s ease, transform 0.25s ease; }
+.input-wrap:focus-within .input-icon { transform: scale(1.1); }
+.counter { transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), background-color 0.25s ease, color 0.25s ease; }
+.counter.full { animation: m-counter-pop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+
+/* 5) ปิดแอนิเมชันเมื่อผู้ใช้ตั้งค่า reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
 </style>
