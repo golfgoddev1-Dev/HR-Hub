@@ -27,11 +27,16 @@ const cards = [
 
 <template>
   <div class="page">
+    <div class="page-loader-bar" aria-hidden="true"></div>
+
     <HrNav />
 
     <main class="content">
       <div class="head">
-        <h1 class="title">หน้าหลัก</h1>
+        <h1 class="title">
+          <span>หน้าหลัก</span>
+          <span class="live-dot" title="ระบบพร้อมใช้งาน"></span>
+        </h1>
         <p class="sub">
           เลือกงานที่ต้องการทำ — แต่ละหน้าแสดงเฉพาะข้อมูลที่จำเป็น และไม่แสดงเลขบัตรประชาชน
           ยกเว้นหน้าที่ขอเปิดดูรายคน
@@ -39,8 +44,16 @@ const cards = [
       </div>
 
       <div class="cards">
-        <RouterLink v-for="card in cards" :key="card.to" :to="card.to" class="card">
-          <v-icon :icon="card.icon" size="28" class="card-icon" />
+        <RouterLink
+          v-for="(card, index) in cards"
+          :key="card.to"
+          :to="card.to"
+          class="card"
+          :style="{ '--stagger': index }"
+        >
+          <span class="card-icon-wrap">
+            <v-icon :icon="card.icon" size="26" class="card-icon" />
+          </span>
           <span class="card-title">{{ card.title }}</span>
           <span class="card-desc">{{ card.description }}</span>
           <span class="card-go">เปิดหน้านี้ →</span>
@@ -54,16 +67,34 @@ const cards = [
 .page {
   min-height: 100vh;
   background: #f3f6f5;
+  overflow-x: hidden;
+}
+
+/* แถบความคืบหน้าบนสุดตอนโหลดหน้า */
+.page-loader-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 3px;
+  background: linear-gradient(90deg, #10504e 0%, #28807d 40%, #85f8c4 70%, #10504e 100%);
+  background-size: 200% 100%;
+  z-index: 9999;
+  transform-origin: left;
+  animation: hr-progress-sweep 1.8s cubic-bezier(0.65, 0, 0.35, 1) forwards, hr-gradient-move 1.5s linear infinite;
 }
 
 .content {
+  position: relative;
+  z-index: 1;
   max-width: 1120px;
   margin: 0 auto;
   padding: 28px 20px 64px;
 }
 
 .head {
-  margin-bottom: 18px;
+  margin-bottom: 22px;
+  animation: hr-fade-slide-down 0.75s cubic-bezier(0.16, 1, 0.3, 1) 0.1s both;
 }
 
 .title {
@@ -71,6 +102,19 @@ const cards = [
   font-weight: 700;
   color: #12343b;
   margin: 0 0 6px;
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #10504e;
+  box-shadow: 0 0 8px rgba(16, 80, 78, 0.5);
+  animation: hr-pulse-dot 2s ease-in-out infinite;
 }
 
 .sub {
@@ -83,36 +127,130 @@ const cards = [
 
 .cards {
   display: grid;
-  gap: 16px;
+  gap: 18px;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
 }
 
+/* การ์ดทยอยขึ้นทีละใบ */
 .card {
+  position: relative;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 20px;
-  border-radius: 12px;
+  gap: 8px;
+  padding: 24px;
+  border-radius: 14px;
   background: #ffffff;
   border: 1px solid #dfe7e5;
   color: inherit;
   text-decoration: none;
-  transition: box-shadow 0.2s, transform 0.2s;
+  box-shadow: 0 1px 3px rgba(18, 52, 59, 0.04);
+  animation: hr-card-entrance 0.75s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(var(--stagger, 0) * 0.12s + 0.3s);
+  transition:
+    transform 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 0.35s ease,
+    background-color 0.35s ease;
+}
+
+/* เส้นเน้นด้านบนของการ์ด */
+.card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, #10504e 0%, #28807d 100%);
+  opacity: 0;
+  transform: scaleX(0.4);
+  transform-origin: left;
+  transition: opacity 0.35s ease, transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* แสงวิ่งผ่านการ์ดตอน hover */
+.card::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -150%;
+  width: 100%;
+  height: 200%;
+  background: linear-gradient(
+    65deg,
+    rgba(255, 255, 255, 0) 20%,
+    rgba(16, 80, 78, 0.04) 45%,
+    rgba(255, 255, 255, 0.55) 55%,
+    rgba(255, 255, 255, 0) 80%
+  );
+  transform: rotate(25deg);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s ease;
 }
 
 .card:hover {
-  box-shadow: 0 6px 20px rgba(15, 33, 55, 0.08);
-  transform: translateY(-1px);
+  border-color: #b7cecb;
+  transform: translateY(-4px);
+  box-shadow:
+    0 14px 28px -6px rgba(18, 52, 59, 0.09),
+    0 4px 12px -2px rgba(18, 52, 59, 0.04);
+}
+
+.card:hover::before {
+  opacity: 1;
+  transform: scaleX(1);
+}
+
+.card:hover::after {
+  opacity: 1;
+  animation: hr-card-sheen 0.85s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.card:active {
+  transform: translateY(-1px) scale(0.995);
+}
+
+.card-icon-wrap {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: #f0f7f6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 6px;
+  transition:
+    transform 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+    background-color 0.35s ease,
+    box-shadow 0.35s ease;
 }
 
 .card-icon {
   color: #10504e;
+  transition: color 0.3s ease;
+}
+
+.card:hover .card-icon-wrap {
+  transform: scale(1.08) translateY(-2px);
+  background: #10504e;
+  box-shadow: 0 6px 16px rgba(16, 80, 78, 0.28);
+}
+
+.card:hover .card-icon {
+  color: #ffffff;
 }
 
 .card-title {
   font-size: 17px;
   font-weight: 600;
   color: #12343b;
+  transition: color 0.2s ease;
+}
+
+.card:hover .card-title {
+  color: #10504e;
 }
 
 .card-desc {
@@ -123,9 +261,67 @@ const cards = [
 
 .card-go {
   margin-top: auto;
-  padding-top: 10px;
+  padding-top: 14px;
   font-size: 13px;
   font-weight: 600;
   color: #10504e;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: gap 0.25s cubic-bezier(0.16, 1, 0.3, 1), color 0.25s ease;
+}
+
+.card:hover .card-go {
+  color: #0b3837;
+  gap: 8px;
+}
+
+/* Keyframes */
+@keyframes hr-progress-sweep {
+  0% { transform: scaleX(0); opacity: 1; }
+  40% { transform: scaleX(0.55); }
+  80% { transform: scaleX(0.92); opacity: 1; }
+  100% { transform: scaleX(1); opacity: 0; }
+}
+
+@keyframes hr-gradient-move {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+@keyframes hr-pulse-dot {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(0.75); opacity: 0.5; }
+}
+
+@keyframes hr-fade-slide-down {
+  from { opacity: 0; transform: translateY(-14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes hr-card-entrance {
+  from { opacity: 0; transform: translateY(24px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes hr-card-sheen {
+  0% { left: -150%; }
+  100% { left: 160%; }
+}
+
+/* ปิดแอนิเมชันเมื่อผู้ใช้ตั้งค่า reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .page-loader-bar,
+  .head,
+  .card,
+  .live-dot {
+    animation: none !important;
+  }
+  .card,
+  .card-icon-wrap,
+  .card-icon,
+  .card-go {
+    transition: none !important;
+  }
 }
 </style>
