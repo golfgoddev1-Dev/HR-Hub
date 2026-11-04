@@ -200,13 +200,15 @@ async function logout() {
   border-radius: 10px;
   color: #5c7176;
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 500; /* ล็อกน้ำหนักฟอนต์ให้เท่ากันตลอดเพื่อป้องกันข้อความดีด/ขยับ */
   text-decoration: none;
   background: transparent;
   border: none;
   cursor: pointer;
   font-family: inherit;
-  transition: all 0.2s ease;
+  transition: background-color 0.2s ease, color 0.2s ease;
+  backface-visibility: hidden;
+  -webkit-font-smoothing: antialiased;
 }
 
 .nav-link:hover {
@@ -216,8 +218,8 @@ async function logout() {
 
 .nav-link-active {
   color: #10504e !important;
-  font-weight: 600;
   background: rgba(231, 242, 240, 0.8);
+  font-weight: 500; /* คงค่า 500 ไว้เท่าเดิม ไม่ให้ขนาดตัวอักษรเปลี่ยนไปมาตอนสลับหน้า */
 }
 
 /* Mint Glow Underline Indicator */
@@ -232,7 +234,8 @@ async function logout() {
   box-shadow: 0 0 8px #85f8c4;
   opacity: 0;
   transform: scaleX(0.4);
-  transition: all 0.25s ease;
+  transition: transform 0.25s ease, opacity 0.25s ease;
+  pointer-events: none;
 }
 
 .nav-link-active .active-underline {
@@ -258,11 +261,6 @@ async function logout() {
 .nav-logout:hover {
   background: #ffe4e6 !important;
   color: #9f1239 !important;
-  transform: translateY(-1px);
-}
-
-.nav-logout:active {
-  transform: scale(0.97);
 }
 
 @media (max-width: 720px) {
