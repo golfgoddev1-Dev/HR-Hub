@@ -76,6 +76,13 @@ async function submitLogin() {
 
 <template>
   <div class="page">
+    <!-- Ambient Background Blobs for Glass Refraction -->
+    <div class="page-ambient-bg" aria-hidden="true">
+      <div class="ambient-orb ambient-orb-1"></div>
+      <div class="ambient-orb ambient-orb-2"></div>
+      <div class="ambient-orb ambient-orb-3"></div>
+    </div>
+
     <!-- Top bar -->
     <header class="topbar">
       <div class="brand-inline">
@@ -155,7 +162,7 @@ async function submitLogin() {
             </div>
           </section>
 
-          <!-- Right: login panel -->
+          <!-- Right: login panel (Glassmorphic) -->
           <section class="login-panel">
             <div class="login-inner">
               <div class="login-head">
@@ -277,6 +284,7 @@ async function submitLogin() {
                   </button>
                 </div>
 
+                <!-- Glow Shimmer Submit Button -->
                 <button type="submit" class="submit" :class="{ ready: canSubmit }" :disabled="!canSubmit">
                   <span v-if="loading" class="material-symbols-outlined spin">sync</span>
                   <span v-else class="material-symbols-outlined">login</span>
@@ -346,24 +354,81 @@ async function submitLogin() {
 }
 
 .page {
+  position: relative;
   min-height: 100vh;
   display: flex;
   flex-direction: column;
   font-family: 'IBM Plex Sans', 'IBM Plex Sans Thai', sans-serif;
   color: #0b1c30;
-  background: #f8f9ff;
+  background: #f4f7fc;
+  overflow-x: hidden;
+}
+
+/* Ambient Floating Lights for Glassmorphism */
+.page-ambient-bg {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.ambient-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.65;
+  animation: floatAmbient 18s ease-in-out infinite alternate;
+}
+
+.ambient-orb-1 {
+  width: 520px;
+  height: 520px;
+  top: -120px;
+  right: -80px;
+  background: radial-gradient(circle, rgba(49, 107, 243, 0.22) 0%, rgba(49, 107, 243, 0) 70%);
+}
+
+.ambient-orb-2 {
+  width: 440px;
+  height: 440px;
+  bottom: -60px;
+  right: 15%;
+  background: radial-gradient(circle, rgba(133, 248, 196, 0.24) 0%, rgba(133, 248, 196, 0) 70%);
+  animation-duration: 22s;
+  animation-delay: -5s;
+}
+
+.ambient-orb-3 {
+  width: 480px;
+  height: 480px;
+  top: 30%;
+  left: -120px;
+  background: radial-gradient(circle, rgba(100, 160, 255, 0.16) 0%, rgba(100, 160, 255, 0) 70%);
+  animation-duration: 25s;
+  animation-delay: -10s;
+}
+
+@keyframes floatAmbient {
+  0% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(40px, 30px) scale(1.08); }
+  100% { transform: translate(-30px, 50px) scale(0.95); }
 }
 
 /* Top bar */
 .topbar {
+  position: relative;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   padding: 12px 16px;
-  background: rgba(255, 255, 255, 0.8);
-  backdrop-filter: blur(12px);
-  box-shadow: 0 1px 8px rgba(15, 33, 55, 0.03);
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.8);
+  box-shadow: 0 4px 20px rgba(15, 33, 55, 0.03);
 }
 
 @media (min-width: 1024px) {
@@ -379,12 +444,13 @@ async function submitLogin() {
 .brand-mark-sm {
   width: 32px;
   height: 32px;
-  border-radius: 4px;
-  background: #0f2137;
+  border-radius: 6px;
+  background: linear-gradient(135deg, #0f2137 0%, #162f4e 100%);
   color: #85f8c4;
   display: flex;
   align-items: center;
   justify-content: center;
+  box-shadow: 0 2px 8px rgba(15, 33, 55, 0.15);
 }
 
 .brand-mark-sm .material-symbols-outlined {
@@ -400,14 +466,18 @@ async function submitLogin() {
 .env-chip {
   display: none;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   font-size: 12px;
   color: #44474d;
+  background: rgba(255, 255, 255, 0.6);
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.8);
 }
 
 .env-icon {
   font-size: 16px;
-  color: #002618;
+  color: #005137;
 }
 
 @media (min-width: 640px) {
@@ -416,9 +486,13 @@ async function submitLogin() {
 
 /* Main */
 .page-main {
+  position: relative;
+  z-index: 1;
   flex: 1;
   width: 100%;
   padding: 24px 16px;
+  display: flex;
+  align-items: center;
 }
 
 @media (min-width: 1024px) {
@@ -426,17 +500,25 @@ async function submitLogin() {
 }
 
 .shell {
+  width: 100%;
   max-width: 1280px;
   margin: 0 auto;
 }
 
+/* Glassmorphic Main Container */
 .split {
   display: grid;
   grid-template-columns: 1fr;
-  border-radius: 12px;
+  border-radius: 16px;
   overflow: hidden;
-  background: #ffffff;
-  box-shadow: 0 20px 40px rgba(15, 33, 55, 0.1);
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  box-shadow: 
+    0 24px 48px -12px rgba(15, 33, 55, 0.12),
+    0 4px 12px rgba(15, 33, 55, 0.04),
+    inset 0 1px 1px rgba(255, 255, 255, 0.9);
 }
 
 @media (min-width: 1024px) {
@@ -447,7 +529,7 @@ async function submitLogin() {
 .brand-panel {
   position: relative;
   overflow: hidden;
-  background: #0f2137;
+  background: linear-gradient(145deg, #0d1e33 0%, #0f2137 60%, #132842 100%);
   color: #ffffff;
   padding: 32px;
   display: flex;
@@ -472,20 +554,19 @@ async function submitLogin() {
 }
 
 .blur-tr {
-  width: 320px;
-  height: 320px;
+  width: 340px;
+  height: 340px;
   top: -80px;
   right: -80px;
-  background: rgba(49, 107, 243, 0.1);
+  background: radial-gradient(circle, rgba(49, 107, 243, 0.2) 0%, rgba(49, 107, 243, 0) 70%);
 }
 
 .blur-bl {
-  width: 256px;
-  height: 256px;
-  bottom: 40px;
+  width: 280px;
+  height: 280px;
+  bottom: 20px;
   left: -64px;
-  background: rgba(104, 219, 169, 0.05);
-  filter: blur(32px);
+  background: radial-gradient(circle, rgba(104, 219, 169, 0.12) 0%, rgba(104, 219, 169, 0) 70%);
 }
 
 .brand-body {
@@ -512,16 +593,16 @@ async function submitLogin() {
 .brand-mark {
   width: 44px;
   height: 44px;
-  border-radius: 8px;
+  border-radius: 10px;
   background: #ffffff;
   color: #0f2137;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 22px;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0.05em;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2), inset 0 -2px 4px rgba(0, 0, 0, 0.05);
 }
 
 .brand-id-text {
@@ -542,16 +623,19 @@ async function submitLogin() {
   line-height: 14px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: #7889a4;
+  color: #8c9eb9;
 }
 
 .pdpa-chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 12px;
+  padding: 5px 12px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(133, 248, 196, 0.25);
   font-size: 11px;
   font-weight: 500;
   color: #85f8c4;
@@ -562,12 +646,13 @@ async function submitLogin() {
   height: 8px;
   border-radius: 50%;
   background: #85f8c4;
+  box-shadow: 0 0 10px rgba(133, 248, 196, 0.8);
   animation: pulse 2s ease-in-out infinite;
 }
 
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.85); }
 }
 
 .brand-copy {
@@ -581,9 +666,10 @@ async function submitLogin() {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 10px;
-  border-radius: 4px;
+  padding: 4px 12px;
+  border-radius: 6px;
   background: rgba(49, 107, 243, 0.2);
+  border: 1px solid rgba(180, 197, 255, 0.2);
   color: #b4c5ff;
   font-size: 11px;
   font-weight: 500;
@@ -606,7 +692,7 @@ async function submitLogin() {
   margin: 0;
   font-size: 14px;
   line-height: 24px;
-  color: #7889a4;
+  color: #8c9eb9;
 }
 
 .benefits {
@@ -623,20 +709,24 @@ async function submitLogin() {
   align-items: flex-start;
   gap: 12px;
   padding: 14px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(4px);
-  transition: background-color 0.2s;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .benefit:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.14);
+  transform: translateX(3px);
 }
 
 .benefit-icon {
   width: 24px;
   height: 24px;
-  border-radius: 4px;
+  border-radius: 6px;
   background: #002618;
   color: #85f8c4;
   display: flex;
@@ -662,7 +752,7 @@ async function submitLogin() {
 .benefit-sub {
   font-size: 12px;
   line-height: 18px;
-  color: #7889a4;
+  color: #8c9eb9;
 }
 
 .brand-footnote {
@@ -673,10 +763,13 @@ async function submitLogin() {
   gap: 8px;
   padding: 12px;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.05);
-  color: #7889a4;
+  background: rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  color: #8c9eb9;
   font-size: 11px;
-  line-height: 14px;
+  line-height: 15px;
 }
 
 .footnote-icon {
@@ -685,9 +778,11 @@ async function submitLogin() {
   flex-shrink: 0;
 }
 
-/* Login panel */
+/* Glassmorphic Login Panel */
 .login-panel {
-  background: #ffffff;
+  background: rgba(255, 255, 255, 0.76);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
   padding: 24px;
   display: flex;
   flex-direction: column;
@@ -733,10 +828,13 @@ async function submitLogin() {
 }
 
 .sso-chip {
-  padding: 2px 10px;
+  padding: 4px 12px;
   border-radius: 999px;
-  background: #dce9ff;
-  color: #44474d;
+  background: rgba(220, 233, 255, 0.6);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  color: #0051d5;
   font-size: 11px;
   font-weight: 500;
   white-space: nowrap;
@@ -755,9 +853,11 @@ async function submitLogin() {
   align-items: flex-start;
   gap: 12px;
   padding: 14px;
-  border-radius: 8px;
-  background: #eff4ff;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  border-radius: 10px;
+  background: rgba(239, 244, 255, 0.85);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(133, 248, 196, 0.5);
+  box-shadow: 0 4px 16px rgba(19, 154, 109, 0.08);
 }
 
 .success-icon {
@@ -824,18 +924,24 @@ async function submitLogin() {
   line-height: 16px;
   font-weight: 500;
   color: #44474d;
-  background: #dce9ff;
+  background: rgba(220, 233, 255, 0.7);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
   padding: 2px 8px;
   border-radius: 4px;
-  transition: background-color 0.2s, color 0.2s;
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .counter.full {
   background: #85f8c4;
   color: #005137;
+  font-weight: 600;
+  transform: scale(1.04);
+  box-shadow: 0 2px 8px rgba(133, 248, 196, 0.4);
 }
 
-/* Role grid */
+/* Role grid with Glassmorphism */
 .role-grid {
   display: grid;
   grid-template-columns: 1fr;
@@ -854,18 +960,25 @@ async function submitLogin() {
   padding: 14px;
   border-radius: 12px;
   cursor: pointer;
-  background: #eff4ff;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-  transition: box-shadow 0.2s, background-color 0.2s;
+  background: rgba(244, 248, 255, 0.65);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  box-shadow: 0 2px 8px rgba(15, 33, 55, 0.03);
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .role-option:hover {
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.08);
+  background: rgba(255, 255, 255, 0.88);
+  transform: translateY(-2px);
+  border-color: rgba(255, 255, 255, 1);
+  box-shadow: 0 8px 20px rgba(15, 33, 55, 0.08);
 }
 
 .role-option--selected {
-  background: #ffffff;
-  box-shadow: 0 4px 12px rgba(15, 33, 55, 0.1);
+  background: rgba(255, 255, 255, 0.95);
+  border-color: rgba(49, 107, 243, 0.6);
+  box-shadow: 0 8px 24px rgba(49, 107, 243, 0.14), inset 0 0 0 1px rgba(49, 107, 243, 0.2);
 }
 
 .role-head {
@@ -885,12 +998,13 @@ async function submitLogin() {
   width: 28px;
   height: 28px;
   border-radius: 8px;
-  background: #dce9ff;
+  background: rgba(220, 233, 255, 0.7);
   color: #44474d;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  transition: all 0.2s ease;
 }
 
 .role-icon .material-symbols-outlined {
@@ -900,6 +1014,7 @@ async function submitLogin() {
 .role-option--selected .role-icon {
   background: #316bf3;
   color: #ffffff;
+  box-shadow: 0 4px 10px rgba(49, 107, 243, 0.3);
 }
 
 .role-title {
@@ -912,15 +1027,18 @@ async function submitLogin() {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: #d3e4fe;
+  background: rgba(211, 228, 254, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.8);
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  transition: all 0.2s ease;
 }
 
 .role-radio--on {
   background: #0051d5;
+  box-shadow: 0 2px 6px rgba(0, 81, 213, 0.3);
 }
 
 .role-radio-dot {
@@ -928,6 +1046,12 @@ async function submitLogin() {
   height: 6px;
   border-radius: 50%;
   background: #ffffff;
+  animation: dotPop 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes dotPop {
+  0% { transform: scale(0); }
+  100% { transform: scale(1); }
 }
 
 .role-desc {
@@ -937,7 +1061,7 @@ async function submitLogin() {
   color: #44474d;
 }
 
-/* Inputs */
+/* Glassmorphic Inputs */
 .input-wrap {
   position: relative;
   display: flex;
@@ -948,24 +1072,27 @@ async function submitLogin() {
   position: absolute;
   left: 14px;
   font-size: 20px;
-  color: #44474d;
+  color: #556276;
   pointer-events: none;
+  transition: color 0.2s ease;
 }
 
 .input {
   width: 100%;
   height: 48px;
   padding: 0 16px 0 44px;
-  border: 0;
-  border-radius: 8px;
-  background: #eff4ff;
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  border-radius: 10px;
+  background: rgba(244, 248, 255, 0.65);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   font-family: inherit;
   font-size: 16px;
   line-height: 26px;
   color: #0b1c30;
   outline: none;
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.04);
-  transition: background-color 0.2s, box-shadow 0.2s;
+  box-shadow: inset 0 1px 3px rgba(15, 33, 55, 0.04);
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .input::placeholder {
@@ -975,8 +1102,14 @@ async function submitLogin() {
 }
 
 .input:focus {
-  background: #ffffff;
-  box-shadow: 0 0 0 2px #316bf3;
+  background: rgba(255, 255, 255, 0.95);
+  border-color: rgba(49, 107, 243, 0.8);
+  box-shadow: 0 0 0 3px rgba(49, 107, 243, 0.18), 0 4px 12px rgba(49, 107, 243, 0.08);
+}
+
+.input:focus ~ .input-icon,
+.input-wrap:focus-within .input-icon {
+  color: #0051d5;
 }
 
 .input-pin {
@@ -993,17 +1126,17 @@ async function submitLogin() {
   align-items: center;
   gap: 4px;
   border: 0;
-  border-radius: 4px;
+  border-radius: 6px;
   background: none;
   color: #44474d;
   font-family: inherit;
   cursor: pointer;
-  transition: color 0.2s, background-color 0.2s;
+  transition: all 0.2s ease;
 }
 
 .toggle:hover {
   color: #0b1c30;
-  background: #dce9ff;
+  background: rgba(220, 233, 255, 0.6);
 }
 
 .toggle-icon {
@@ -1035,10 +1168,12 @@ async function submitLogin() {
   align-items: flex-start;
   gap: 12px;
   padding: 14px;
-  border-radius: 8px;
-  background: #ffdad6;
+  border-radius: 10px;
+  background: rgba(255, 218, 214, 0.9);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(186, 26, 26, 0.25);
   color: #93000a;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 4px 16px rgba(186, 26, 26, 0.08);
 }
 
 .error-icon {
@@ -1065,7 +1200,7 @@ async function submitLogin() {
   margin: 0;
   font-size: 12px;
   line-height: 18px;
-  opacity: 0.8;
+  opacity: 0.85;
 }
 
 .error-close {
@@ -1075,14 +1210,22 @@ async function submitLogin() {
   cursor: pointer;
   color: #93000a;
   display: flex;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.error-close:hover {
+  background: rgba(186, 26, 26, 0.1);
 }
 
 .error-close .material-symbols-outlined {
   font-size: 18px;
 }
 
-/* Submit */
+/* Glow Shimmer Submit Button */
 .submit {
+  position: relative;
+  overflow: hidden;
   width: 100%;
   height: 48px;
   display: flex;
@@ -1090,31 +1233,100 @@ async function submitLogin() {
   justify-content: center;
   gap: 8px;
   border: 0;
-  border-radius: 8px;
-  background: #e5eeff;
-  color: #44474d;
+  border-radius: 10px;
+  background: rgba(229, 238, 255, 0.75);
+  color: #74777d;
   font-family: inherit;
   font-size: 16px;
   font-weight: 600;
-  opacity: 0.6;
+  opacity: 0.7;
   cursor: not-allowed;
-  transition: all 0.2s;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Glass Specular Top Highlight */
+.submit::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.6) 50%, rgba(255, 255, 255, 0) 100%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+/* Continuous Prismatic Glow Shimmer Sweep */
+.submit::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -150%;
+  width: 100%;
+  height: 200%;
+  background: linear-gradient(
+    65deg,
+    rgba(255, 255, 255, 0) 20%,
+    rgba(255, 255, 255, 0.12) 40%,
+    rgba(133, 248, 196, 0.22) 50%,
+    rgba(255, 255, 255, 0.25) 55%,
+    rgba(255, 255, 255, 0) 75%
+  );
+  transform: rotate(26deg);
+  opacity: 0;
+  pointer-events: none;
 }
 
 .submit.ready {
-  background: #0f2137;
+  background: linear-gradient(135deg, #0d1e33 0%, #0f2137 55%, #183354 100%);
   color: #ffffff;
   opacity: 1;
   cursor: pointer;
-  box-shadow: 0 4px 12px rgba(15, 33, 55, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 
+    0 4px 16px rgba(15, 33, 55, 0.24),
+    0 0 20px rgba(49, 107, 243, 0.15);
+  animation: readyPulseGlow 3.5s ease-in-out infinite;
+}
+
+.submit.ready::before {
+  opacity: 1;
+}
+
+.submit.ready::after {
+  opacity: 1;
+  animation: shimmerSweep 3.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
 .submit.ready:hover {
-  background: #0b1c30;
+  background: linear-gradient(135deg, #0a1829 0%, #0c1c30 55%, #132a47 100%);
+  transform: translateY(-2px);
+  box-shadow: 
+    0 8px 24px rgba(15, 33, 55, 0.32),
+    0 0 30px rgba(133, 248, 196, 0.22);
 }
 
 .submit.ready:active {
-  transform: scale(0.99);
+  transform: translateY(0) scale(0.99);
+}
+
+@keyframes shimmerSweep {
+  0% { left: -150%; }
+  35%, 100% { left: 160%; }
+}
+
+@keyframes readyPulseGlow {
+  0%, 100% {
+    box-shadow: 
+      0 4px 16px rgba(15, 33, 55, 0.24),
+      0 0 16px rgba(49, 107, 243, 0.12);
+  }
+  50% {
+    box-shadow: 
+      0 6px 20px rgba(15, 33, 55, 0.28),
+      0 0 28px rgba(133, 248, 196, 0.24);
+  }
 }
 
 .submit .material-symbols-outlined {
@@ -1155,6 +1367,7 @@ async function submitLogin() {
   text-decoration: underline;
   text-decoration-color: rgba(49, 107, 243, 0.4);
   text-underline-offset: 4px;
+  transition: color 0.2s ease;
 }
 
 .footer-link:hover {
@@ -1182,8 +1395,13 @@ async function submitLogin() {
 
 /* Page footer */
 .page-footer {
+  position: relative;
+  z-index: 2;
   padding: 12px 16px;
-  background: rgba(239, 244, 255, 0.5);
+  background: rgba(239, 244, 255, 0.65);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-top: 1px solid rgba(255, 255, 255, 0.8);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1208,5 +1426,15 @@ async function submitLogin() {
 
 .footer-icon {
   font-size: 14px;
+}
+
+/* Reduced Motion for Accessibility */
+@media (prefers-reduced-motion: reduce) {
+  .ambient-orb,
+  .pulse-dot,
+  .submit.ready,
+  .submit.ready::after {
+    animation: none !important;
+  }
 }
 </style>
