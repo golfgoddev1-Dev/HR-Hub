@@ -17,6 +17,7 @@ import meetingBackfill from "./routes/backfill.js";
 import { createEmployeeDirectoryRoutes } from "./routes/employee-directory.js";
 import leave from "./routes/leave.js";
 import leaveHr from "./routes/leave-hr.js";
+import admin from "./routes/admin.js";
 import notifications from "./routes/notifications.js";
 
 const app = new Hono();
@@ -25,6 +26,7 @@ app.route("/api/auth", auth);
 app.route("/api/register", register);
 app.route("/api/notifications", notifications);
 app.route("/api/leave/hr", leaveHr);
+app.route("/api/admin", admin);
 app.route("/api/leave", leave);
 app.route("/api/meeting/monthly-session", monthlySession);
 app.route("/api/meeting/roster", meetingRoster);

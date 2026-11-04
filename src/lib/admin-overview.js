@@ -1,12 +1,9 @@
-// The admin overview screen: which number comes from which existing endpoint,
-// and how a reply is turned into a value. Nothing here invents a number: a stat
-// stays null (shown as "—") when its endpoint is missing, refuses the caller, or
-// answers a page that may be truncated.
-//
-// No new Worker endpoint was added for this screen; every url below already
-// exists and is owned by another page.
+// The admin overview screen: which card shows which number, and how the single
+// read-only reply is read. Nothing here invents a number — a failed call, a
+// missing count or a value that is not a whole number leaves the card at "—".
 
-import { todayBangkokIso } from './thai-date.js'
+/** The one read-only endpoint behind all four cards. */
+export const ADMIN_OVERVIEW_URL = '/api/admin/overview'
 
 export const ADMIN_NO_VALUE = '—'
 
@@ -24,47 +21,31 @@ export function adminRoleLabel(role) {
   return ADMIN_ROLE_LABELS[role] ?? ADMIN_NO_VALUE
 }
 
-/** The endpoints cap their lists; a full page means the total is unknown. */
-export const ADMIN_APPROVER_LIST_LIMIT = 200
-export const ADMIN_HOLIDAY_LIST_LIMIT = 400
-export const ADMIN_REQUEST_PAGE_SIZE = 50
-
+/** The four cards, in the order they appear. `key` matches the reply's counts. */
 export const ADMIN_STATS = [
   {
     key: 'activeEmployees',
     label: 'พนักงานที่ใช้งาน',
     icon: 'groups',
-    kind: 'none',
-    // /api/hr/employees is a search endpoint (at least 2 characters), so it
-    // cannot report a total. No other existing endpoint counts employees.
-    url: null,
-    caption: 'ยังไม่มี endpoint สำหรับนับพนักงานทั้งหมด',
+    caption: 'นับเฉพาะบัญชีพนักงานที่เปิดใช้งาน',
   },
   {
     key: 'pendingLeave',
     label: 'ใบลารออนุมัติ',
     icon: 'pending_actions',
-    kind: 'requests',
-    url: `/api/leave/hr/requests?status=pending&page=1&pageSize=${ADMIN_REQUEST_PAGE_SIZE}`,
-    caption: 'จากรายการสถานะรออนุมัติ (50 รายการแรก)',
+    caption: 'ทุกใบลาที่สถานะรออนุมัติ',
   },
   {
     key: 'activeApprovers',
     label: 'ผู้อนุมัติที่ใช้งาน',
     icon: 'how_to_reg',
-    kind: 'approvers',
-    url: '/api/leave/hr/approvers?scope=department',
-    caption: 'นับเฉพาะรายการระดับแผนกที่เปิดใช้งาน',
+    caption: 'รายการที่เปิดใช้งาน ทั้งระดับแผนกและรายบุคคล',
   },
   {
     key: 'holidays',
     label: 'วันหยุดปีนี้',
     icon: 'event_busy',
-    kind: 'holidays',
-    // The holiday table stores Gregorian dates, so the request asks for the
-    // Bangkok year as-is.
-    url: () => `/api/leave/hr/holidays?year=${todayBangkokIso().slice(0, 4)}`,
-    caption: 'จากปฏิทินวันหยุดของปีปัจจุบัน',
+    caption: 'ปฏิทินวันหยุดของปีนี้ตามเวลาไทย',
   },
 ]
 
@@ -96,58 +77,38 @@ export const ADMIN_SHORTCUTS = [
   },
 ]
 
-/**
- * A number for one stat, or null when the reply cannot support one.
- * - requests: `count` is the page length, so `hasMore`/`scanCapped` means the
- *   real total is larger than what we can see.
- * - approvers: counts the active rows of a list that stops at 200.
- * - holidays: `count` of a list that stops at 400.
- */
-export function readStatValue(kind, payload) {
-  if (payload === null || typeof payload !== 'object' || payload.ok !== true) return null
+/** Every card key, so a failed call can blank all four without guessing. */
+export const ADMIN_STAT_KEYS = ADMIN_STATS.map((stat) => stat.key)
 
-  if (kind === 'requests') {
-    if (!Number.isInteger(payload.count) || payload.count < 0) return null
-    if (payload.hasMore === true || payload.scanCapped === true) return null
-    return payload.count
+function wholeCount(value) {
+  return Number.isInteger(value) && value >= 0 ? value : null
+}
+
+/** The four values from one reply; anything unusable becomes null. */
+export function readOverview(payload) {
+  const values = Object.fromEntries(ADMIN_STAT_KEYS.map((key) => [key, null]))
+  if (payload === null || typeof payload !== 'object' || payload.ok !== true) return values
+  if (payload.counts === null || typeof payload.counts !== 'object') return values
+
+  for (const key of ADMIN_STAT_KEYS) {
+    values[key] = wholeCount(payload.counts[key])
   }
-
-  if (kind === 'approvers') {
-    if (!Array.isArray(payload.results)) return null
-    if (payload.results.length >= ADMIN_APPROVER_LIST_LIMIT) return null
-    return payload.results.filter(
-      (row) => row !== null && typeof row === 'object' && row.isActive === true
-    ).length
-  }
-
-  if (kind === 'holidays') {
-    if (!Number.isInteger(payload.count) || payload.count < 0) return null
-    if (payload.count >= ADMIN_HOLIDAY_LIST_LIMIT) return null
-    return payload.count
-  }
-
-  return null
+  return values
 }
 
 /**
- * Loads every stat in parallel. `fetcher(url)` resolves to the parsed body, or
- * null/throws when the call failed (a 403 from the HR guard included): that stat
- * is then simply unavailable.
+ * Loads the overview once. `fetcher(url)` resolves to the parsed body, or
+ * null/throws when the call failed (a 401/403/500 included): every card then
+ * shows "—".
  */
 export async function loadAdminStats(fetcher) {
-  const entries = await Promise.all(
-    ADMIN_STATS.map(async (stat) => {
-      const url = typeof stat.url === 'function' ? stat.url() : stat.url
-      if (!url || typeof fetcher !== 'function') return [stat.key, null]
-      try {
-        return [stat.key, readStatValue(stat.kind, await fetcher(url))]
-      } catch {
-        return [stat.key, null]
-      }
-    })
-  )
+  if (typeof fetcher !== 'function') return readOverview(null)
 
-  return Object.fromEntries(entries)
+  try {
+    return readOverview(await fetcher(ADMIN_OVERVIEW_URL))
+  } catch {
+    return readOverview(null)
+  }
 }
 
 /** "—" for anything that is not a whole, non-negative number. */

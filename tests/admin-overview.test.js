@@ -1,36 +1,46 @@
-// Admin overview rules that need no browser:
-// - every number comes from a named existing endpoint, and a card with no usable
-//   reply stays "—" instead of showing a made-up value;
-// - truncated pages (a full first page) are not reported as totals;
-// - the formatting never invents a number either.
+// Admin overview frontend rules that need no browser:
+// - all four cards come from one read-only endpoint;
+// - a failed call, a missing count or a value that is not a whole number leaves
+//   the card at "—" (no substitute number);
+// - formatting never invents a number either.
 import { describe, expect, it } from 'vitest'
 
 import {
-  ADMIN_APPROVER_LIST_LIMIT,
-  ADMIN_HOLIDAY_LIST_LIMIT,
   ADMIN_NO_VALUE,
+  ADMIN_OVERVIEW_URL,
   ADMIN_SHORTCUTS,
   ADMIN_STATS,
   adminRoleLabel,
   allStatsUnavailable,
   formatStatValue,
   loadAdminStats,
-  readStatValue,
+  readOverview,
 } from '../src/lib/admin-overview.js'
 import { allowedPathsByRole } from '../src/lib/route-access.js'
 
-function approverRows(total, active) {
-  return Array.from({ length: total }, (_, index) => ({
-    id: `row-${index}`,
-    isActive: index < active,
-  }))
+const FULL = {
+  ok: true,
+  year: '2026',
+  counts: { activeEmployees: 128, pendingLeave: 4, activeApprovers: 7, holidays: 16 },
+}
+
+const EMPTY = {
+  activeEmployees: null,
+  pendingLeave: null,
+  activeApprovers: null,
+  holidays: null,
 }
 
 describe('stat cards', () => {
-  it('has four cards, including the three the brief names', () => {
+  it('has the four cards the endpoint answers, in order', () => {
     expect(ADMIN_STATS).toHaveLength(4)
-    const labels = ADMIN_STATS.map((stat) => stat.label)
-    expect(labels).toEqual([
+    expect(ADMIN_STATS.map((stat) => stat.key)).toEqual([
+      'activeEmployees',
+      'pendingLeave',
+      'activeApprovers',
+      'holidays',
+    ])
+    expect(ADMIN_STATS.map((stat) => stat.label)).toEqual([
       'พนักงานที่ใช้งาน',
       'ใบลารออนุมัติ',
       'ผู้อนุมัติที่ใช้งาน',
@@ -38,57 +48,100 @@ describe('stat cards', () => {
     ])
   })
 
-  it('points every card at an existing endpoint or nothing at all', () => {
+  it('asks one endpoint, not the HR lists', () => {
+    expect(ADMIN_OVERVIEW_URL).toBe('/api/admin/overview')
     for (const stat of ADMIN_STATS) {
-      const url = typeof stat.url === 'function' ? stat.url() : stat.url
-      if (url === null) continue
-      expect(url, stat.key).toMatch(/^\/api\//)
+      expect(stat).not.toHaveProperty('url')
     }
-  })
-
-  it('leaves the employee count empty because no endpoint can total it', () => {
-    const stat = ADMIN_STATS.find((item) => item.key === 'activeEmployees')
-    expect(stat.url).toBe(null)
-    expect(stat.caption).toContain('endpoint')
-  })
-
-  it('asks for the holiday year from the calendar, not a fixed year', () => {
-    const stat = ADMIN_STATS.find((item) => item.key === 'holidays')
-    expect(stat.url()).toMatch(/^\/api\/leave\/hr\/holidays\?year=\d{4}$/)
   })
 })
 
-describe('readStatValue', () => {
-  it('reads the pending-request count only when the page is the whole list', () => {
-    expect(readStatValue('requests', { ok: true, count: 3, hasMore: false })).toBe(3)
-    expect(readStatValue('requests', { ok: true, count: 0, hasMore: false })).toBe(0)
-    expect(readStatValue('requests', { ok: true, count: 50, hasMore: true })).toBe(null)
-    expect(readStatValue('requests', { ok: true, count: 50, scanCapped: true })).toBe(null)
+describe('readOverview', () => {
+  it('maps the reply onto the four cards', () => {
+    expect(readOverview(FULL)).toEqual({
+      activeEmployees: 128,
+      pendingLeave: 4,
+      activeApprovers: 7,
+      holidays: 16,
+    })
   })
 
-  it('counts only active approvers and refuses a list that may be cut off', () => {
-    expect(readStatValue('approvers', { ok: true, results: approverRows(5, 3) })).toBe(3)
-    expect(readStatValue('approvers', { ok: true, results: [] })).toBe(0)
-    expect(
-      readStatValue('approvers', {
-        ok: true,
-        results: approverRows(ADMIN_APPROVER_LIST_LIMIT, 10),
-      })
-    ).toBe(null)
-    expect(readStatValue('approvers', { ok: true, results: [{ isActive: 'true' }] })).toBe(0)
+  it('keeps zero, which is a real answer', () => {
+    const values = readOverview({
+      ok: true,
+      counts: { activeEmployees: 0, pendingLeave: 0, activeApprovers: 0, holidays: 0 },
+    })
+    expect(values).toEqual({
+      activeEmployees: 0,
+      pendingLeave: 0,
+      activeApprovers: 0,
+      holidays: 0,
+    })
+    expect(allStatsUnavailable(values)).toBe(false)
   })
 
-  it('reads the holiday count and refuses the list limit', () => {
-    expect(readStatValue('holidays', { ok: true, count: 12 })).toBe(12)
-    expect(readStatValue('holidays', { ok: true, count: ADMIN_HOLIDAY_LIST_LIMIT })).toBe(null)
-    expect(readStatValue('holidays', { ok: true, count: '12' })).toBe(null)
+  it('returns only the four cards, ignoring anything else in the reply', () => {
+    const values = readOverview({
+      ok: true,
+      counts: { activeEmployees: 3, fullName: 'สมชาย', nationalId: '1234567890123' },
+    })
+    expect(Object.keys(values).sort()).toEqual([
+      'activeApprovers',
+      'activeEmployees',
+      'holidays',
+      'pendingLeave',
+    ])
+    expect(values.activeEmployees).toBe(3)
+    expect(values.pendingLeave).toBe(null)
   })
 
-  it('answers null for a refusal, a failed call or an unknown kind', () => {
-    expect(readStatValue('requests', { ok: false, message: 'x' })).toBe(null)
-    expect(readStatValue('requests', null)).toBe(null)
-    expect(readStatValue('requests', 'nope')).toBe(null)
-    expect(readStatValue('none', { ok: true, count: 4 })).toBe(null)
+  it('blanks a card whose count is not a whole non-negative number', () => {
+    const values = readOverview({
+      ok: true,
+      counts: { activeEmployees: '128', pendingLeave: -1, activeApprovers: 1.5, holidays: 0 },
+    })
+    expect(values.activeEmployees).toBe(null)
+    expect(values.pendingLeave).toBe(null)
+    expect(values.activeApprovers).toBe(null)
+    expect(values.holidays).toBe(0)
+  })
+
+  it('blanks every card for a refusal, a broken body or a failed call', () => {
+    expect(readOverview({ ok: false, message: 'ไม่มีสิทธิ์เข้าถึงส่วนนี้' })).toEqual(EMPTY)
+    expect(readOverview(null)).toEqual(EMPTY)
+    expect(readOverview('nope')).toEqual(EMPTY)
+    expect(readOverview({ ok: true })).toEqual(EMPTY)
+    expect(readOverview({ ok: true, counts: 'x' })).toEqual(EMPTY)
+  })
+})
+
+describe('loadAdminStats', () => {
+  it('calls the overview endpoint exactly once', async () => {
+    const calls = []
+    const values = await loadAdminStats(async (url) => {
+      calls.push(url)
+      return FULL
+    })
+
+    expect(calls).toEqual(['/api/admin/overview'])
+    expect(values.activeEmployees).toBe(128)
+    expect(values.holidays).toBe(16)
+  })
+
+  it('shows dashes for every card when the call is refused or throws', async () => {
+    const refused = await loadAdminStats(async () => null)
+    expect(refused).toEqual(EMPTY)
+
+    const thrown = await loadAdminStats(async () => {
+      throw new Error('network')
+    })
+    expect(thrown).toEqual(EMPTY)
+
+    expect(Object.values(refused).map(formatStatValue)).toEqual(['—', '—', '—', '—'])
+  })
+
+  it('survives a missing fetcher without calling anything', async () => {
+    expect(await loadAdminStats(null)).toEqual(EMPTY)
   })
 })
 
@@ -109,70 +162,11 @@ describe('formatStatValue', () => {
   })
 })
 
-describe('loadAdminStats', () => {
-  it('fills each card from its own endpoint', async () => {
-    const requested = []
-    const values = await loadAdminStats(async (url) => {
-      requested.push(url)
-      if (url.startsWith('/api/leave/hr/requests')) return { ok: true, count: 2, hasMore: false }
-      if (url.startsWith('/api/leave/hr/approvers')) {
-        return { ok: true, results: approverRows(4, 1) }
-      }
-      if (url.startsWith('/api/leave/hr/holidays')) return { ok: true, count: 9 }
-      return null
-    })
-
-    expect(values).toEqual({
-      activeEmployees: null,
-      pendingLeave: 2,
-      activeApprovers: 1,
-      holidays: 9,
-    })
-    // The card without an endpoint makes no request at all.
-    expect(requested).toHaveLength(3)
-  })
-
-  it('keeps a card empty when the call is refused or throws', async () => {
-    const values = await loadAdminStats(async (url) => {
-      if (url.startsWith('/api/leave/hr/requests')) return null // 403 for this role
-      throw new Error('network')
-    })
-
-    expect(values.pendingLeave).toBe(null)
-    expect(values.activeApprovers).toBe(null)
-    expect(values.holidays).toBe(null)
-  })
-
-  it('survives a missing fetcher', async () => {
-    const values = await loadAdminStats(null)
-    expect(values).toEqual({
-      activeEmployees: null,
-      pendingLeave: null,
-      activeApprovers: null,
-      holidays: null,
-    })
-  })
-})
-
 describe('empty state and labels', () => {
   it('only treats a page with no number at all as empty', () => {
     expect(allStatsUnavailable({})).toBe(true)
-    expect(
-      allStatsUnavailable({
-        activeEmployees: null,
-        pendingLeave: null,
-        activeApprovers: null,
-        holidays: null,
-      })
-    ).toBe(true)
-    expect(
-      allStatsUnavailable({
-        activeEmployees: null,
-        pendingLeave: 0,
-        activeApprovers: null,
-        holidays: null,
-      })
-    ).toBe(false)
+    expect(allStatsUnavailable(EMPTY)).toBe(true)
+    expect(allStatsUnavailable({ ...EMPTY, pendingLeave: 0 })).toBe(false)
   })
 
   it('names the admin role in Thai and falls back to a dash', () => {
@@ -184,7 +178,7 @@ describe('empty state and labels', () => {
 })
 
 describe('shortcuts', () => {
-  it('only offers HR pages that exist in the router', () => {
+  it('still offers only HR pages that exist in the router', () => {
     expect(ADMIN_SHORTCUTS.length).toBeGreaterThanOrEqual(3)
     for (const shortcut of ADMIN_SHORTCUTS) {
       expect(allowedPathsByRole.hr, shortcut.to).toContain(shortcut.to)

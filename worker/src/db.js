@@ -33,6 +33,17 @@ function buildFilters(filters = []) {
  * Reads the project URL and service role key, and returns the query helpers.
  * Every request carries apikey, Authorization: Bearer and Content-Type.
  */
+/** Total from a `Content-Range: 0-0/42` header, or null when it is unusable. */
+export function countFromContentRange(value) {
+  if (typeof value !== "string") return null;
+  const slash = value.lastIndexOf("/");
+  if (slash === -1) return null;
+  const raw = value.slice(slash + 1).trim();
+  if (raw === "" || raw === "*") return null;
+  const total = Number(raw);
+  return Number.isInteger(total) && total >= 0 ? total : null;
+}
+
 export function createDb(env) {
   const baseUrl = getRequiredEnv(env, "SUPABASE_URL").trim().replace(/\/+$/, "");
   const apiKey = getRequiredEnv(env, "SUPABASE_SERVICE_ROLE_KEY");
@@ -272,5 +283,32 @@ export function createDb(env) {
     return { data, error: null };
   }
 
-  return { select, insert, insertMany, update, remove, upsert, upsertMany, rpc };
+  /**
+   * Exact number of rows matching `filters`, read from PostgREST's
+   * Content-Range header (HEAD + Prefer: count=exact). The database does the
+   * counting and no rows travel back, so the cost does not grow with the table.
+   */
+  async function count(table, { filters = [] } = {}) {
+    const requestHeaders = headers();
+    requestHeaders.Prefer = "count=exact";
+    requestHeaders["Range-Unit"] = "items";
+    requestHeaders.Range = "0-0";
+
+    const response = await fetch(url(table, buildFilters(filters)), {
+      method: "HEAD",
+      headers: requestHeaders,
+    });
+    if (!response.ok) {
+      const error = new Error("postgrest count failed");
+      error.status = response.status;
+      error.code = (await readError(response)).code;
+      throw error;
+    }
+
+    const total = countFromContentRange(response.headers.get("Content-Range"));
+    if (total === null) throw new Error("postgrest count missing");
+    return total;
+  }
+
+  return { select, insert, insertMany, update, remove, upsert, upsertMany, rpc, count };
 }

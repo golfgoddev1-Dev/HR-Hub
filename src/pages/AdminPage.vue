@@ -14,9 +14,9 @@ import {
 } from '../lib/admin-overview.js'
 import { canOpenPath } from '../lib/route-access.js'
 
-// Landing page for the system_admin role. Every number comes from an endpoint
-// that already exists; a stat with no endpoint, a refused call (the HR guard
-// answers 403 for another role) or a truncated page stays "—".
+// Landing page for the system_admin role. All four numbers come from one
+// read-only endpoint (/api/admin/overview, system_admin only); when that call
+// fails the cards stay "—" instead of showing a substitute value.
 const values = ref({})
 const loading = ref(true)
 const role = ref('')
