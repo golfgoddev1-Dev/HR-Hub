@@ -106,18 +106,6 @@ async function logout() {
   box-shadow: 0 4px 20px rgba(18, 52, 59, 0.05);
   margin: 16px auto;
   max-width: 1120px;
-  animation: navEntrance 0.7s cubic-bezier(0.16, 1, 0.3, 1) backwards;
-}
-
-@keyframes navEntrance {
-  from {
-    opacity: 0;
-    transform: translateY(-16px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
 }
 
 .nav-inner {
