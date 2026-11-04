@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import HrNav from '../components/HrNav.vue'
 import EmployeePicker from '../components/EmployeePicker.vue'
+import { formatThaiDate } from '../lib/thai-date.js'
 import { postJson } from '../api.js'
 // Same rules module the Worker stores with, so the preview matches the saved row.
 import {
@@ -64,19 +65,6 @@ const canSubmit = computed(() => {
   if (isHalf.value && !OT_VALUES.includes(otOption.value)) return false
   return true
 })
-
-function thaiDate(value) {
-  if (!value) return '—'
-  const parsed = new Date(`${String(value).slice(0, 10)}T00:00:00+07:00`)
-  if (Number.isNaN(parsed.getTime())) return String(value)
-  return new Intl.DateTimeFormat('th-TH', {
-    timeZone: 'Asia/Bangkok',
-    weekday: 'short',
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  }).format(parsed)
-}
 
 watch(isHalf, (half) => {
   if (half) endDate.value = startDate.value
@@ -191,7 +179,7 @@ onMounted(load)
           <div class="fact"><dt>จำนวนวัน</dt><dd>{{ receipt.days ?? '—' }}</dd></div>
           <div class="fact">
             <dt>กลับมาทำงาน</dt>
-            <dd>{{ thaiDate(receipt.returnDate) }} {{ receipt.returnTime || '' }}</dd>
+            <dd>{{ formatThaiDate(receipt.returnDate) }} {{ receipt.returnTime || '' }}</dd>
           </div>
           <div class="fact"><dt>เวลาเลิกงาน</dt><dd>{{ receipt.shiftEndOverride || '—' }}</dd></div>
         </dl>
@@ -297,7 +285,7 @@ onMounted(load)
             </div>
             <div class="preview-item">
               <span class="preview-label">กลับมาทำงาน</span>
-              <span class="preview-value">{{ thaiDate(preview.returnDate) }} {{ preview.returnTime }}</span>
+              <span class="preview-value">{{ formatThaiDate(preview.returnDate) }} {{ preview.returnTime }}</span>
             </div>
             <div class="preview-item">
               <span class="preview-label">เวลาเลิกงาน</span>

@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import LeaveNav from '../components/LeaveNav.vue'
+import { formatThaiDate, formatThaiDateRange } from '../lib/thai-date.js'
 import { retentionNotice } from '../leave-certificate.js'
 // The same pure rules module the Worker stores with, so the live preview can
 // never disagree with the saved row.
@@ -72,19 +73,6 @@ const canSubmit = computed(() => {
   if (needsAttachment.value && !attachmentFile.value) return false
   return true
 })
-
-function thaiDate(value) {
-  if (!value) return '—'
-  const parsed = new Date(`${String(value).slice(0, 10)}T00:00:00+07:00`)
-  if (Number.isNaN(parsed.getTime())) return String(value)
-  return new Intl.DateTimeFormat('th-TH', {
-    timeZone: 'Asia/Bangkok',
-    weekday: 'short',
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  }).format(parsed)
-}
 
 // A half day is always one date, so the end field follows the start field.
 watch(isHalf, (half) => {
@@ -234,10 +222,7 @@ onMounted(load)
           <div class="fact">
             <dt>ช่วงวันที่</dt>
             <dd>
-              {{ thaiDate(receipt.startDate) }}
-              <template v-if="receipt.endDate && receipt.endDate !== receipt.startDate">
-                – {{ thaiDate(receipt.endDate) }}
-              </template>
+              {{ formatThaiDateRange(receipt.startDate, receipt.endDate) }}
             </dd>
           </div>
           <div class="fact">
@@ -246,7 +231,7 @@ onMounted(load)
           </div>
           <div class="fact">
             <dt>กลับมาทำงาน</dt>
-            <dd>{{ thaiDate(receipt.returnDate) }} {{ receipt.returnTime || '' }}</dd>
+            <dd>{{ formatThaiDate(receipt.returnDate) }} {{ receipt.returnTime || '' }}</dd>
           </div>
         </dl>
         <p class="receipt-note">รอผู้อนุมัติตรวจสอบ สถานะจะแสดงในหน้า “ใบลาของฉัน”</p>
@@ -370,7 +355,7 @@ onMounted(load)
             </div>
             <div class="preview-item">
               <span class="preview-label">กลับมาทำงาน</span>
-              <span class="preview-value">{{ thaiDate(preview.returnDate) }} {{ preview.returnTime }}</span>
+              <span class="preview-value">{{ formatThaiDate(preview.returnDate) }} {{ preview.returnTime }}</span>
             </div>
             <div class="preview-item">
               <span class="preview-label">เวลาเลิกงาน</span>

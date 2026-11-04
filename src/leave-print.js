@@ -3,6 +3,8 @@
 // Pure and timezone-explicit: the page and the test render the same strings, so
 // a date shown on paper can never disagree with the row in the database.
 
+import { NO_DATE, formatThaiDate as formatThaiDateValue } from './lib/thai-date.js'
+
 export const PRINT_TIME_ZONE = 'Asia/Bangkok'
 export const NO_VALUE = '-'
 
@@ -12,21 +14,6 @@ export const PRINT_STATUS_LABELS = {
   rejected: 'ไม่อนุมัติ',
   cancelled: 'ยกเลิก',
 }
-
-const THAI_MONTHS = [
-  'ม.ค.',
-  'ก.พ.',
-  'มี.ค.',
-  'เม.ย.',
-  'พ.ค.',
-  'มิ.ย.',
-  'ก.ค.',
-  'ส.ค.',
-  'ก.ย.',
-  'ต.ค.',
-  'พ.ย.',
-  'ธ.ค.',
-]
 
 function text(value) {
   if (typeof value === 'number') return String(value)
@@ -59,11 +46,11 @@ function bangkokParts(value) {
   return out
 }
 
-/** 2026-11-03 → "3 พ.ย. 2569" (Buddhist year). */
+// One Thai date formatter for the whole app (src/lib/thai-date.js); the printed
+// form keeps its own dash for an empty value.
 export function formatThaiDate(value) {
-  const parts = bangkokParts(value)
-  if (!parts) return NO_VALUE
-  return `${Number(parts.day)} ${THAI_MONTHS[Number(parts.month) - 1]} ${Number(parts.year) + 543}`
+  const date = formatThaiDateValue(value)
+  return date === NO_DATE ? NO_VALUE : date
 }
 
 /** "18:00:00" or an ISO timestamp → "18:00 น." */

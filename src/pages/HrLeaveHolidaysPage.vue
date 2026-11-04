@@ -1,6 +1,7 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import HrNav from '../components/HrNav.vue'
+import { formatThaiDateLong } from '../lib/thai-date.js'
 import { postJson } from '../api.js'
 
 const LOAD_ERROR = 'โหลดวันหยุดไม่สำเร็จ กรุณาลองใหม่'
@@ -15,19 +16,6 @@ const holidayDate = ref('')
 const name = ref('')
 const saving = ref(false)
 const busyId = ref(null)
-
-function thaiDate(value) {
-  if (!value) return '—'
-  const parsed = new Date(`${String(value).slice(0, 10)}T00:00:00+07:00`)
-  if (Number.isNaN(parsed.getTime())) return String(value)
-  return new Intl.DateTimeFormat('th-TH', {
-    timeZone: 'Asia/Bangkok',
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  }).format(parsed)
-}
 
 async function load() {
   loading.value = true
@@ -143,7 +131,7 @@ onMounted(load)
         <div v-else class="list">
           <div v-for="item in holidays" :key="item.holiday_date" class="row-item">
             <div class="row-main">
-              <span class="row-name">{{ thaiDate(item.holiday_date) }}</span>
+              <span class="row-name">{{ formatThaiDateLong(item.holiday_date) }}</span>
               <span class="row-meta">{{ item.name || 'ไม่ระบุชื่อ' }}</span>
             </div>
             <button

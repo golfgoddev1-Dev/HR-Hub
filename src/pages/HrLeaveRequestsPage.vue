@@ -1,6 +1,7 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import HrNav from '../components/HrNav.vue'
+import { formatThaiDate, formatThaiDateRange } from '../lib/thai-date.js'
 import {
   CERTIFICATE_OPEN_LABEL,
   certificateStatus,
@@ -45,26 +46,6 @@ const filters = ref({
 
 const detail = ref(null)
 const detailLoading = ref(false)
-
-function thaiDate(value) {
-  if (!value) return '—'
-  const parsed = new Date(`${String(value).slice(0, 10)}T00:00:00+07:00`)
-  if (Number.isNaN(parsed.getTime())) return String(value)
-  return new Intl.DateTimeFormat('th-TH', {
-    timeZone: 'Asia/Bangkok',
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  }).format(parsed)
-}
-
-function rangeText(item) {
-  if (!item.startDate) return '—'
-  if (item.endDate && item.endDate !== item.startDate) {
-    return `${thaiDate(item.startDate)} – ${thaiDate(item.endDate)}`
-  }
-  return thaiDate(item.startDate)
-}
 
 // The certificate is private: the Worker issues a signed URL for 60 seconds.
 async function openAttachment(id) {
@@ -317,7 +298,7 @@ onMounted(async () => {
               {{ item.leaveTypeName || '—' }}
               <span v-if="item.source === 'hr_backdated'" class="tag">คีย์ย้อนหลัง</span>
             </span>
-            <span class="cell">{{ rangeText(item) }}</span>
+            <span class="cell">{{ formatThaiDateRange(item.startDate, item.endDate) }}</span>
             <span class="cell">{{ item.days ?? '—' }}</span>
             <span class="cell">
               <span class="badge" :class="statusClass(item.status)">{{ statusLabel(item.status) }}</span>
@@ -352,17 +333,19 @@ onMounted(async () => {
             <div class="fact"><dt>พนักงาน</dt><dd>{{ detail.requester?.fullName || '—' }}</dd></div>
             <div class="fact"><dt>แผนก</dt><dd>{{ detail.departmentName || '—' }}</dd></div>
             <div class="fact"><dt>ประเภท</dt><dd>{{ detail.leaveTypeName || '—' }}</dd></div>
-            <div class="fact"><dt>ช่วงวันที่</dt><dd>{{ rangeText(detail) }}</dd></div>
+            <div class="fact"><dt>ช่วงวันที่</dt><dd>{{ formatThaiDateRange(detail.startDate, detail.endDate) }}</dd></div>
             <div class="fact"><dt>จำนวนวัน</dt><dd>{{ detail.days ?? '—' }}</dd></div>
             <div class="fact">
               <dt>กลับมาทำงาน</dt>
-              <dd>{{ detail.returnDate ? `${thaiDate(detail.returnDate)} ${detail.returnTime || ''}` : '—' }}</dd>
+              <dd>
+                {{ detail.returnDate ? `${formatThaiDate(detail.returnDate)} ${detail.returnTime || ''}` : '—' }}
+              </dd>
             </div>
             <div class="fact"><dt>กะ / OT</dt><dd>{{ detail.shiftCode || '—' }} · {{ detail.otOption || '—' }}</dd></div>
             <div class="fact"><dt>ผู้อนุมัติ</dt><dd>{{ detail.approver?.fullName || '—' }}</dd></div>
             <div class="fact"><dt>ที่มา</dt><dd>{{ detail.source === 'hr_backdated' ? 'HR คีย์ย้อนหลัง' : 'พนักงานยื่นเอง' }}</dd></div>
-            <div class="fact"><dt>ตัดสินเมื่อ</dt><dd>{{ thaiDate(detail.decidedAt) }}</dd></div>
-            <div class="fact"><dt>บันทึกเมื่อ</dt><dd>{{ thaiDate(detail.createdAt) }}</dd></div>
+            <div class="fact"><dt>ตัดสินเมื่อ</dt><dd>{{ formatThaiDate(detail.decidedAt) }}</dd></div>
+            <div class="fact"><dt>บันทึกเมื่อ</dt><dd>{{ formatThaiDate(detail.createdAt) }}</dd></div>
           </dl>
 
           <p v-if="detail.otherTypeDetail" class="note">ประเภทอื่น ๆ: {{ detail.otherTypeDetail }}</p>

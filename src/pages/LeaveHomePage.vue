@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import LeaveNav from '../components/LeaveNav.vue'
 import PushToggle from '../components/PushToggle.vue'
+import { formatThaiDate, formatThaiDateRange } from '../lib/thai-date.js'
 import { CERTIFICATE_OPEN_LABEL, certificateStatus } from '../leave-certificate.js'
 
 const LOAD_ERROR = 'โหลดรายการใบลาไม่สำเร็จ กรุณาลองใหม่'
@@ -32,26 +33,6 @@ const route = useRoute()
 const focusId = computed(() => (typeof route.query.focus === 'string' ? route.query.focus : ''))
 // The in-app list is always the fallback source of truth, push or no push.
 const myPending = computed(() => results.value.filter((item) => item.status === 'pending').length)
-
-function thaiDate(value) {
-  if (!value) return '—'
-  const parsed = new Date(`${String(value).slice(0, 10)}T00:00:00+07:00`)
-  if (Number.isNaN(parsed.getTime())) return String(value)
-  return new Intl.DateTimeFormat('th-TH', {
-    timeZone: 'Asia/Bangkok',
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  }).format(parsed)
-}
-
-function rangeText(item) {
-  if (!item.startDate) return '—'
-  if (item.endDate && item.endDate !== item.startDate) {
-    return `${thaiDate(item.startDate)} – ${thaiDate(item.endDate)}`
-  }
-  return thaiDate(item.startDate)
-}
 
 function statusLabel(value) {
   return STATUS_LABELS[value] ?? value ?? '—'
@@ -180,7 +161,7 @@ onMounted(() => {
           <dl class="facts">
             <div class="fact">
               <dt>ช่วงวันที่</dt>
-              <dd>{{ rangeText(item) }}</dd>
+              <dd>{{ formatThaiDateRange(item.startDate, item.endDate) }}</dd>
             </div>
             <div class="fact">
               <dt>จำนวนวัน</dt>
@@ -188,11 +169,13 @@ onMounted(() => {
             </div>
             <div class="fact">
               <dt>กลับมาทำงาน</dt>
-              <dd>{{ item.returnDate ? `${thaiDate(item.returnDate)} ${item.returnTime || ''}` : '—' }}</dd>
+              <dd>
+                {{ item.returnDate ? `${formatThaiDate(item.returnDate)} ${item.returnTime || ''}` : '—' }}
+              </dd>
             </div>
             <div class="fact">
               <dt>ยื่นเมื่อ</dt>
-              <dd>{{ thaiDate(item.createdAt) }}</dd>
+              <dd>{{ formatThaiDate(item.createdAt) }}</dd>
             </div>
           </dl>
 
