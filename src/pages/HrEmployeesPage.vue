@@ -1,7 +1,7 @@
 <script setup>
 import { onBeforeUnmount, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import HrNav from '../components/HrNav.vue'
+import AppLayout from '../components/AppLayout.vue'
 
 const MIN_LENGTH = 2
 const SEARCH_ERROR = 'ไม่สามารถค้นหาได้ กรุณาลองใหม่'
@@ -77,8 +77,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="page">
-    <HrNav />
+  <AppLayout nav="hr">
 
     <main class="content">
       <div class="head">
@@ -139,19 +138,14 @@ onBeforeUnmount(() => {
 
       <p v-else-if="searched && !loading" class="empty">{{ EMPTY }}</p>
     </main>
-  </div>
+  </AppLayout>
 </template>
 
 <style scoped>
-.page {
-  min-height: 100vh;
-  background: #f3f6f5;
-}
-
 .content {
   max-width: 1120px;
   margin: 0 auto;
-  padding: 28px 20px 64px;
+  padding: 28px 0 64px;
 }
 
 .head {

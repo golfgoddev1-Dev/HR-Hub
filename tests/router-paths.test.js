@@ -68,7 +68,7 @@ describe('system_admin landing page', () => {
 
   it('shows the overview heading, the stat bar and the admin menu', () => {
     expect(ADMIN_PAGE).toContain('ภาพรวมผู้ดูแล')
-    expect(ADMIN_PAGE).toContain('AdminNav')
+    expect(ADMIN_PAGE).toContain('<AppLayout nav="admin">')
     expect(ADMIN_PAGE).toContain('ADMIN_STATS')
     expect(ADMIN_PAGE).toContain('ADMIN_SHORTCUTS')
     // A card without a number must show a dash, never a substitute value.
@@ -104,10 +104,14 @@ describe('system_admin landing page', () => {
   })
 
   it('is rendered by the admin page only, so no other role sees it', () => {
+    // AppLayout owns the menu component; pages only pick it through the prop.
+    const layout = readFileSync(new URL('../src/components/AppLayout.vue', import.meta.url), 'utf8')
+    expect(layout).toContain('admin: AdminNav')
+
     const importers = readdirSync(PAGES_DIR)
       .filter((name) => name.endsWith('.vue'))
-      .filter((name) => readFileSync(new URL(name, PAGES_DIR), 'utf8').includes('AdminNav'))
-    expect(importers).toEqual(['AdminPage.vue'])
+      .filter((name) => readFileSync(new URL(name, PAGES_DIR), 'utf8').includes('<AdminNav'))
+    expect(importers).toEqual([])
   })
 
   it('still has the catch-all so an unknown path is not a blank screen', () => {
@@ -181,7 +185,7 @@ describe('HR password page', () => {
   })
 
   it('keeps the one-time values on screen only and warns they are shown once', () => {
-    expect(HR_PASSWORD_PAGE).toContain('HrNav')
+    expect(HR_PASSWORD_PAGE).toContain('<AppLayout nav="hr">')
     expect(HR_PASSWORD_PAGE).toContain('แสดงเพียงครั้งเดียว')
     expect(HR_PASSWORD_PAGE).toContain('onBeforeUnmount')
     expect(HR_PASSWORD_PAGE).not.toContain('localStorage')

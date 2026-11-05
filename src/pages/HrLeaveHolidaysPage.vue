@@ -1,6 +1,6 @@
 <script setup>
 import { onMounted, ref } from 'vue'
-import HrNav from '../components/HrNav.vue'
+import AppLayout from '../components/AppLayout.vue'
 import { formatThaiDateLong } from '../lib/thai-date.js'
 import { postJson } from '../api.js'
 
@@ -88,8 +88,7 @@ onMounted(load)
 </script>
 
 <template>
-  <div class="page">
-    <HrNav />
+  <AppLayout nav="hr">
 
     <main class="content">
       <div class="head">
@@ -146,16 +145,14 @@ onMounted(load)
         </div>
       </section>
     </main>
-  </div>
+  </AppLayout>
 </template>
 
 <style scoped>
-.page { min-height: 100vh; background: #f3f6f5; }
-
 .content {
   max-width: 900px;
   margin: 0 auto;
-  padding: 28px 20px 64px;
+  padding: 28px 0 64px;
 }
 
 .head { margin-bottom: 16px; }

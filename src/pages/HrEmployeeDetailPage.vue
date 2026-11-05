@@ -1,7 +1,7 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import HrNav from '../components/HrNav.vue'
+import AppLayout from '../components/AppLayout.vue'
 
 const route = useRoute()
 const employee = ref(null)
@@ -60,8 +60,7 @@ onMounted(load)
 </script>
 
 <template>
-  <div class="page">
-    <HrNav />
+  <AppLayout nav="hr">
 
     <main class="content">
       <div class="head">
@@ -128,19 +127,14 @@ onMounted(load)
         </v-alert>
       </section>
     </main>
-  </div>
+  </AppLayout>
 </template>
 
 <style scoped>
-.page {
-  min-height: 100vh;
-  background: #f3f6f5;
-}
-
 .content {
   max-width: 820px;
   margin: 0 auto;
-  padding: 28px 20px 64px;
+  padding: 28px 0 64px;
 }
 
 .head {

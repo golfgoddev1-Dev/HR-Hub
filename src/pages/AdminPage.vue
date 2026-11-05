@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
-import AdminNav from '../components/AdminNav.vue'
+import AppLayout from '../components/AppLayout.vue'
 import { getSession } from '../api.js'
 import {
   ADMIN_NO_VALUE,
@@ -47,10 +47,8 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="page">
+  <AppLayout nav="admin">
     <div class="page-loader-bar" aria-hidden="true"></div>
-
-    <AdminNav />
 
     <main class="content">
       <header class="head">
@@ -130,7 +128,7 @@ onMounted(async () => {
         </div>
       </section>
     </main>
-  </div>
+  </AppLayout>
 </template>
 
 <style scoped>
@@ -149,12 +147,6 @@ onMounted(async () => {
   direction: ltr;
   -webkit-font-smoothing: antialiased;
   font-feature-settings: 'liga';
-}
-
-.page {
-  min-height: 100vh;
-  background: #f3f6f5;
-  overflow-x: hidden;
 }
 
 .page-loader-bar {
@@ -176,7 +168,7 @@ onMounted(async () => {
   z-index: 1;
   max-width: 1120px;
   margin: 0 auto;
-  padding: 28px 20px 64px;
+  padding: 28px 0 64px;
 }
 
 .head {
@@ -486,7 +478,7 @@ a.shortcut:active {
 
 @media (max-width: 640px) {
   .content {
-    padding: 20px 16px 56px;
+    padding: 20px 0 56px;
   }
 
   .stats,

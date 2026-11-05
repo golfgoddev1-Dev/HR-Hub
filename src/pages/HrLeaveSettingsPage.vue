@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import HrNav from '../components/HrNav.vue'
+import AppLayout from '../components/AppLayout.vue'
 
 const LOAD_ERROR = 'โหลดการตั้งค่าไม่สำเร็จ กรุณาลองใหม่'
 const SAVE_ERROR = 'บันทึกการตั้งค่าไม่สำเร็จ กรุณาลองใหม่'
@@ -69,8 +69,7 @@ onMounted(load)
 </script>
 
 <template>
-  <div class="page">
-    <HrNav />
+  <AppLayout nav="hr">
 
     <main class="content">
       <div class="head">
@@ -118,16 +117,14 @@ onMounted(load)
         </template>
       </section>
     </main>
-  </div>
+  </AppLayout>
 </template>
 
 <style scoped>
-.page { min-height: 100vh; background: #f3f6f5; }
-
 .content {
   max-width: 720px;
   margin: 0 auto;
-  padding: 28px 20px 64px;
+  padding: 28px 0 64px;
 }
 
 .head { margin-bottom: 16px; }

@@ -105,8 +105,6 @@ async function logout() {
   border-radius: 16px;
   border: 1px solid rgba(223, 231, 229, 0.8);
   box-shadow: 0 4px 20px rgba(18, 52, 59, 0.05);
-  margin: 16px auto;
-  max-width: 1120px;
 }
 
 .nav-inner {

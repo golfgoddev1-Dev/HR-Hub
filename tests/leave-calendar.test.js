@@ -136,10 +136,10 @@ describe('access and wiring', () => {
     }
   })
 
-  it('uses the shared leave layout for employees and HrNav for HR', () => {
-    expect(PAGE).toContain("import LeaveLayout from '../components/LeaveLayout.vue'")
-    expect(PAGE).toContain('LeaveLayout')
-    expect(PAGE).toContain("import HrNav from '../components/HrNav.vue'")
+  it('uses the shared app layout with the menu for the signed-in role', () => {
+    expect(PAGE).toContain("import AppLayout from '../components/AppLayout.vue'")
+    expect(PAGE).toContain('<AppLayout :nav="nav">')
+    expect(PAGE).toContain("isHr.value ? 'hr' : 'leave'")
     expect(VIEW).toContain("from '@fullcalendar/vue3'")
     expect(VIEW).toContain('/api/leave/calendar?')
     expect(VIEW).toContain('/api/leave/holidays?from=')

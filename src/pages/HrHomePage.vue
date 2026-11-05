@@ -1,5 +1,5 @@
 <script setup>
-import HrNav from '../components/HrNav.vue'
+import AppLayout from '../components/AppLayout.vue'
 
 // No summary API exists for HR yet, so this page is links only: every card goes
 // to a page that already works (employees list, import, directory management).
@@ -26,10 +26,8 @@ const cards = [
 </script>
 
 <template>
-  <div class="page">
+  <AppLayout nav="hr">
     <div class="page-loader-bar" aria-hidden="true"></div>
-
-    <HrNav />
 
     <main class="content">
       <div class="head">
@@ -60,7 +58,7 @@ const cards = [
         </RouterLink>
       </div>
     </main>
-  </div>
+  </AppLayout>
 </template>
 
 <style scoped>
@@ -79,12 +77,6 @@ const cards = [
   direction: ltr;
   -webkit-font-smoothing: antialiased;
   font-feature-settings: 'liga';
-}
-
-.page {
-  min-height: 100vh;
-  background: #f3f6f5;
-  overflow-x: hidden;
 }
 
 /* แถบความคืบหน้าบนสุดตอนโหลดหน้า */
@@ -106,7 +98,7 @@ const cards = [
   z-index: 1;
   max-width: 1120px;
   margin: 0 auto;
-  padding: 28px 20px 64px;
+  padding: 28px 0 64px;
 }
 
 .head {

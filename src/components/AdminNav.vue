@@ -59,8 +59,6 @@ async function logout() {
 }
 
 .nav-inner {
-  max-width: 1120px;
-  margin: 0 auto;
   padding: 12px 20px;
   display: flex;
   flex-wrap: wrap;
