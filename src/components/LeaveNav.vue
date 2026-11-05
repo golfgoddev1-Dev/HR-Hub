@@ -28,6 +28,7 @@ const items = computed(() => {
   const list = [
     { label: 'ใบลาของฉัน', to: '/leave', icon: 'event_note' },
     { label: 'ยื่นใบลา', to: '/leave/new', icon: 'edit_calendar' },
+    { label: 'ข้อมูลส่วนตัว', to: '/profile', icon: 'person' },
     { label: 'เปลี่ยน PIN', to: '/change-pin', icon: 'password' },
   ]
   const approvals = approvalsMenuItem({

@@ -26,6 +26,7 @@ import HrLeaveHolidaysPage from './pages/HrLeaveHolidaysPage.vue'
 import HrLeaveSettingsPage from './pages/HrLeaveSettingsPage.vue'
 import HrLeavePrintPage from './pages/HrLeavePrintPage.vue'
 import AdminPage from './pages/AdminPage.vue'
+import ProfilePage from './pages/ProfilePage.vue'
 import { canPrintLeave } from './leave-print.js'
 import LeaveHomePage from './pages/LeaveHomePage.vue'
 import LeaveRequestPage from './pages/LeaveRequestPage.vue'
@@ -67,6 +68,7 @@ export const router = createRouter({
     { path: '/hr/leave/settings', component: HrLeaveSettingsPage, meta: { requiresAuth: true } },
     { path: '/leave/hr/requests/:id/print', component: HrLeavePrintPage, meta: { requiresAuth: true } },
     { path: '/admin', component: AdminPage, meta: { requiresAuth: true } },
+    { path: '/profile', component: ProfilePage, meta: { requiresAuth: true } },
     { path: '/:pathMatch(.*)*', component: PendingPage, meta: { requiresAuth: true, catchAll: true } },
   ],
 })

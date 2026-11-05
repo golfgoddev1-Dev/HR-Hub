@@ -3,7 +3,7 @@
 // detail pages add their id, which the prefixes below cover.
 
 export const allowedPathsByRole = {
-  employee: ['/leave', '/leave/new', '/leave/approvals', '/change-pin'],
+  employee: ['/leave', '/leave/new', '/leave/approvals', '/change-pin', '/profile'],
   // HR landing plus every leave tool; all of them are linked from HrNav.
   hr: [
     '/hr',
