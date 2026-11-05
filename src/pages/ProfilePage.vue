@@ -12,10 +12,18 @@ import {
   readProfile,
   validateProfileForm,
 } from '../lib/profile-form.js'
+import { getCached, peekCached } from '../lib/data-cache.js'
+import {
+  DATA_KEYS,
+  PAGE_TTL_MS,
+  SHARED_TTL_MS,
+  errorTextOf,
+  invalidateProfile,
+  loaders,
+  loadShared,
+} from '../lib/shared-data.js'
 
 const PROFILE_URL = '/api/profile/me'
-const DEPARTMENTS_URL = '/api/profile/departments'
-const PREFIXES_URL = '/api/profile/name-prefixes'
 
 const LOAD_ERROR = 'โหลดข้อมูลส่วนตัวไม่สำเร็จ กรุณาลองใหม่'
 const SAVE_ERROR = 'บันทึกไม่สำเร็จ กรุณาลองใหม่'
@@ -65,19 +73,18 @@ function mapServerErrors(errors) {
 }
 
 async function load() {
-  loading.value = true
+  loading.value = !peekCached(DATA_KEYS.profile)
   loadError.value = ''
   try {
-    const response = await fetch(PROFILE_URL, { credentials: 'same-origin' })
-    const data = await response.json().catch(() => ({}))
-    if (!response.ok || data.ok !== true) {
-      loadError.value = typeof data.message === 'string' ? data.message : LOAD_ERROR
-      return
-    }
-    profile.value = readProfile(data)
-    Object.assign(form, profileToForm(profile.value))
-  } catch {
-    loadError.value = LOAD_ERROR
+    await loadShared(DATA_KEYS.profile, loaders.profile, {
+      ttlMs: PAGE_TTL_MS,
+      onData: (data) => {
+        profile.value = readProfile(data)
+        Object.assign(form, profileToForm(profile.value))
+      },
+    })
+  } catch (error) {
+    loadError.value = errorTextOf(error, LOAD_ERROR)
   } finally {
     loading.value = false
   }
@@ -86,13 +93,9 @@ async function load() {
 async function loadDepartments() {
   departmentsError.value = ''
   try {
-    const response = await fetch(DEPARTMENTS_URL, { credentials: 'same-origin' })
-    const data = await response.json().catch(() => ({}))
-    if (!response.ok || data.ok !== true) {
-      departmentsError.value = 'โหลดรายการแผนกไม่สำเร็จ'
-      departments.value = []
-      return
-    }
+    const data = await getCached(DATA_KEYS.profileDepartments, loaders.profileDepartments, {
+      ttlMs: SHARED_TTL_MS,
+    })
     departments.value = Array.isArray(data.departments) ? data.departments : []
   } catch {
     departmentsError.value = 'โหลดรายการแผนกไม่สำเร็จ'
@@ -103,13 +106,9 @@ async function loadDepartments() {
 async function loadPrefixes() {
   prefixesError.value = ''
   try {
-    const response = await fetch(PREFIXES_URL, { credentials: 'same-origin' })
-    const data = await response.json().catch(() => ({}))
-    if (!response.ok || data.ok !== true) {
-      prefixesError.value = 'โหลดรายการคำนำหน้าไม่สำเร็จ'
-      prefixes.value = []
-      return
-    }
+    const data = await getCached(DATA_KEYS.profilePrefixes, loaders.profilePrefixes, {
+      ttlMs: SHARED_TTL_MS,
+    })
     prefixes.value = Array.isArray(data.prefixes) ? data.prefixes : []
   } catch {
     prefixesError.value = 'โหลดรายการคำนำหน้าไม่สำเร็จ'
@@ -162,6 +161,8 @@ async function save() {
     Object.assign(form, profileToForm(profile.value))
     editing.value = false
     successMessage.value = SAVED_MESSAGE
+    // The cached profile is what the next visit paints, so it is dropped now.
+    invalidateProfile()
   } catch {
     saveError.value = SAVE_ERROR
   } finally {

@@ -3,6 +3,14 @@ import { computed, onMounted, ref, watch } from 'vue'
 import EmployeePicker from '../components/EmployeePicker.vue'
 import { formatThaiDate } from '../lib/thai-date.js'
 import { postJson } from '../api.js'
+import { getCached } from '../lib/data-cache.js'
+import {
+  DATA_KEYS,
+  SHARED_TTL_MS,
+  errorTextOf,
+  invalidateLeaveRequests,
+  loaders,
+} from '../lib/shared-data.js'
 // Same rules module the Worker stores with, so the preview matches the saved row.
 import {
   OT_VALUES,
@@ -78,12 +86,10 @@ async function load() {
   loading.value = true
   loadError.value = ''
   try {
-    const response = await fetch('/api/leave/hr/catalog', { credentials: 'same-origin' })
-    const data = await response.json().catch(() => ({}))
-    if (!response.ok || data.ok !== true) {
-      loadError.value = typeof data.message === 'string' ? data.message : LOAD_ERROR
-      return
-    }
+    // Types, shifts and holidays: the same 30-minute lookups as the leave form.
+    const data = await getCached(DATA_KEYS.hrCatalog, loaders.hrCatalog, {
+      ttlMs: SHARED_TTL_MS,
+    })
 
     types.value = Array.isArray(data.types) ? data.types : []
     shifts.value = Array.isArray(data.shifts) ? data.shifts : []
@@ -96,8 +102,8 @@ async function load() {
       shifts.value[0] ??
       null
     shiftCode.value = fullDay?.code ?? ''
-  } catch {
-    loadError.value = LOAD_ERROR
+  } catch (error) {
+    loadError.value = errorTextOf(error, LOAD_ERROR)
   } finally {
     loading.value = false
   }
@@ -128,6 +134,8 @@ async function submit() {
       return
     }
     receipt.value = data.request ?? {}
+    // A backdated row appears in the HR list and the admin counts.
+    invalidateLeaveRequests()
   } catch {
     submitError.value = SUBMIT_ERROR
   } finally {

@@ -1,5 +1,13 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import { getCached } from '../lib/data-cache.js'
+import {
+  DATA_KEYS,
+  SHARED_TTL_MS,
+  errorTextOf,
+  invalidateLeaveSettings,
+  loaders,
+} from '../lib/shared-data.js'
 
 const LOAD_ERROR = 'โหลดการตั้งค่าไม่สำเร็จ กรุณาลองใหม่'
 const SAVE_ERROR = 'บันทึกการตั้งค่าไม่สำเร็จ กรุณาลองใหม่'
@@ -21,17 +29,14 @@ async function load() {
   loading.value = true
   errorMessage.value = ''
   try {
-    const response = await fetch('/api/leave/hr/settings', { credentials: 'same-origin' })
-    const data = await response.json().catch(() => ({}))
-    if (!response.ok || data.ok !== true) {
-      errorMessage.value = typeof data.message === 'string' ? data.message : LOAD_ERROR
-      return
-    }
+    const data = await getCached(DATA_KEYS.hrSettings, loaders.hrSettings, {
+      ttlMs: SHARED_TTL_MS,
+    })
     configured.value = data.configured === true
     days.value = Number(data.certificateRetentionDays)
     if (data.limits) limits.value = data.limits
-  } catch {
-    errorMessage.value = LOAD_ERROR
+  } catch (error) {
+    errorMessage.value = errorTextOf(error, LOAD_ERROR)
   } finally {
     loading.value = false
   }
@@ -57,6 +62,8 @@ async function save() {
     configured.value = true
     days.value = Number(data.certificateRetentionDays)
     notice.value = 'บันทึกการตั้งค่าแล้ว'
+    // The leave catalog carries the retention value too.
+    invalidateLeaveSettings()
   } catch {
     errorMessage.value = SAVE_ERROR
   } finally {

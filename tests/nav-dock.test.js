@@ -57,7 +57,10 @@ describe('AppDock', () => {
     expect(go).toBeGreaterThan(post)
     // The click no longer navigates directly: the shared flow enforces the delay.
     expect(DOCK).toContain('const logout = createLogoutFlow({')
-    expect(DOCK).toContain("navigate: () => window.location.assign('/login')")
+    // Navigation still waits for the flow, and the cache is dropped first.
+    expect(DOCK).toMatch(
+      /navigate: \(\) => \{\s*\/\/[^\n]*\n\s*clearAll\(\)\s*\n\s*window\.location\.assign\('\/login'\)/
+    )
   })
 
   it('shows the click ripple, the dock flash and the Thai pending label', () => {

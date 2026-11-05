@@ -12,6 +12,11 @@ import {
   loadAdminStats,
 } from '../lib/admin-overview.js'
 import { canOpenPath } from '../lib/route-access.js'
+import {
+  DATA_KEYS,
+  PAGE_TTL_MS,
+  loadShared,
+} from '../lib/shared-data.js'
 
 // Landing page for the system_admin role. All four numbers come from one
 // read-only endpoint (/api/admin/overview, system_admin only); when that call
@@ -38,7 +43,15 @@ onMounted(async () => {
   role.value = typeof session?.role === 'string' ? session.role : ''
 
   try {
-    values.value = await loadAdminStats(readJson)
+    // One read per minute at most: the numbers are counts, not live data.
+    await loadShared(DATA_KEYS.adminOverview, () => loadAdminStats(readJson), {
+      ttlMs: PAGE_TTL_MS,
+      onData: (data) => {
+        values.value = data
+      },
+    })
+  } catch {
+    values.value = {}
   } finally {
     loading.value = false
   }

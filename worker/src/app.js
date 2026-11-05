@@ -21,8 +21,12 @@ import leaveHr from "./routes/leave-hr.js";
 import admin from "./routes/admin.js";
 import profile from "./routes/profile.js";
 import notifications from "./routes/notifications.js";
+import { addServerTiming } from "./server-timing.js";
 
 const app = new Hono();
+
+// Measure every API response (total handler time) before any route matches.
+app.use("*", addServerTiming);
 
 app.route("/api/auth", auth);
 app.route("/api/register", register);

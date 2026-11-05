@@ -2,6 +2,16 @@
 import { onMounted, ref } from 'vue'
 import { formatThaiDateLong } from '../lib/thai-date.js'
 import { postJson } from '../api.js'
+import { getCached, peekCached } from '../lib/data-cache.js'
+import {
+  DATA_KEYS,
+  SHARED_TTL_MS,
+  dataKey,
+  errorTextOf,
+  invalidateLeaveHolidays,
+  loaders,
+  loadShared,
+} from '../lib/shared-data.js'
 
 const LOAD_ERROR = 'โหลดวันหยุดไม่สำเร็จ กรุณาลองใหม่'
 const SAVE_ERROR = 'บันทึกไม่สำเร็จ กรุณาลองใหม่'
@@ -17,18 +27,18 @@ const saving = ref(false)
 const busyId = ref(null)
 
 async function load() {
-  loading.value = true
+  const key = dataKey.hrHolidays()
+  loading.value = !peekCached(key)
   errorMessage.value = ''
   try {
-    const response = await fetch('/api/leave/hr/holidays', { credentials: 'same-origin' })
-    const data = await response.json().catch(() => ({}))
-    if (!response.ok || data.ok !== true) {
-      errorMessage.value = typeof data.message === 'string' ? data.message : LOAD_ERROR
-      return
-    }
-    holidays.value = Array.isArray(data.holidays) ? data.holidays : []
-  } catch {
-    errorMessage.value = LOAD_ERROR
+    await loadShared(key, loaders.hrHolidays(), {
+      ttlMs: SHARED_TTL_MS,
+      onData: (data) => {
+        holidays.value = Array.isArray(data.holidays) ? data.holidays : []
+      },
+    })
+  } catch (error) {
+    errorMessage.value = errorTextOf(error, LOAD_ERROR)
   } finally {
     loading.value = false
   }
@@ -51,6 +61,8 @@ async function add() {
     notice.value = 'เพิ่มวันหยุดแล้ว'
     holidayDate.value = ''
     name.value = ''
+    // Every holiday reader (form, calendar, catalog) must see the new date.
+    invalidateLeaveHolidays()
     await load()
   } catch {
     errorMessage.value = SAVE_ERROR
@@ -75,6 +87,7 @@ async function remove(item) {
       return
     }
     notice.value = 'ลบวันหยุดแล้ว'
+    invalidateLeaveHolidays()
     await load()
   } catch {
     errorMessage.value = SAVE_ERROR

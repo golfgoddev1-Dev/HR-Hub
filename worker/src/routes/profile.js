@@ -255,6 +255,8 @@ profile.get("/departments", async (c) => {
       .filter((row) => row.id && typeof row.name === "string" && row.name.length > 0)
       .map((row) => ({ id: row.id, name: row.name }));
 
+    // Active departments, id and name only: the same list for every employee.
+    c.header("Cache-Control", "private, max-age=300");
     return c.json({ ok: true, count: departments.length, departments }, 200);
   } catch (error) {
     logError("profile departments failed", error);
@@ -284,6 +286,8 @@ profile.get("/name-prefixes", async (c) => {
       ),
     ];
 
+    // Prefix names only, identical for every signed-in employee.
+    c.header("Cache-Control", "private, max-age=300");
     return c.json({ ok: true, count: prefixes.length, prefixes }, 200);
   } catch (error) {
     logError("profile name prefixes failed", error);

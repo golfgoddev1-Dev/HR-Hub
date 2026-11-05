@@ -237,6 +237,8 @@ export function createEmployeeDirectoryRoutes({ role, adminTable }) {
   // rename form.
 
   routes.get("/catalog", async (c) => {
+    // Departments and position names are shared lookups, not caller data.
+    c.header("Cache-Control", "private, max-age=300");
     const denied = await guard(c);
     if (denied) return denied;
 

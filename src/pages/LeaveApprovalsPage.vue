@@ -3,6 +3,15 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { formatThaiDate, formatThaiDateRange } from '../lib/thai-date.js'
 import { postJson } from '../api.js'
+import { peekCached } from '../lib/data-cache.js'
+import {
+  APPROVALS_TTL_MS,
+  DATA_KEYS,
+  errorTextOf,
+  invalidateLeaveRequests,
+  loaders,
+  loadShared,
+} from '../lib/shared-data.js'
 import { CERTIFICATE_OPEN_LABEL, certificateStatus } from '../leave-certificate.js'
 
 const LOAD_ERROR = 'โหลดรายการรออนุมัติไม่สำเร็จ กรุณาลองใหม่'
@@ -48,18 +57,17 @@ async function openAttachment(id) {
 }
 
 async function load() {
-  loading.value = true
+  loading.value = !peekCached(DATA_KEYS.approvals)
   errorMessage.value = ''
   try {
-    const response = await fetch('/api/leave/approvals', { credentials: 'same-origin' })
-    const data = await response.json().catch(() => ({}))
-    if (!response.ok || data.ok !== true) {
-      errorMessage.value = typeof data.message === 'string' ? data.message : LOAD_ERROR
-      return
-    }
-    results.value = Array.isArray(data.results) ? data.results : []
-  } catch {
-    errorMessage.value = LOAD_ERROR
+    await loadShared(DATA_KEYS.approvals, loaders.approvals, {
+      ttlMs: APPROVALS_TTL_MS,
+      onData: (data) => {
+        results.value = Array.isArray(data.results) ? data.results : []
+      },
+    })
+  } catch (error) {
+    errorMessage.value = errorTextOf(error, LOAD_ERROR)
   } finally {
     loading.value = false
   }
@@ -87,6 +95,8 @@ async function decide(item, action) {
     }
     results.value = results.value.filter((row) => row.id !== item.id)
     delete notes[item.id]
+    // The dock count, the queue and the HR list all changed with this decision.
+    invalidateLeaveRequests()
   } catch {
     actionError.value = ACTION_ERROR
   } finally {

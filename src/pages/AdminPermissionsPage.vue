@@ -17,6 +17,7 @@ import {
   requiresSystemAdminConfirm,
   searchResultRows,
 } from '../lib/admin-permissions.js'
+import { invalidateSession } from '../lib/shared-data.js'
 
 const LOAD_ERROR = 'ค้นหาไม่สำเร็จ กรุณาลองใหม่'
 const SAVE_ERROR = 'บันทึกสิทธิ์ไม่สำเร็จ กรุณาลองใหม่'
@@ -186,6 +187,9 @@ async function save() {
     draft.value = { ...saved.value }
     pendingSystemOff.value = false
     statusMessage.value = SAVED_MESSAGE
+    // The edited user's role rights changed, so the cached session (and the
+    // admin landing counts) must be read again by their next page.
+    invalidateSession()
   } catch {
     errorMessage.value = SAVE_ERROR
   } finally {

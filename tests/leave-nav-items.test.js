@@ -71,7 +71,8 @@ describe('AppLayout wiring', () => {
     expect(APP_LAYOUT).toContain("import { getSession } from '../api.js'")
     expect(APP_LAYOUT).toContain('approvalsMenuItem')
     expect(APP_LAYOUT).toContain('isApprover')
-    expect(APP_LAYOUT).toContain('/api/leave/approvals')
+    // The queue is read through the shared cache now; the layout still asks once.
+    expect(APP_LAYOUT).toContain('loadShared(DATA_KEYS.approvals')
   })
 
   it('appends the entry after the five base items', () => {

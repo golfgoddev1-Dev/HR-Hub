@@ -1107,6 +1107,8 @@ leaveHr.get("/holidays", async (c) => {
       }))
       .filter((row) => isDateString(row.holiday_date));
 
+    // Company holidays, not caller-specific data.
+    c.header("Cache-Control", "private, max-age=300");
     return c.json({ ok: true, count: list.length, holidays: list }, 200);
   } catch (error) {
     logError("hr holiday list failed", error);

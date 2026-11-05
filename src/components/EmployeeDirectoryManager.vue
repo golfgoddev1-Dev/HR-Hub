@@ -1,5 +1,13 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { getCached } from '../lib/data-cache.js'
+import {
+  SHARED_TTL_MS,
+  dataKey,
+  invalidateAdminOverview,
+  invalidateDirectoryCatalog,
+  loaders,
+} from '../lib/shared-data.js'
 
 const props = defineProps({
   // API base for this role, e.g. /api/hr/directory or /api/meeting/directory.
@@ -70,7 +78,9 @@ async function loadCatalog() {
   catalogLoading.value = true
   catalogError.value = ''
   try {
-    const { ok, data } = await requestJson('GET', `${props.base}/catalog`)
+    // Departments and positions change only when HR renames one.
+    const data = await getCached(dataKey.directoryCatalog(props.base), loaders.directoryCatalog(props.base), { ttlMs: SHARED_TTL_MS })
+    const ok = data.ok === true
     if (!ok || data.ok !== true) {
       catalogError.value = typeof data.message === 'string' ? data.message : CATALOG_ERROR
       return
@@ -231,6 +241,7 @@ async function saveEmployee() {
     }
     editorOpen.value = false
     saveMessage.value = SAVED_TEXT
+    invalidateAdminOverview()
   } catch {
     saveError.value = SAVE_ERROR
   } finally {
@@ -300,6 +311,8 @@ async function submitRename() {
     renaming.value = { kind: '', id: '' }
     renameValue.value = ''
     renameMessage.value = RENAMED_TEXT
+    // The department name is cached by the catalog and the profile form.
+    invalidateDirectoryCatalog()
   } catch {
     renameError.value = SAVE_ERROR
   } finally {

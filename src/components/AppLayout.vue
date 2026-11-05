@@ -9,6 +9,7 @@ import AppDock from './AppDock.vue'
 import { getSession } from '../api.js'
 import { approvalsMenuItem } from '../lib/leave-nav-items.js'
 import { hrNavItems, leaveNavItems } from '../lib/nav-config.js'
+import { APPROVALS_TTL_MS, DATA_KEYS, loaders, loadShared } from '../lib/shared-data.js'
 
 const props = defineProps({
   nav: {
@@ -52,6 +53,8 @@ const brand = computed(() =>
 )
 
 // One session read and one approvals read for the whole system, not per page.
+// Both are cached, so the leave pages that show the same numbers read these
+// values instead of asking the Worker again.
 onMounted(async () => {
   const current = await getSession()
   session.value = current
@@ -59,9 +62,12 @@ onMounted(async () => {
   if (!isApprover.value || props.nav !== 'leave') return
 
   try {
-    const response = await fetch('/api/leave/approvals', { credentials: 'same-origin' })
-    const data = await response.json().catch(() => ({}))
-    pendingCount.value = Array.isArray(data.results) ? data.results.length : 0
+    await loadShared(DATA_KEYS.approvals, loaders.approvals, {
+      ttlMs: APPROVALS_TTL_MS,
+      onData: (data) => {
+        pendingCount.value = Array.isArray(data.results) ? data.results.length : 0
+      },
+    })
   } catch {
     pendingCount.value = 0
   }

@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { postJson } from '../api.js'
+import { clearAll } from '../lib/data-cache.js'
 import LockoutDialog from '../components/LockoutDialog.vue'
 
 const router = useRouter()
@@ -60,6 +61,8 @@ async function submitLogin() {
     })
     if (status === 200 && typeof data.redirectTo === 'string') {
       pin.value = ''
+      // A new session is a new cache: drop the previous account's reads.
+      clearAll()
       await router.replace(data.redirectTo)
       return
     }

@@ -1,6 +1,7 @@
 <script setup>
 // Same shell as AppDock.vue. Only /admin exists today, so the
 // other two items are disabled labels: no to/href may point at a missing page.
+import { clearAll } from '../lib/data-cache.js'
 const disabledItems = [
   { label: 'จัดการผู้ใช้', icon: 'manage_accounts' },
   { label: 'ตั้งค่าระบบ', icon: 'settings' },
@@ -12,6 +13,8 @@ async function logout() {
   } catch {
     // ignore: navigation still happens
   }
+  // Drop every cached read so the next account never sees this one's data.
+  clearAll()
   window.location.assign('/login')
 }
 </script>

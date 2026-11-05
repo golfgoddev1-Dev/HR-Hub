@@ -240,7 +240,8 @@ describe('position row', () => {
 describe('page wiring', () => {
   it('describes the real edit rules in the subtitle', () => {
     expect(PROFILE_PAGE).toContain(B1_SUBTITLE)
-    expect(PROFILE_PAGE).toContain('/api/profile/name-prefixes')
+    // The prefix URL now lives in the shared cached loader.
+    expect(PROFILE_PAGE).toContain('loaders.profilePrefixes')
     expect(PROFILE_PAGE).toContain('เลือกคำนำหน้า')
   })
 

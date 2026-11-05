@@ -10,6 +10,17 @@ import {
   approverToggleNotice,
   approverTogglePath,
 } from '../lib/leave-approvers-view.js'
+import { getCached, peekCached } from '../lib/data-cache.js'
+import {
+  APPROVALS_TTL_MS,
+  SHARED_TTL_MS,
+  dataKey,
+  errorTextOf,
+  invalidateApprovals,
+  invalidateApproverConfig,
+  loaders,
+  loadShared,
+} from '../lib/shared-data.js'
 
 const LOAD_ERROR = 'โหลดรายการผู้อนุมัติไม่สำเร็จ กรุณาลองใหม่'
 const SAVE_ERROR = 'บันทึกไม่สำเร็จ กรุณาลองใหม่'
@@ -48,8 +59,11 @@ function employeeName(item) {
 
 async function loadOptions() {
   try {
-    const response = await fetch('/api/hr/directory/catalog', { credentials: 'same-origin' })
-    const data = await response.json().catch(() => ({}))
+    const data = await getCached(
+      dataKey.directoryCatalog('/api/hr/directory/catalog'),
+      loaders.directoryCatalog('/api/hr/directory/catalog'),
+      { ttlMs: SHARED_TTL_MS }
+    )
     departments.value = Array.isArray(data.departments) ? data.departments : []
   } catch {
     departments.value = []
@@ -58,27 +72,24 @@ async function loadOptions() {
 
 async function load(options) {
   const quiet = options?.quiet === true
+  const departmentId =
+    scope.value === 'department' && departmentFilter.value ? departmentFilter.value : null
+  const key = dataKey.hrApprovers(scope.value, departmentId)
   if (!quiet) {
-    loading.value = true
+    loading.value = !peekCached(key)
     errorMessage.value = ''
   }
   try {
-    const params = new URLSearchParams({ scope: scope.value })
-    if (scope.value === 'department' && departmentFilter.value) {
-      params.set('departmentId', departmentFilter.value)
-    }
-    const response = await fetch(`/api/leave/hr/approvers?${params.toString()}`, {
-      credentials: 'same-origin',
+    await loadShared(key, loaders.hrApprovers(scope.value, departmentId), {
+      // The list carries pending counts, so it is only trusted for a minute.
+      ttlMs: APPROVALS_TTL_MS,
+      onData: (data) => {
+        rows.value = approverRows(data.results)
+      },
     })
-    const data = await response.json().catch(() => ({}))
-    if (!response.ok || data.ok !== true) {
-      errorMessage.value = typeof data.message === 'string' ? data.message : LOAD_ERROR
-      if (!quiet) rows.value = []
-      return
-    }
-    rows.value = approverRows(data.results)
-  } catch {
-    errorMessage.value = LOAD_ERROR
+  } catch (error) {
+    errorMessage.value = errorTextOf(error, LOAD_ERROR)
+    if (!quiet) rows.value = []
   } finally {
     if (!quiet) loading.value = false
   }
@@ -115,6 +126,8 @@ async function add() {
     notice.value = 'เพิ่มผู้อนุมัติแล้ว'
     approver.value = null
     applicant.value = null
+    invalidateApproverConfig()
+    invalidateApprovals()
     await load()
   } catch {
     errorMessage.value = SAVE_ERROR
@@ -146,6 +159,8 @@ async function toggle(item) {
       return
     }
     notice.value = approverToggleNotice(item.isActive, item.pendingCount)
+    invalidateApproverConfig()
+    invalidateApprovals()
     await load({ quiet: true })
   } catch {
     errorMessage.value = SAVE_ERROR

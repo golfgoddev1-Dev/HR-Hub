@@ -1,11 +1,26 @@
+import { getCached } from './lib/data-cache.js'
+import { DATA_KEYS, SESSION_TTL_MS } from './lib/shared-data.js'
+
+// A 401 means "not signed in", not a value worth remembering: it is thrown so
+// the cache keeps no entry, and a later login sees a real session at once.
+class NoSessionError extends Error {}
+
+async function loadSession() {
+  const response = await fetch('/api/auth/me', {
+    method: 'GET',
+    credentials: 'same-origin',
+  })
+  if (response.status === 401) throw new NoSessionError()
+  if (!response.ok) throw new Error('session unavailable')
+  return response.json()
+}
+
+// Read by the router guard, the layout and the admin landing page; the cache
+// makes those one request for five minutes, and every mutation that can change
+// the role or approval rights invalidates it.
 export async function getSession() {
   try {
-    const response = await fetch('/api/auth/me', {
-      method: 'GET',
-      credentials: 'same-origin',
-    })
-    if (response.status === 401) return null
-    return await response.json()
+    return await getCached(DATA_KEYS.session, loadSession, { ttlMs: SESSION_TTL_MS })
   } catch {
     return null
   }

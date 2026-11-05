@@ -18,6 +18,15 @@ import {
   statusLabel,
   toExclusiveEnd,
 } from '../lib/leave-calendar.js'
+import { getCached } from '../lib/data-cache.js'
+import {
+  DATA_KEYS,
+  SHARED_TTL_MS,
+  dataKey,
+  errorTextOf,
+  loaders,
+  requestJson,
+} from '../lib/shared-data.js'
 
 const props = defineProps({
   isHr: { type: Boolean, default: false },
@@ -108,33 +117,24 @@ async function load(range) {
   if (props.isHr && departmentId.value) params.set('departmentId', departmentId.value)
 
   try {
-    const [calendarResponse, holidayResponse] = await Promise.all([
-      fetch(`/api/leave/calendar?${params.toString()}`, { credentials: 'same-origin' }),
-      fetch(`/api/leave/holidays?from=${range.from}&to=${range.to}`, {
-        credentials: 'same-origin',
-      }),
+    const [calendarData, holidayData] = await Promise.all([
+      requestJson(`/api/leave/calendar?${params.toString()}`),
+      // Holidays barely change: 30 minutes per range, shared with the leave form.
+      getCached(
+        dataKey.leaveHolidays(range.from, range.to),
+        loaders.leaveHolidays(range.from, range.to),
+        { ttlMs: SHARED_TTL_MS }
+      ).catch(() => ({ holidays: [] })),
     ])
 
-    const calendarData = await calendarResponse.json().catch(() => ({}))
-    if (!calendarResponse.ok || calendarData.ok !== true) {
-      errorMessage.value =
-        typeof calendarData.message === 'string' ? calendarData.message : LOAD_ERROR
-      events.value = []
-      return
-    }
-
-    const holidayData = await holidayResponse.json().catch(() => ({}))
-    const holidays =
-      holidayResponse.ok && holidayData.ok === true && Array.isArray(holidayData.holidays)
-        ? holidayData.holidays
-        : []
+    const holidays = Array.isArray(holidayData?.holidays) ? holidayData.holidays : []
 
     events.value = [
       ...calendarData.events.map(toCalendarEvent),
       ...holidays.map(toHolidayEvent),
     ]
-  } catch {
-    errorMessage.value = LOAD_ERROR
+  } catch (error) {
+    errorMessage.value = errorTextOf(error, LOAD_ERROR)
     events.value = []
   } finally {
     loading.value = false
@@ -198,12 +198,11 @@ async function loadDepartments() {
   if (!props.isHr) return
   departmentError.value = ''
   try {
-    const response = await fetch('/api/hr/directory/catalog', { credentials: 'same-origin' })
-    const data = await response.json().catch(() => ({}))
-    if (!response.ok || data.ok !== true) {
-      departmentError.value = EMPTY_DEPARTMENTS
-      return
-    }
+    const data = await getCached(
+      dataKey.directoryCatalog('/api/hr/directory/catalog'),
+      loaders.directoryCatalog('/api/hr/directory/catalog'),
+      { ttlMs: SHARED_TTL_MS }
+    )
     departments.value = Array.isArray(data.departments) ? data.departments : []
   } catch {
     departmentError.value = EMPTY_DEPARTMENTS

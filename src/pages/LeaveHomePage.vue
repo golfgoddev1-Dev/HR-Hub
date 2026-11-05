@@ -3,6 +3,15 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import PushToggle from '../components/PushToggle.vue'
 import { formatThaiDate, formatThaiDateRange } from '../lib/thai-date.js'
+import { peekCached } from '../lib/data-cache.js'
+import {
+  APPROVALS_TTL_MS,
+  DATA_KEYS,
+  PAGE_TTL_MS,
+  errorTextOf,
+  loaders,
+  loadShared,
+} from '../lib/shared-data.js'
 import { CERTIFICATE_OPEN_LABEL, certificateStatus } from '../leave-certificate.js'
 
 const LOAD_ERROR = 'โหลดรายการใบลาไม่สำเร็จ กรุณาลองใหม่'
@@ -52,19 +61,19 @@ function daysText(item) {
 }
 
 async function load() {
-  loading.value = true
+  // A cached list paints at once and refreshes in the background only when old.
+  loading.value = !peekCached(DATA_KEYS.myRequests)
   errorMessage.value = ''
   try {
-    const response = await fetch('/api/leave/requests/mine', { credentials: 'same-origin' })
-    const data = await response.json().catch(() => ({}))
-    if (!response.ok || data.ok !== true) {
-      errorMessage.value = typeof data.message === 'string' ? data.message : LOAD_ERROR
-      return
-    }
-    results.value = Array.isArray(data.results) ? data.results : []
-    retentionDays.value = Number(data.certificateRetentionDays) || 0
-  } catch {
-    errorMessage.value = LOAD_ERROR
+    await loadShared(DATA_KEYS.myRequests, loaders.myRequests, {
+      ttlMs: PAGE_TTL_MS,
+      onData: (data) => {
+        results.value = Array.isArray(data.results) ? data.results : []
+        retentionDays.value = Number(data.certificateRetentionDays) || 0
+      },
+    })
+  } catch (error) {
+    errorMessage.value = errorTextOf(error, LOAD_ERROR)
   } finally {
     loading.value = false
   }
@@ -72,9 +81,13 @@ async function load() {
 
 async function loadPendingApprovals() {
   try {
-    const response = await fetch('/api/leave/approvals', { credentials: 'same-origin' })
-    const data = await response.json().catch(() => ({}))
-    pendingApprovals.value = Array.isArray(data.results) ? data.results.length : 0
+    // The dock reads the same key, so opening /leave does not fetch it twice.
+    await loadShared(DATA_KEYS.approvals, loaders.approvals, {
+      ttlMs: APPROVALS_TTL_MS,
+      onData: (data) => {
+        pendingApprovals.value = Array.isArray(data.results) ? data.results.length : 0
+      },
+    })
   } catch {
     pendingApprovals.value = 0
   }

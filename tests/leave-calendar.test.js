@@ -146,6 +146,8 @@ describe('access and wiring', () => {
     expect(ROUTER).toContain('hrDock: true')
     expect(VIEW).toContain("from '@fullcalendar/vue3'")
     expect(VIEW).toContain('/api/leave/calendar?')
-    expect(VIEW).toContain('/api/leave/holidays?from=')
+    // The range URL now comes from the shared cached loader.
+    expect(VIEW).toContain('loaders.leaveHolidays(')
+    expect(VIEW).toContain('dataKey.leaveHolidays(')
   })
 })

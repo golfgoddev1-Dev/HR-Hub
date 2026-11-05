@@ -368,6 +368,9 @@ leave.get("/holidays", async (c) => {
   try {
     // Date and name only: no id, creator or any other column is read here.
     const holidays = await readHolidayRows(c.get("leaveDb"), ranged ? { from, to } : {});
+    // Date and name only, identical for every signed-in employee: the browser
+    // may reuse the answer for five minutes.
+    c.header(SECRET_HEADER, "private, max-age=300");
     return c.json(
       {
         ok: true,

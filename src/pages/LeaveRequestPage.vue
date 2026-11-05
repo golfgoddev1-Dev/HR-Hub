@@ -1,6 +1,14 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { formatThaiDate, formatThaiDateRange } from '../lib/thai-date.js'
+import { getCached } from '../lib/data-cache.js'
+import {
+  DATA_KEYS,
+  SHARED_TTL_MS,
+  errorTextOf,
+  invalidateLeaveRequests,
+  loaders,
+} from '../lib/shared-data.js'
 import { retentionNotice } from '../leave-certificate.js'
 // The same pure rules module the Worker stores with, so the live preview can
 // never disagree with the saved row.
@@ -87,37 +95,19 @@ async function load() {
   loading.value = true
   loadError.value = ''
   try {
-    const [typesResponse, shiftsResponse, holidaysResponse] = await Promise.all([
-      fetch('/api/leave/types', { credentials: 'same-origin' }),
-      fetch('/api/leave/shifts', { credentials: 'same-origin' }),
-      fetch('/api/leave/holidays', { credentials: 'same-origin' }),
+    // Lookups shared with the HR form and the calendar: one read per 30 minutes.
+    const [typesData, shiftsData, holidaysData] = await Promise.all([
+      getCached(DATA_KEYS.leaveTypes, loaders.leaveTypes, { ttlMs: SHARED_TTL_MS }),
+      getCached(DATA_KEYS.leaveShifts, loaders.leaveShifts, { ttlMs: SHARED_TTL_MS }),
+      getCached(DATA_KEYS.leaveHolidays, loaders.leaveHolidays(), { ttlMs: SHARED_TTL_MS }),
     ])
-
-    const typesData = await typesResponse.json().catch(() => ({}))
-    const shiftsData = await shiftsResponse.json().catch(() => ({}))
-    const holidaysData = await holidaysResponse.json().catch(() => ({}))
-
-    if (!typesResponse.ok || typesData.ok !== true) {
-      loadError.value = typeof typesData.message === 'string' ? typesData.message : LOAD_ERROR
-      return
-    }
 
     types.value = Array.isArray(typesData.types) ? typesData.types : []
     shifts.value = Array.isArray(shiftsData.shifts) ? shiftsData.shifts : []
     retentionDays.value = Number(typesData.certificateRetentionDays) || 0
-
     // Holidays are required: without them the day count would be wrong, so the
     // form refuses to calculate (the Worker refuses too).
-    if (!holidaysResponse.ok || holidaysData.ok !== true) {
-      loadError.value =
-        typeof holidaysData.message === 'string'
-          ? holidaysData.message
-          : 'ระบบวันหยุดยังไม่พร้อม กรุณาติดต่อฝ่ายบุคคล'
-      return
-    }
-
-    const dates = Array.isArray(holidaysData.dates) ? holidaysData.dates : []
-    holidaySet.value = new Set(dates)
+    holidaySet.value = new Set(Array.isArray(holidaysData.dates) ? holidaysData.dates : [])
 
     leaveTypeId.value = types.value[0]?.id ?? null
     const fullDay =
@@ -126,8 +116,8 @@ async function load() {
       shifts.value[0] ??
       null
     shiftCode.value = fullDay?.code ?? ''
-  } catch {
-    loadError.value = LOAD_ERROR
+  } catch (error) {
+    loadError.value = errorTextOf(error, LOAD_ERROR)
   } finally {
     loading.value = false
   }
@@ -163,6 +153,8 @@ async function submit() {
       return
     }
     receipt.value = data.request ?? {}
+    // The new row belongs in “ใบลาของฉัน”, the dock count and the HR list.
+    invalidateLeaveRequests()
   } catch {
     submitError.value = SUBMIT_ERROR
   } finally {

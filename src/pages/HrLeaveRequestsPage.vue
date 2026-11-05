@@ -6,6 +6,16 @@ import {
   certificateStatus,
   retentionNotice,
 } from '../leave-certificate.js'
+import { getCached, peekCached } from '../lib/data-cache.js'
+import {
+  DATA_KEYS,
+  PAGE_TTL_MS,
+  SHARED_TTL_MS,
+  dataKey,
+  errorTextOf,
+  loaders,
+  loadShared,
+} from '../lib/shared-data.js'
 
 const LOAD_ERROR = 'โหลดรายการใบลาไม่สำเร็จ กรุณาลองใหม่'
 const PAGE_SIZE = 20
@@ -87,24 +97,23 @@ function buildQuery() {
 }
 
 async function load(targetPage = page.value) {
-  loading.value = true
+  const query = buildQuery()
+  const key = dataKey.hrRequests(query)
+  loading.value = !peekCached(key)
   errorMessage.value = ''
   try {
-    const response = await fetch(`/api/leave/hr/requests?${buildQuery()}`, {
-      credentials: 'same-origin',
+    await loadShared(key, loaders.hrRequests(query), {
+      ttlMs: PAGE_TTL_MS,
+      onData: (data) => {
+        page.value = targetPage
+        results.value = Array.isArray(data.results) ? data.results : []
+        hasMore.value = data.hasMore === true
+        scanCapped.value = data.scanCapped === true
+      },
     })
-    const data = await response.json().catch(() => ({}))
-    if (!response.ok || data.ok !== true) {
-      errorMessage.value = typeof data.message === 'string' ? data.message : LOAD_ERROR
-      results.value = []
-      return
-    }
-    page.value = targetPage
-    results.value = Array.isArray(data.results) ? data.results : []
-    hasMore.value = data.hasMore === true
-    scanCapped.value = data.scanCapped === true
-  } catch {
-    errorMessage.value = LOAD_ERROR
+  } catch (error) {
+    errorMessage.value = errorTextOf(error, LOAD_ERROR)
+    results.value = []
   } finally {
     loading.value = false
   }
@@ -112,12 +121,14 @@ async function load(targetPage = page.value) {
 
 async function loadOptions() {
   try {
-    const [catalogResponse, leaveResponse] = await Promise.all([
-      fetch('/api/hr/directory/catalog', { credentials: 'same-origin' }),
-      fetch('/api/leave/hr/catalog', { credentials: 'same-origin' }),
+    const [catalog, leave] = await Promise.all([
+      getCached(
+        dataKey.directoryCatalog('/api/hr/directory/catalog'),
+        loaders.directoryCatalog('/api/hr/directory/catalog'),
+        { ttlMs: SHARED_TTL_MS }
+      ),
+      getCached(DATA_KEYS.hrCatalog, loaders.hrCatalog, { ttlMs: SHARED_TTL_MS }),
     ])
-    const catalog = await catalogResponse.json().catch(() => ({}))
-    const leave = await leaveResponse.json().catch(() => ({}))
     departments.value = Array.isArray(catalog.departments) ? catalog.departments : []
     types.value = Array.isArray(leave.types) ? leave.types : []
     retentionDays.value = Number(leave.certificateRetentionDays) || 0
