@@ -1,12 +1,35 @@
-// The one source of truth for the two dock menus. Labels, routes and icon names
-// are copied verbatim from the menus they replace; the approvals entry is not
-// here because it depends on the signed-in employee (src/lib/leave-nav-items.js).
+// The one source of truth for the menus. Labels, routes and icon names are
+// copied verbatim from the menus they replace; the approvals entry is not in the
+// base lists because it depends on the signed-in employee
+// (src/lib/leave-nav-items.js).
+
+import { approvalsMenuItem } from './leave-nav-items.js'
+
+export const NAV_SECTION_LABELS = Object.freeze({
+  mine: 'งานของฉัน',
+  approver: 'งานหัวหน้า',
+  meeting: 'งานประชุม',
+  hr: 'งาน HR',
+  admin: 'ผู้ดูแลระบบ',
+})
 
 export function leaveNavItems() {
   return [
     { label: 'ใบลาของฉัน', to: '/leave', icon: 'event_note' },
     { label: 'ยื่นใบลา', to: '/leave/new', icon: 'edit_calendar' },
     { label: 'ปฏิทินการลา', to: '/leave/calendar', icon: 'calendar_month' },
+    { label: 'ข้อมูลส่วนตัว', to: '/profile', icon: 'person' },
+    { label: 'เปลี่ยน PIN', to: '/change-pin', icon: 'password' },
+  ]
+}
+
+// The "งานของฉัน" group for a login role that is not the employee role. The
+// leave calendar is not repeated here: HR already has it in its own section and
+// the meeting/system roles may not open it.
+export function myWorkItems() {
+  return [
+    { label: 'ใบลาของฉัน', to: '/leave', icon: 'event_note' },
+    { label: 'ยื่นใบลา', to: '/leave/new', icon: 'edit_calendar' },
     { label: 'ข้อมูลส่วนตัว', to: '/profile', icon: 'person' },
     { label: 'เปลี่ยน PIN', to: '/change-pin', icon: 'password' },
   ]
@@ -26,4 +49,58 @@ export function hrNavItems() {
     { label: 'ผู้อนุมัติ', to: '/hr/leave/approvers', icon: 'how_to_reg' },
     { label: 'ตั้งค่าใบลา', to: '/hr/leave/settings', icon: 'settings' },
   ]
+}
+
+export function meetingNavItems() {
+  return [
+    { label: 'หน้าหลัก', to: '/meeting/controller', icon: 'dashboard' },
+    { label: 'QR และรอบประชุม', to: '/meeting/controller/qr', icon: 'qr_code_2' },
+    { label: 'รายชื่อประชุม', to: '/meeting/controller/roster', icon: 'groups' },
+    { label: 'จัดการข้อมูลพนักงาน', to: '/meeting/controller/employees', icon: 'manage_accounts' },
+    { label: 'ผู้เข้าร่วม', to: '/meeting/controller/registrants', icon: 'badge' },
+    { label: 'ข้อมูลย้อนหลัง', to: '/meeting/controller/backfill', icon: 'history' },
+    { label: 'นำเข้าข้อมูลย้อนหลัง', to: '/meeting/controller/backfill/import', icon: 'upload_file' },
+    { label: 'แดชบอร์ด', to: '/meeting/controller/dashboard', icon: 'insights' },
+  ]
+}
+
+export function adminNavItems() {
+  return [
+    { label: 'ภาพรวมผู้ดูแล', to: '/admin', icon: 'space_dashboard' },
+    { label: 'สิทธิ์ผู้ใช้', to: '/admin/permissions', icon: 'manage_accounts' },
+    // Not built yet: labels only, never a target.
+    { label: 'จัดการผู้ใช้', icon: 'manage_accounts', disabled: true },
+    { label: 'ตั้งค่าระบบ', icon: 'settings', disabled: true },
+  ]
+}
+
+/**
+ * The menu as ordered, labelled sections. A section with no item is omitted, so
+ * a role never sees a heading it cannot use. The order is fixed: my work, the
+ * approvals queue, then the role's own work.
+ */
+export function navSections({ role, isApprover = false, pendingCount = 0 } = {}) {
+  const sections = []
+
+  const mine = role === 'employee' ? leaveNavItems() : myWorkItems()
+  if (mine.length > 0) {
+    sections.push({ id: 'mine', label: NAV_SECTION_LABELS.mine, items: mine })
+  }
+
+  const approval = approvalsMenuItem({ isApprover, pendingCount })
+  if (approval) {
+    sections.push({ id: 'approver', label: NAV_SECTION_LABELS.approver, items: [approval] })
+  }
+
+  if (role === 'meeting_controller') {
+    sections.push({ id: 'meeting', label: NAV_SECTION_LABELS.meeting, items: meetingNavItems() })
+  }
+  if (role === 'hr') {
+    sections.push({ id: 'hr', label: NAV_SECTION_LABELS.hr, items: hrNavItems() })
+  }
+  if (role === 'system_admin') {
+    sections.push({ id: 'admin', label: NAV_SECTION_LABELS.admin, items: adminNavItems() })
+  }
+
+  return sections.filter((section) => section.items.length > 0)
 }

@@ -407,15 +407,23 @@ test("an empty body is refused", async (t) => {
   assert.deepEqual(writes(fake), []);
 });
 
-test("another role and an anonymous caller are refused", async (t) => {
+test("another role with an active employee saves its own profile", async (t) => {
+  // The profile belongs to the employee record, not the login role.
   const hr = await createBackend({ role: "hr" });
   t.after(() => hr.restore());
 
-  const forbidden = await call("/api/profile/me", TOKEN);
-  assert.equal(forbidden.status, 403);
-  assert.equal((await forbidden.json()).ok, false);
-  assert.equal((await patch({ full_name: "อีก ชื่อ" })).status, 403);
-  assert.deepEqual(writes(hr), []);
+  const read = await call("/api/profile/me", TOKEN);
+  assert.equal(read.status, 200);
+  assert.equal((await read.json()).ok, true);
+
+  const saved = await patch({ full_name: "อีก ชื่อ" });
+  assert.equal(saved.status, 200);
+  // One employee row updated, one audit row written.
+  assert.equal(
+    writes(hr).filter((entry) => entry.method === "PATCH" && entry.table === "employees").length,
+    1
+  );
+  assert.equal(auditRows(hr).length, 1);
 
   const anonymous = await call("/api/profile/me", null);
   assert.equal(anonymous.status, 401);

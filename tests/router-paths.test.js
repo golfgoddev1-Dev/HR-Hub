@@ -77,31 +77,33 @@ describe('system_admin landing page', () => {
   })
 
   it('names the one admin menu item ภาพรวมผู้ดูแล and points it at /admin', () => {
-    expect(ADMIN_NAV).toContain('ภาพรวมผู้ดูแล')
-    expect(ADMIN_NAV).toContain('to="/admin"')
+    expect(NAV_CONFIG).toContain("label: 'ภาพรวมผู้ดูแล', to: '/admin'")
   })
 
   it('the admin menu links only to the pages that exist', () => {
-    // The permission screen added a second real link; both are in the router.
-    const targets = [...ADMIN_NAV.matchAll(/to="([^"]+)"/g)].map((match) => match[1])
-    expect(targets).toEqual(['/admin', '/admin/permissions'])
-    for (const target of targets) expect(ROUTER).toContain(`path: '${target}'`)
+    // The two live entries come from the shared config; both have a route.
+    for (const target of ['/admin', '/admin/permissions']) {
+      expect(NAV_CONFIG).toContain(`to: '${target}'`)
+      expect(ROUTER).toContain(`path: '${target}'`)
+    }
     expect(ADMIN_NAV).not.toContain('href=')
   })
 
   it('marks the unfinished items as disabled without a route', () => {
-    // Two real links (overview and permissions) plus the disabled placeholders.
-    expect((ADMIN_NAV.match(/<RouterLink/g) ?? []).length).toBe(2)
-    expect((ADMIN_NAV.match(/to="/g) ?? []).length).toBe(2)
+    // One template link now renders every item; the two live entries and the
+    // two disabled placeholders live in the shared nav config.
+    expect((ADMIN_NAV.match(/<RouterLink/g) ?? []).length).toBe(1)
+    expect(ADMIN_NAV).toContain('v-if="!item.disabled"')
 
     expect(ADMIN_NAV).toContain('aria-disabled="true"')
     expect(ADMIN_NAV).toContain('nav-link-disabled')
-    expect(ADMIN_NAV).toContain("label: 'จัดการผู้ใช้'")
-    expect(ADMIN_NAV).toContain("label: 'ตั้งค่าระบบ'")
+    expect(NAV_CONFIG).toContain("label: 'จัดการผู้ใช้'")
+    expect(NAV_CONFIG).toContain("label: 'ตั้งค่าระบบ'")
     expect(ADMIN_NAV).toContain('เร็วๆ นี้')
 
-    // The disabled items carry no target of any kind.
-    expect(ADMIN_NAV).not.toMatch(/disabledItems[\s\S]*?to:/)
+    // The disabled placeholders in the config carry no target of any kind.
+    expect(NAV_CONFIG).toMatch(/\{ label: 'จัดการผู้ใช้', icon: 'manage_accounts', disabled: true \}/)
+    expect(NAV_CONFIG).toMatch(/\{ label: 'ตั้งค่าระบบ', icon: 'settings', disabled: true \}/)
     expect(ADMIN_NAV).not.toContain('href=')
   })
 

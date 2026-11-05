@@ -2,10 +2,9 @@
 // Same shell as AppDock.vue. Only /admin exists today, so the
 // other two items are disabled labels: no to/href may point at a missing page.
 import { clearAll } from '../lib/data-cache.js'
-const disabledItems = [
-  { label: 'จัดการผู้ใช้', icon: 'manage_accounts' },
-  { label: 'ตั้งค่าระบบ', icon: 'settings' },
-]
+defineProps({
+  sections: { type: Array, required: true },
+})
 
 async function logout() {
   try {
@@ -23,39 +22,44 @@ async function logout() {
   <header class="admin-nav">
     <div class="nav-inner">
       <div class="nav-brand">
-        <v-icon icon="admin_panel_settings" size="22" />
+        <span class="material-symbols-outlined brand-icon">admin_panel_settings</span>
         <span class="nav-title">ผู้ดูแลระบบ</span>
       </div>
 
       <nav class="nav-links">
-        <RouterLink to="/admin" class="nav-link" active-class="nav-link-active">
-          <v-icon icon="space_dashboard" size="18" />
-          <span>ภาพรวมผู้ดูแล</span>
-        </RouterLink>
+        <div v-for="section in sections" :key="section.id" class="nav-section">
+          <span class="nav-section-label">{{ section.label }}</span>
 
-        <RouterLink
-          to="/admin/permissions"
-          class="nav-link"
-          active-class="nav-link-active"
-        >
-          <span class="material-symbols-outlined nav-icon">manage_accounts</span>
-          <span>สิทธิ์ผู้ใช้</span>
-        </RouterLink>
+          <div class="nav-section-items">
+            <template v-for="item in section.items" :key="item.to ?? item.label">
+              <RouterLink
+                v-if="!item.disabled"
+                :to="item.to"
+                class="nav-link"
+                active-class="nav-link-active"
+                :aria-label="item.ariaLabel"
+              >
+                <span class="material-symbols-outlined nav-icon">{{ item.icon }}</span>
+                <span>{{ item.label }}</span>
+                <span v-if="item.badge > 0" class="nav-badge">{{ item.badge }}</span>
+              </RouterLink>
 
-        <span
-          v-for="item in disabledItems"
-          :key="item.label"
-          class="nav-link nav-link-disabled"
-          aria-disabled="true"
-          title="เร็วๆ นี้"
-        >
-          <v-icon :icon="item.icon" size="18" />
-          <span>{{ item.label }}</span>
-          <span class="nav-badge">เร็วๆ นี้</span>
-        </span>
+              <span
+                v-else
+                class="nav-link nav-link-disabled"
+                aria-disabled="true"
+                title="เร็วๆ นี้"
+              >
+                <span class="material-symbols-outlined nav-icon">{{ item.icon }}</span>
+                <span>{{ item.label }}</span>
+                <span class="nav-badge">เร็วๆ นี้</span>
+              </span>
+            </template>
+          </div>
+        </div>
 
         <button type="button" class="nav-link nav-logout" @click="logout">
-          <v-icon icon="logout" size="18" />
+          <span class="material-symbols-outlined nav-icon">logout</span>
           <span>ออกจากระบบ</span>
         </button>
       </nav>
@@ -97,8 +101,36 @@ async function logout() {
 .nav-links {
   display: flex;
   flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-end;
+}
+
+.nav-section {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.nav-section-label {
+  padding: 0 12px;
+  color: #a9cbc4;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.nav-section-items {
+  display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   align-items: center;
+}
+
+.brand-icon {
+  font-size: 22px;
+  line-height: 1;
 }
 
 .nav-icon {

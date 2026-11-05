@@ -110,11 +110,13 @@ describe('AppDock', () => {
     expect(DOCK).toContain('prefers-reduced-motion')
   })
 
-  it('is fed by the shared item lists and the layout approvals logic', () => {
+  it('is fed by the shared section config, not a hard-coded list', () => {
     expect(NAV_CONFIG).toContain('export function leaveNavItems()')
     expect(NAV_CONFIG).toContain('export function hrNavItems()')
-    expect(LAYOUT).toContain('leaveNavItems()')
-    expect(LAYOUT).toContain('hrNavItems()')
-    expect(LAYOUT).toContain("import { approvalsMenuItem } from '../lib/leave-nav-items.js'")
+    expect(NAV_CONFIG).toContain('export function navSections(')
+    expect(LAYOUT).toContain('navSections({')
+    expect(LAYOUT).toContain("import { navSections } from '../lib/nav-config.js'")
+    // The approvals entry and its badge still come from the approver flag.
+    expect(NAV_CONFIG).toContain('approvalsMenuItem(')
   })
 })

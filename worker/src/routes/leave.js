@@ -54,7 +54,10 @@ import { readHolidayRows } from "../leave-holidays.js";
 const leave = new Hono();
 
 // HR and meeting controllers are employees too, so they may file their own leave.
-const ALLOWED_ROLES = ["employee", "hr", "meeting_controller"];
+// Own leave is not a role feature. These routes authorize the session and its
+// active employee row; an approver queue is guarded by the approver row in the
+// route itself, and HR tools live in their own app with their own role check.
+const SESSION_ROLES = ["employee", "hr", "meeting_controller", "system_admin"];
 
 const LEAVE_REQUESTS_TABLE = "leave_requests";
 const LEAVE_TYPES_TABLE = "leave_types";
@@ -206,7 +209,7 @@ function invalidBody(c) {
 
 /** Role check plus a fresh employee read, so department_id is current. */
 async function guard(c) {
-  const auth = await requireRole(c.env, c.req.raw, ALLOWED_ROLES);
+  const auth = await requireRole(c.env, c.req.raw, SESSION_ROLES);
   if (auth.status) {
     return { response: c.json({ ok: false, message: auth.message }, auth.status) };
   }

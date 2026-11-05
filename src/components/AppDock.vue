@@ -12,7 +12,7 @@ const props = defineProps({
   brandIcon: { type: String, required: true },
   brandTitle: { type: String, required: true },
   brandSubtitle: { type: String, default: '' },
-  items: { type: Array, required: true },
+  sections: { type: Array, required: true },
   showBrandBadge: { type: Boolean, default: false },
 })
 
@@ -122,10 +122,11 @@ watch(
     })
 )
 
-watch(
-  () => props.items.length,
-  () => nextTick(measure)
+const itemCount = computed(() =>
+  props.sections.reduce((total, section) => total + section.items.length, 0)
 )
+
+watch(itemCount, () => nextTick(measure))
 
 /** A red ripple from the click point, sized to the button's larger side. */
 function spawnRipple(event) {
@@ -193,21 +194,27 @@ const logout = createLogoutFlow({
       >
         <span class="dock-indicator" :style="indicatorStyle" aria-hidden="true"></span>
 
-        <RouterLink
-          v-for="(item, index) in items"
-          :key="item.to"
-          :to="item.to"
-          class="dock-item"
-          active-class="dock-item-active"
-          :aria-label="item.ariaLabel"
-          :style="{ '--i': index }"
-        >
-          <span class="dock-tile">
-            <span class="material-symbols-outlined">{{ item.icon }}</span>
-            <span v-if="item.badge > 0" class="dock-badge">{{ item.badge }}</span>
-          </span>
-          <span class="dock-label">{{ item.label }}</span>
-        </RouterLink>
+        <div v-for="section in sections" :key="section.id" class="dock-section">
+          <span class="dock-section-label">{{ section.label }}</span>
+
+          <div class="dock-section-items">
+            <RouterLink
+              v-for="(item, index) in section.items"
+              :key="item.to"
+              :to="item.to"
+              class="dock-item"
+              active-class="dock-item-active"
+              :aria-label="item.ariaLabel"
+              :style="{ '--i': index }"
+            >
+              <span class="dock-tile">
+                <span class="material-symbols-outlined">{{ item.icon }}</span>
+                <span v-if="item.badge > 0" class="dock-badge">{{ item.badge }}</span>
+              </span>
+              <span class="dock-label">{{ item.label }}</span>
+            </RouterLink>
+          </div>
+        </div>
 
         <span class="dock-divider" aria-hidden="true"></span>
 
@@ -216,7 +223,7 @@ const logout = createLogoutFlow({
           type="button"
           class="dock-item dock-logout"
           :class="{ 'is-leaving': leaving }"
-          :style="{ '--i': items.length }"
+          :style="{ '--i': itemCount }"
           :disabled="leaving"
           :aria-busy="leaving ? 'true' : 'false'"
           @click="logout"
@@ -679,7 +686,38 @@ const logout = createLogoutFlow({
   }
 }
 
-/* ---------- Narrow: one scrolling row of items, no page-level scroll ---------- */
+/* ---------- Sections: a small Thai heading above each group of items ---------- */
+.dock-section {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 2px;
+  flex: 0 0 auto;
+  padding: 0 3px;
+}
+
+.dock-section + .dock-section {
+  border-left: 1px solid rgba(16, 80, 78, 0.12);
+  padding-left: 7px;
+}
+
+.dock-section-label {
+  padding: 0 5px;
+  color: #5c7176;
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.dock-section-items {
+  display: flex;
+  align-items: stretch;
+  gap: 1px;
+}
+
+/* ---------- Narrow: sections stack and wrap, never a sideways scroll ---------- */
 @media (max-width: 720px) {
   .dock {
     padding: 6px 8px;
@@ -688,6 +726,7 @@ const logout = createLogoutFlow({
 
   .dock-inner {
     gap: 6px;
+    flex-wrap: wrap;
   }
 
   .dock-brand {
@@ -709,7 +748,25 @@ const logout = createLogoutFlow({
 
   .dock-rail {
     justify-content: flex-start;
-    scroll-snap-type: x mandatory;
+    flex-wrap: wrap;
+    overflow-x: hidden;
+    scroll-snap-type: none;
+  }
+
+  .dock-section {
+    flex: 1 1 100%;
+    padding: 2px 0;
+  }
+
+  .dock-section + .dock-section {
+    padding-top: 4px;
+    padding-left: 0;
+    border-top: 1px solid rgba(16, 80, 78, 0.1);
+    border-left: 0;
+  }
+
+  .dock-section-items {
+    flex-wrap: wrap;
   }
 }
 

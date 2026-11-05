@@ -69,17 +69,18 @@ describe('approvals menu entry', () => {
 describe('AppLayout wiring', () => {
   it('asks the session for isApprover once and builds the entry from it', () => {
     expect(APP_LAYOUT).toContain("import { getSession } from '../api.js'")
-    expect(APP_LAYOUT).toContain('approvalsMenuItem')
-    expect(APP_LAYOUT).toContain('isApprover')
+    expect(APP_LAYOUT).toContain('isApprover: isApprover.value')
     // The queue is read through the shared cache now; the layout still asks once.
     expect(APP_LAYOUT).toContain('loadShared(DATA_KEYS.approvals')
+    // The approvals entry is built by the shared section config from that flag.
+    expect(APP_LAYOUT).toContain('navSections({')
   })
 
-  it('appends the entry after the five base items', () => {
-    const base = APP_LAYOUT.indexOf('leaveNavItems()')
-    const approval = APP_LAYOUT.indexOf('approvalsMenuItem({')
-    expect(base).toBeGreaterThan(-1)
-    expect(approval).toBeGreaterThan(base)
+  it('places the approver section after the my-work section', () => {
+    const mine = NAV_CONFIG.indexOf("id: 'mine'")
+    const approval = NAV_CONFIG.indexOf("id: 'approver'")
+    expect(mine).toBeGreaterThan(-1)
+    expect(approval).toBeGreaterThan(mine)
   })
 
   it('keeps the five base items, including change PIN, in the shared config', () => {

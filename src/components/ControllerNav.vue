@@ -1,27 +1,45 @@
 <script setup>
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { postLogout } from '../api.js'
+import { getSession, postLogout } from '../api.js'
+import { navSections } from '../lib/nav-config.js'
+import { APPROVALS_TTL_MS, DATA_KEYS, loaders, loadShared } from '../lib/shared-data.js'
 
 const route = useRoute()
 const router = useRouter()
 const logoutBusy = ref(false)
 
-const items = [
-  { label: 'หน้าหลัก', to: '/meeting/controller', icon: 'dashboard', ready: true },
-  { label: 'QR และรอบประชุม', to: '/meeting/controller/qr', icon: 'qr_code_2', ready: true },
-  { label: 'รายชื่อประชุม', to: '/meeting/controller/roster', icon: 'groups', ready: true },
-  { label: 'จัดการข้อมูลพนักงาน', to: '/meeting/controller/employees', icon: 'manage_accounts', ready: true },
-  { label: 'ผู้เข้าร่วม', to: '/meeting/controller/registrants', icon: 'badge', ready: true },
-  { label: 'ข้อมูลย้อนหลัง', to: '/meeting/controller/backfill', icon: 'history', ready: true },
-  { label: 'นำเข้าข้อมูลย้อนหลัง', to: '/meeting/controller/backfill/import', icon: 'upload_file', ready: true },
-  { label: 'แดชบอร์ด', to: '/meeting/controller/dashboard', icon: 'insights', ready: true },
-]
+// The controller keeps its own sidebar, but the items and the "งานของฉัน" /
+// "งานหัวหน้า" groups come from the same config the dock uses.
+const sections = ref(navSections({ role: 'meeting_controller' }))
 
 function isActive(item) {
-  if (!item.ready) return false
+  if (item.disabled === true) return false
   return route.path === item.to
 }
+
+onMounted(async () => {
+  const session = await getSession()
+  if (session?.isApprover !== true) return
+
+  let pendingCount = 0
+  try {
+    await loadShared(DATA_KEYS.approvals, loaders.approvals, {
+      ttlMs: APPROVALS_TTL_MS,
+      onData: (data) => {
+        pendingCount = Array.isArray(data.results) ? data.results.length : 0
+      },
+    })
+  } catch {
+    pendingCount = 0
+  }
+
+  sections.value = navSections({
+    role: 'meeting_controller',
+    isApprover: true,
+    pendingCount,
+  })
+})
 
 async function logout() {
   if (logoutBusy.value) return
@@ -37,25 +55,33 @@ async function logout() {
 
 <template>
   <nav class="controller-nav" aria-label="เมนูผู้ควบคุมการประชุม">
-    <ul class="nav-list">
-      <li v-for="item in items" :key="item.label" class="nav-item">
-        <RouterLink
-          v-if="item.ready"
-          :to="item.to"
-          class="nav-link"
-          :class="{ 'nav-link-active': isActive(item) }"
-        >
-          <span class="material-symbols-outlined nav-icon" aria-hidden="true">{{ item.icon }}</span>
-          <span class="nav-label">{{ item.label }}</span>
-        </RouterLink>
+    <div v-for="section in sections" :key="section.id" class="nav-section">
+      <span class="nav-section-label">{{ section.label }}</span>
 
-        <span v-else class="nav-link nav-link-disabled" aria-disabled="true">
-          <span class="material-symbols-outlined nav-icon" aria-hidden="true">{{ item.icon }}</span>
-          <span class="nav-label">{{ item.label }}</span>
-          <span class="nav-chip">เร็ว ๆ นี้</span>
-        </span>
-      </li>
+      <ul class="nav-list">
+        <li v-for="item in section.items" :key="item.to ?? item.label" class="nav-item">
+          <RouterLink
+            v-if="!item.disabled"
+            :to="item.to"
+            class="nav-link"
+            :class="{ 'nav-link-active': isActive(item) }"
+            :aria-label="item.ariaLabel"
+          >
+            <span class="material-symbols-outlined nav-icon" aria-hidden="true">{{ item.icon }}</span>
+            <span class="nav-label">{{ item.label }}</span>
+            <span v-if="item.badge > 0" class="nav-chip nav-chip-badge">{{ item.badge }}</span>
+          </RouterLink>
 
+          <span v-else class="nav-link nav-link-disabled" aria-disabled="true">
+            <span class="material-symbols-outlined nav-icon" aria-hidden="true">{{ item.icon }}</span>
+            <span class="nav-label">{{ item.label }}</span>
+            <span class="nav-chip">เร็ว ๆ นี้</span>
+          </span>
+        </li>
+      </ul>
+    </div>
+
+    <ul class="nav-list nav-list-logout">
       <li class="nav-item nav-item-logout">
         <button
           type="button"
@@ -97,6 +123,33 @@ async function logout() {
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+.nav-section + .nav-section {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #eef1ef;
+}
+
+.nav-section-label {
+  display: block;
+  padding: 0 12px 4px;
+  color: #6b7f79;
+  font-family: 'Sarabun', sans-serif;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.nav-list-logout {
+  margin-top: auto;
+  padding-top: 8px;
+}
+
+.nav-chip-badge {
+  background: #fef3c7;
+  color: #7c2d12;
 }
 
 .nav-item {

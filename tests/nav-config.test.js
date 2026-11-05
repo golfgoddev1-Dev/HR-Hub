@@ -3,7 +3,12 @@
 // the entrance flag is pinned as a one-shot.
 import { describe, expect, it, vi } from 'vitest'
 
-import { hrNavItems, leaveNavItems } from '../src/lib/nav-config.js'
+import {
+  NAV_SECTION_LABELS,
+  hrNavItems,
+  leaveNavItems,
+  navSections,
+} from '../src/lib/nav-config.js'
 import { approvalsMenuItem } from '../src/lib/leave-nav-items.js'
 
 const LEAVE_TABLE = [
@@ -83,6 +88,77 @@ describe('approvals entry in the shared menu', () => {
       badge: 3,
     })
     expect(approvalsMenuItem({ isApprover: true, pendingCount: 0 }).badge).toBe(0)
+  })
+})
+
+describe('navSections', () => {
+  it('orders the groups my work, approver, then the role section', () => {
+    const sections = navSections({ role: 'hr', isApprover: true, pendingCount: 2 })
+
+    expect(sections.map((section) => section.id)).toEqual(['mine', 'approver', 'hr'])
+    expect(sections.map((section) => section.label)).toEqual([
+      NAV_SECTION_LABELS.mine,
+      NAV_SECTION_LABELS.approver,
+      NAV_SECTION_LABELS.hr,
+    ])
+    expect(NAV_SECTION_LABELS).toMatchObject({
+      mine: 'งานของฉัน',
+      approver: 'งานหัวหน้า',
+      meeting: 'งานประชุม',
+      hr: 'งาน HR',
+      admin: 'ผู้ดูแลระบบ',
+    })
+  })
+
+  it('gives hr, meeting and system_admin the four self items', () => {
+    for (const role of ['hr', 'meeting_controller', 'system_admin']) {
+      const mine = navSections({ role }).find((section) => section.id === 'mine')
+      expect(mine.items.map((item) => item.to), role).toEqual([
+        '/leave',
+        '/leave/new',
+        '/profile',
+        '/change-pin',
+      ])
+    }
+  })
+
+  it('keeps the employee menu exactly as before, calendar included', () => {
+    const mine = navSections({ role: 'employee' }).find((section) => section.id === 'mine')
+    expect(mine.items.map((item) => item.to)).toEqual([
+      '/leave',
+      '/leave/new',
+      '/leave/calendar',
+      '/profile',
+      '/change-pin',
+    ])
+  })
+
+  it('hides a section with nothing to show', () => {
+    expect(navSections({ role: 'employee' }).map((section) => section.id)).toEqual(['mine'])
+    expect(navSections({ role: 'meeting_controller' }).map((section) => section.id)).toEqual([
+      'mine',
+      'meeting',
+    ])
+    expect(navSections({ role: 'system_admin' }).map((section) => section.id)).toEqual([
+      'mine',
+      'admin',
+    ])
+  })
+
+  it('shows the approvals badge only for an approver, and never on another item', () => {
+    expect(navSections({ role: 'employee' }).some((section) => section.id === 'approver')).toBe(
+      false
+    )
+
+    const sections = navSections({ role: 'meeting_controller', isApprover: true, pendingCount: 4 })
+    const approver = sections.find((section) => section.id === 'approver')
+    expect(approver.items).toHaveLength(1)
+    expect(approver.items[0]).toMatchObject({ to: '/leave/approvals', badge: 4 })
+
+    for (const section of sections) {
+      if (section.id === 'approver') continue
+      expect(section.items.every((item) => item.badge === undefined)).toBe(true)
+    }
   })
 })
 

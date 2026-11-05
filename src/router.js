@@ -167,7 +167,7 @@ router.beforeEach(async (to) => {
     return homePathByRole[session.role] ?? '/login'
   }
 
-  const allowed = canOpenPath(session.role, to.path)
+  const allowed = canOpenPath(session.role, to.path, session)
 
   const redirectTo =
     typeof session.redirectTo === 'string' && session.redirectTo.startsWith('/')

@@ -24,6 +24,7 @@ import {
   requiresSystemAdminConfirm,
   searchResultRows,
 } from '../src/lib/admin-permissions.js'
+import { adminNavItems } from '../src/lib/nav-config.js'
 import { canOpenPath } from '../src/lib/route-access.js'
 
 const NAV = readFileSync(new URL('../src/components/AdminNav.vue', import.meta.url), 'utf8')
@@ -57,13 +58,18 @@ describe('route access', () => {
 
 describe('admin menu', () => {
   it('has a real link named สิทธิ์ผู้ใช้', () => {
-    expect(NAV).toContain('สิทธิ์ผู้ใช้')
-    expect(NAV).toContain('to="/admin/permissions"')
+    const permissions = adminNavItems().find((item) => item.to === '/admin/permissions')
+    expect(permissions.label).toBe('สิทธิ์ผู้ใช้')
+    // The nav renders it from the shared config, one link per item.
+    expect(NAV).toContain('v-for="item in section.items"')
+    expect(NAV).toContain(':to="item.to"')
   })
 
   it('draws the new icon with a material symbol span, not v-icon', () => {
-    const item = NAV.slice(NAV.indexOf('to="/admin/permissions"'))
-    expect(item).toContain('<span class="material-symbols-outlined nav-icon">')
+    const permissions = adminNavItems().find((item) => item.to === '/admin/permissions')
+    expect(permissions.icon).toBe('manage_accounts')
+    expect(NAV).toContain('<span class="material-symbols-outlined nav-icon">{{ item.icon }}</span>')
+    expect(NAV).not.toContain('<v-icon')
   })
 })
 

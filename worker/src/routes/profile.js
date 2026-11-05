@@ -20,8 +20,9 @@ import { requireRole } from "../require-role.js";
 
 const profile = new Hono();
 
-// LeaveNav is the employee menu, so this page belongs to the employee role.
-const ALLOWED_ROLES = ["employee"];
+// Every route here reads and writes the caller's own employee row (the id always
+// comes from the session), so the login role does not open or close it.
+const ALLOWED_ROLES = ["employee", "hr", "meeting_controller", "system_admin"];
 
 const EMPLOYEES_TABLE = "employees";
 const DEPARTMENTS_TABLE = "departments";

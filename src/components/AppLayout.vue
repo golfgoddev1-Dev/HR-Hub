@@ -7,8 +7,7 @@ import { useRoute } from 'vue-router'
 import AdminNav from './AdminNav.vue'
 import AppDock from './AppDock.vue'
 import { getSession } from '../api.js'
-import { approvalsMenuItem } from '../lib/leave-nav-items.js'
-import { hrNavItems, leaveNavItems } from '../lib/nav-config.js'
+import { navSections } from '../lib/nav-config.js'
 import { APPROVALS_TTL_MS, DATA_KEYS, loaders, loadShared } from '../lib/shared-data.js'
 
 const props = defineProps({
@@ -33,18 +32,21 @@ const dockNav = computed(() => {
 
 const isHrDock = computed(() => dockNav.value === 'hr')
 
-const items = computed(() => {
-  if (props.nav === 'admin') return []
-  if (isHrDock.value) return hrNavItems()
+// The menu follows the signed-in role, not the route group: an HR user on
+// /leave still sees both "งานของฉัน" and "งาน HR".
+const sessionRole = computed(() => {
+  if (props.nav === 'admin') return 'system_admin'
+  if (typeof session.value?.role === 'string') return session.value.role
+  return props.nav === 'hr' ? 'hr' : 'employee'
+})
 
-  const list = leaveNavItems()
-  const approvals = approvalsMenuItem({
+const sections = computed(() =>
+  navSections({
+    role: sessionRole.value,
     isApprover: isApprover.value,
     pendingCount: pendingCount.value,
   })
-  if (approvals) list.push(approvals)
-  return list
-})
+)
 
 const brand = computed(() =>
   isHrDock.value
@@ -77,13 +79,13 @@ onMounted(async () => {
 <template>
   <div class="app-layout">
     <div class="app-layout-inner">
-      <AdminNav v-if="nav === 'admin'" />
+      <AdminNav v-if="nav === 'admin'" :sections="sections" />
       <AppDock
         v-else
         :brand-icon="brand.icon"
         :brand-title="brand.title"
         :brand-subtitle="brand.subtitle"
-        :items="items"
+        :sections="sections"
         :show-brand-badge="brand.badge"
       />
       <RouterView />

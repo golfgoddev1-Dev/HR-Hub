@@ -43,6 +43,52 @@ describe('canOpenPath', () => {
     expect(canOpenPath(null, '/admin')).toBe(false)
     expect(canOpenPath('hr', null)).toBe(false)
   })
+
+  it('opens the four self pages for another role only with an employee record', () => {
+    for (const role of ['hr', 'meeting_controller', 'system_admin']) {
+      for (const path of ['/leave', '/leave/new', '/change-pin', '/profile']) {
+        const withEmployee = { role, hasEmployee: true }
+        expect(canOpenPath(role, path, withEmployee), `${role} ${path}`).toBe(true)
+        expect(canOpenPath(role, path, { role, hasEmployee: false }), `${role} ${path}`).toBe(
+          false
+        )
+        // No session handed in means no employee proof either.
+        expect(canOpenPath(role, path), `${role} ${path}`).toBe(false)
+      }
+    }
+  })
+
+  it('keeps the role-only pages closed even with an employee record', () => {
+    const meeting = { role: 'meeting_controller', hasEmployee: true }
+    expect(canOpenPath('meeting_controller', '/hr', meeting)).toBe(false)
+    expect(canOpenPath('meeting_controller', '/admin', meeting)).toBe(false)
+    expect(canOpenPath('meeting_controller', '/leave/calendar', meeting)).toBe(false)
+
+    const admin = { role: 'system_admin', hasEmployee: true }
+    expect(canOpenPath('system_admin', '/hr/leave', admin)).toBe(false)
+  })
+
+  it('opens the approvals queue from the approver flag, not the role', () => {
+    const approverMeeting = {
+      role: 'meeting_controller',
+      hasEmployee: true,
+      isApprover: true,
+    }
+    expect(canOpenPath('meeting_controller', '/leave/approvals', approverMeeting)).toBe(true)
+
+    const approverAdmin = { role: 'system_admin', hasEmployee: true, isApprover: true }
+    expect(canOpenPath('system_admin', '/leave/approvals', approverAdmin)).toBe(true)
+
+    const plainMeeting = { role: 'meeting_controller', hasEmployee: true }
+    expect(canOpenPath('meeting_controller', '/leave/approvals', plainMeeting)).toBe(false)
+  })
+
+  it('leaves the employee role exactly as it was', () => {
+    for (const path of ['/leave', '/leave/new', '/leave/approvals', '/leave/calendar', '/change-pin', '/profile']) {
+      expect(canOpenPath('employee', path), path).toBe(true)
+    }
+    expect(canOpenPath('employee', '/leave/approvals', { role: 'employee' })).toBe(true)
+  })
 })
 
 describe('homePathByRole', () => {

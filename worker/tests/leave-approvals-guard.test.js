@@ -305,6 +305,7 @@ test("the me signal carries no personal data", async (t) => {
   const body = JSON.parse(text);
 
   assert.deepEqual(Object.keys(body).sort(), [
+    "hasEmployee",
     "isApprover",
     "mustChangePin",
     "ok",

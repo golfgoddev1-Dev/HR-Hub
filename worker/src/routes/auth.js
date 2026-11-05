@@ -251,6 +251,9 @@ auth.get("/me", async (c) => {
       {
         ok: true,
         role: session.role,
+        // The session only resolves when the employee row exists and is active,
+        // so this flag comes from the read that already happened.
+        hasEmployee: true,
         redirectTo: mustChangePin ? CHANGE_PIN_PATH : session.redirectTo,
         mustChangePin,
         isApprover,

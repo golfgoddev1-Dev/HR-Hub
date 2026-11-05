@@ -553,6 +553,7 @@ test("me: a valid session returns role and redirectTo without employeeId", async
   assert.deepEqual(body, {
     ok: true,
     role: "employee",
+    hasEmployee: true,
     redirectTo: "/pending?to=%2Fleave",
     mustChangePin: false,
     isApprover: false,
