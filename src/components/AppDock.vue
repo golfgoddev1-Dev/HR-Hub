@@ -21,7 +21,8 @@ const rail = ref(null)
 const dockRoot = ref(null)
 const logoutButton = ref(null)
 const leaving = ref(false)
-const hasOverflow = ref(false)
+const canScrollLeft = ref(false)
+const canScrollRight = ref(false)
 const dot = ref({ x: 0, visible: false })
 // Vue owns the ripple element: it appears at the click point and is removed on
 // its animationend (or by the safety timer if the animation never fires).
@@ -66,7 +67,6 @@ function activeItem() {
 function measure() {
   const railEl = rail.value
   if (!railEl) return
-  hasOverflow.value = railEl.scrollWidth - railEl.clientWidth > 2
 
   const active = activeItem()
   if (!active) {
@@ -79,33 +79,48 @@ function measure() {
   }
 }
 
-/** Brings a newly opened item into the middle of the narrow, scrolling rail. */
-function revealActive() {
+/**
+ * Shows each edge fade only while that side of the rail has hidden items.
+ * Offsets live in the scroll content, so the indicator is measured again here.
+ */
+function updateEdges() {
   const railEl = rail.value
-  if (!railEl || railEl.scrollWidth - railEl.clientWidth <= 2) return
+  if (!railEl) return
+  canScrollLeft.value = railEl.scrollLeft > 2
+  canScrollRight.value = railEl.scrollWidth - railEl.clientWidth - railEl.scrollLeft > 2
+  measure()
+}
+
+const onRailScroll = () => updateEdges()
+
+/** Brings the active item into view inside the rail, never the page. */
+function revealActive() {
   const active = activeItem()
-  if (!active) return
-  railEl.scrollTo({
-    left: Math.max(0, active.offsetLeft - (railEl.clientWidth - active.offsetWidth) / 2),
+  if (!active || typeof active.scrollIntoView !== 'function') return
+  active.scrollIntoView({
+    inline: 'nearest',
+    block: 'nearest',
     behavior: prefersReducedMotion() ? 'auto' : 'smooth',
   })
 }
 
 onMounted(() => {
   nextTick(() => {
-    measure()
+    updateEdges()
     revealActive()
   })
-  window.addEventListener('resize', measure)
+  window.addEventListener('resize', updateEdges)
+  rail.value?.addEventListener('scroll', onRailScroll, { passive: true })
   if (typeof ResizeObserver !== 'undefined' && rail.value) {
-    observer = new ResizeObserver(() => measure())
+    observer = new ResizeObserver(() => updateEdges())
     observer.observe(rail.value)
   }
-  document.fonts?.ready?.then(measure).catch(() => {})
+  document.fonts?.ready?.then(updateEdges).catch(() => {})
 })
 
 onBeforeUnmount(() => {
-  window.removeEventListener('resize', measure)
+  window.removeEventListener('resize', updateEdges)
+  rail.value?.removeEventListener('scroll', onRailScroll)
   observer?.disconnect()
   observer = null
   clearTimeout(flashTimer)
@@ -117,7 +132,7 @@ watch(
   () => route.path,
   () =>
     nextTick(() => {
-      measure()
+      updateEdges()
       revealActive()
     })
 )
@@ -126,7 +141,7 @@ const itemCount = computed(() =>
   props.sections.reduce((total, section) => total + section.items.length, 0)
 )
 
-watch(itemCount, () => nextTick(measure))
+watch(itemCount, () => nextTick(updateEdges))
 
 /** A red ripple from the click point, sized to the button's larger side. */
 function spawnRipple(event) {
@@ -184,12 +199,8 @@ const logout = createLogoutFlow({
         <span v-if="showBrandBadge" class="dock-chip">HR</span>
       </div>
 
-      <nav
-        ref="rail"
-        class="dock-rail"
-        :class="{ 'is-scrollable': hasOverflow }"
-        :aria-label="brandTitle"
-      >
+      <div class="dock-scroll">
+        <nav ref="rail" class="dock-rail" :aria-label="brandTitle">
         <span class="dock-indicator" :style="indicatorStyle" aria-hidden="true"></span>
 
         <div v-for="section in sections" :key="section.id" class="dock-section">
@@ -213,32 +224,44 @@ const logout = createLogoutFlow({
             </RouterLink>
           </div>
         </div>
+        </nav>
 
-        <span class="dock-divider" aria-hidden="true"></span>
+        <span
+          class="dock-fade dock-fade-left"
+          :class="{ 'is-visible': canScrollLeft }"
+          aria-hidden="true"
+        ></span>
+        <span
+          class="dock-fade dock-fade-right"
+          :class="{ 'is-visible': canScrollRight }"
+          aria-hidden="true"
+        ></span>
+      </div>
 
-        <button
-          ref="logoutButton"
-          type="button"
-          class="dock-item dock-logout"
-          :class="{ 'is-leaving': leaving }"
-          :style="{ '--i': itemCount }"
-          :disabled="leaving"
-          :aria-busy="leaving ? 'true' : 'false'"
-          @click="logout"
-        >
-          <span
-            v-if="ripple"
-            class="logout-ripple"
-            :style="rippleStyle"
-            aria-hidden="true"
-            @animationend="ripple = null"
-          ></span>
-          <span class="dock-tile">
-            <span class="material-symbols-outlined">{{ leaving ? 'sync' : 'logout' }}</span>
-          </span>
-          <span class="dock-label">{{ leaving ? 'กำลังออก...' : 'ออกจากระบบ' }}</span>
-        </button>
-      </nav>
+      <span class="dock-divider" aria-hidden="true"></span>
+
+      <button
+        ref="logoutButton"
+        type="button"
+        class="dock-item dock-logout"
+        :class="{ 'is-leaving': leaving }"
+        :style="{ '--i': itemCount }"
+        :disabled="leaving"
+        :aria-busy="leaving ? 'true' : 'false'"
+        @click="logout"
+      >
+        <span
+          v-if="ripple"
+          class="logout-ripple"
+          :style="rippleStyle"
+          aria-hidden="true"
+          @animationend="ripple = null"
+        ></span>
+        <span class="dock-tile">
+          <span class="material-symbols-outlined">{{ leaving ? 'sync' : 'logout' }}</span>
+        </span>
+        <span class="dock-label">{{ leaving ? 'กำลังออก...' : 'ออกจากระบบ' }}</span>
+      </button>
     </div>
   </header>
 </template>
@@ -353,6 +376,13 @@ const logout = createLogoutFlow({
 }
 
 /* ---------- Rail: the soft inset tray the items sit in ---------- */
+/* Owns the clip and the fades, so the logout button can stay outside it. */
+.dock-scroll {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .dock-rail {
   position: relative;
   display: flex;
@@ -367,10 +397,14 @@ const logout = createLogoutFlow({
   box-shadow:
     inset 0 1px 2px rgba(16, 80, 78, 0.07),
     inset 0 -1px 0 rgba(255, 255, 255, 0.8);
+  width: 100%;
+  box-sizing: border-box;
   overflow-x: auto;
   overflow-y: hidden;
   overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
+  scroll-padding-inline: 8px;
   scroll-snap-type: x proximity;
 }
 
@@ -378,22 +412,32 @@ const logout = createLogoutFlow({
   display: none;
 }
 
-/* Fades the edge that has hidden items behind it. */
-.dock-rail.is-scrollable {
-  -webkit-mask-image: linear-gradient(
-    90deg,
-    transparent 0,
-    #000 16px,
-    #000 calc(100% - 16px),
-    transparent 100%
-  );
-  mask-image: linear-gradient(
-    90deg,
-    transparent 0,
-    #000 16px,
-    #000 calc(100% - 16px),
-    transparent 100%
-  );
+/* Each fade appears only while that side still has items out of view. */
+.dock-fade {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 2;
+  width: 26px;
+  border-radius: 18px 0 0 18px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease;
+}
+
+.dock-fade-left {
+  left: 0;
+  background: linear-gradient(90deg, rgba(247, 250, 249, 0.96) 12%, rgba(247, 250, 249, 0));
+}
+
+.dock-fade-right {
+  right: 0;
+  border-radius: 0 18px 18px 0;
+  background: linear-gradient(270deg, rgba(247, 250, 249, 0.96) 12%, rgba(247, 250, 249, 0));
+}
+
+.dock-fade.is-visible {
+  opacity: 1;
 }
 
 /* ---------- Items: icon tile above a wrapping Thai label ---------- */
@@ -518,6 +562,11 @@ const logout = createLogoutFlow({
     transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1),
     opacity 0.25s ease;
   pointer-events: none;
+}
+
+/* The logout control never joins the scroll area, so it can never be off-screen. */
+.dock-logout {
+  flex: 0 0 auto;
 }
 
 /* ---------- Badge: real pending count, absent at zero ---------- */
@@ -715,7 +764,7 @@ const logout = createLogoutFlow({
   gap: 1px;
 }
 
-/* ---------- Narrow: sections stack and wrap, never a sideways scroll ---------- */
+/* ---------- Narrow: the rail scrolls sideways; logout stays at the end ---------- */
 @media (max-width: 720px) {
   .dock {
     padding: 6px 8px;
@@ -724,7 +773,7 @@ const logout = createLogoutFlow({
 
   .dock-inner {
     gap: 6px;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
   }
 
   .dock-brand {
@@ -746,25 +795,27 @@ const logout = createLogoutFlow({
 
   .dock-rail {
     justify-content: flex-start;
-    flex-wrap: wrap;
-    overflow-x: hidden;
-    scroll-snap-type: none;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
   }
 
   .dock-section {
-    flex: 1 1 100%;
-    padding: 2px 0;
+    flex: 0 0 auto;
+    padding: 0 3px;
   }
 
   .dock-section + .dock-section {
-    padding-top: 4px;
-    padding-left: 0;
-    border-top: 1px solid rgba(16, 80, 78, 0.1);
-    border-left: 0;
+    padding-left: 7px;
+    border-left: 1px solid rgba(16, 80, 78, 0.12);
   }
 
   .dock-section-items {
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+  }
+
+  .dock-logout {
+    min-width: 54px;
   }
 }
 
