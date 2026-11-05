@@ -35,8 +35,9 @@ describe('AppDock', () => {
     expect(DOCK).toContain('offsetWidth')
     expect(DOCK).toContain(':style="indicatorStyle"')
     expect(DOCK).toContain('translateX(${dot.value.x}px)')
-    // No fixed pixel offset anywhere: the x must come from the measurement.
-    expect(DOCK).not.toMatch(/translateX\(\s*-?\d+px/)
+    // No fixed pixel offset in the indicator template literal: the x must come
+    // from the measurement (the 3px press nudge is styling, not the indicator).
+    expect(DOCK).not.toMatch(/`translateX\(\s*-?\d+px/)
   })
 
   it('renders the brand through props, including the optional HR chip', () => {
@@ -49,12 +50,27 @@ describe('AppDock', () => {
     expect(LAYOUT).toContain("title: 'ระบบใบลา'")
   })
 
-  it('logs out through the real endpoint before navigating', () => {
+  it('logs out through the real endpoint, then lets the flow navigate', () => {
     const post = DOCK.indexOf("fetch('/api/auth/logout'")
     const go = DOCK.indexOf("window.location.assign('/login')")
     expect(post).toBeGreaterThan(-1)
     expect(go).toBeGreaterThan(post)
-    expect(DOCK).not.toMatch(/กำลังออก|logging out/i)
+    // The click no longer navigates directly: the shared flow enforces the delay.
+    expect(DOCK).toContain('const logout = createLogoutFlow({')
+    expect(DOCK).toContain("navigate: () => window.location.assign('/login')")
+  })
+
+  it('shows the click ripple, the dock flash and the Thai pending label', () => {
+    expect(DOCK).toContain("import { createLogoutFlow, ripplePlacement } from '../lib/logout-flow.js'")
+    expect(DOCK).toContain('class="logout-ripple"')
+    expect(DOCK).toContain('@animationend="ripple = null"')
+    expect(DOCK).toContain("dockEl.classList.add('is-alerting')")
+    // Restarting the flash needs a forced reflow between remove and add.
+    expect(DOCK).toContain('void dockEl.offsetWidth')
+    expect(DOCK).toContain("{{ leaving ? 'sync' : 'logout' }}")
+    expect(DOCK).toContain('กำลังออก...')
+    expect(DOCK).toContain('.dock-logout.is-leaving .material-symbols-outlined')
+    expect(DOCK).toContain('@keyframes logout-ripple')
   })
 
   it('emits nothing: logout is built in', () => {

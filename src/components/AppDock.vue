@@ -5,6 +5,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { takeDockEntrance } from '../lib/dock-entrance.js'
+import { createLogoutFlow, ripplePlacement } from '../lib/logout-flow.js'
 
 const props = defineProps({
   brandIcon: { type: String, required: true },
@@ -16,9 +17,16 @@ const props = defineProps({
 
 const route = useRoute()
 const rail = ref(null)
+const dockRoot = ref(null)
+const logoutButton = ref(null)
 const leaving = ref(false)
 const hasOverflow = ref(false)
 const dot = ref({ x: 0, visible: false })
+// Vue owns the ripple element: it appears at the click point and is removed on
+// its animationend (or by the safety timer if the animation never fires).
+const ripple = ref(null)
+let flashTimer = null
+let rippleTimer = null
 
 // True only for the first dock mount in this page load; a later mount skips the
 // entrance so navigation never replays the slide-down or the item stagger.
@@ -32,6 +40,13 @@ let observer = null
 const indicatorStyle = computed(() => ({
   transform: `translateX(${dot.value.x}px)`,
   opacity: dot.value.visible ? '1' : '0',
+}))
+
+const rippleStyle = computed(() => ({
+  width: `${ripple.value.size}px`,
+  height: `${ripple.value.size}px`,
+  left: `${ripple.value.x}px`,
+  top: `${ripple.value.y}px`,
 }))
 
 function prefersReducedMotion() {
@@ -92,6 +107,8 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', measure)
   observer?.disconnect()
   observer = null
+  clearTimeout(flashTimer)
+  clearTimeout(rippleTimer)
 })
 
 // The dock stays mounted across pages, so the indicator moves with the route.
@@ -109,20 +126,50 @@ watch(
   () => nextTick(measure)
 )
 
-async function logout() {
-  if (leaving.value) return
-  leaving.value = true
-  try {
-    await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' })
-  } catch {
-    // ignore: navigation still happens
-  }
-  window.location.assign('/login')
+/** A red ripple from the click point, sized to the button's larger side. */
+function spawnRipple(event) {
+  if (!logoutButton.value) return
+  const rect = logoutButton.value.getBoundingClientRect()
+  // A keyboard activation reports 0,0, so it ripples from the button's centre.
+  const hasPoint = (event?.clientX ?? 0) !== 0 || (event?.clientY ?? 0) !== 0
+  const point = hasPoint ? { x: event.clientX, y: event.clientY } : null
+
+  ripple.value = ripplePlacement(rect, point)
+  clearTimeout(rippleTimer)
+  rippleTimer = setTimeout(() => {
+    ripple.value = null
+  }, 700)
 }
+
+/** Short red glow on the dock; the class is removed when the animation is over. */
+function flashDanger() {
+  const dockEl = dockRoot.value
+  if (!dockEl) return
+  dockEl.classList.remove('is-alerting')
+  // Without a reflow the browser collapses remove+add and nothing plays.
+  void dockEl.offsetWidth
+  dockEl.classList.add('is-alerting')
+  clearTimeout(flashTimer)
+  flashTimer = setTimeout(() => dockEl.classList.remove('is-alerting'), 900)
+}
+
+// Feedback, request and navigation run as one flow: the POST starts on click,
+// but navigation waits for the feedback (and is capped so it cannot hang).
+const logout = createLogoutFlow({
+  request: () =>
+    fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' }),
+  navigate: () => window.location.assign('/login'),
+  isReducedMotion: prefersReducedMotion,
+  onStart: () => {
+    leaving.value = true
+  },
+  onRipple: spawnRipple,
+  onFlash: flashDanger,
+})
 </script>
 
 <template>
-  <header class="dock" :class="{ 'is-entering': entering }" data-dock>
+  <header ref="dockRoot" class="dock" :class="{ 'is-entering': entering }" data-dock>
     <div class="dock-inner">
       <div class="dock-brand">
         <div class="dock-brand-tile">
@@ -160,6 +207,7 @@ async function logout() {
         <span class="dock-divider" aria-hidden="true"></span>
 
         <button
+          ref="logoutButton"
           type="button"
           class="dock-item dock-logout"
           :class="{ 'is-leaving': leaving }"
@@ -168,10 +216,17 @@ async function logout() {
           :aria-busy="leaving ? 'true' : 'false'"
           @click="logout"
         >
+          <span
+            v-if="ripple"
+            class="logout-ripple"
+            :style="rippleStyle"
+            aria-hidden="true"
+            @animationend="ripple = null"
+          ></span>
           <span class="dock-tile">
-            <span class="material-symbols-outlined">logout</span>
+            <span class="material-symbols-outlined">{{ leaving ? 'sync' : 'logout' }}</span>
           </span>
-          <span class="dock-label">ออกจากระบบ</span>
+          <span class="dock-label">{{ leaving ? 'กำลังออก...' : 'ออกจากระบบ' }}</span>
         </button>
       </nav>
     </div>
@@ -509,12 +564,57 @@ async function logout() {
 }
 
 .dock-logout:active {
-  transform: scale(0.94);
+  transform: scale(0.92);
 }
 
+/* The icon leans into the press; the ripple starts at the pointer. */
+.dock-logout:active .dock-tile {
+  transform: translateX(3px);
+}
+
+/* Pending: red tile, spinning sync icon, Thai loading label. */
 .dock-logout.is-leaving {
-  opacity: 0.7;
-  transform: scale(0.96);
+  opacity: 0.9;
+}
+
+.dock-logout.is-leaving .dock-tile {
+  border-color: #e11d48;
+  background: #e11d48;
+  color: #ffffff;
+}
+
+.dock-logout.is-leaving .material-symbols-outlined {
+  animation: logout-spin 0.8s linear infinite;
+}
+
+/* Click ripple: red radial gradient that expands past the button and fades. */
+.logout-ripple {
+  position: absolute;
+  z-index: 0;
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(
+    circle,
+    rgba(225, 29, 72, 0.55) 0%,
+    rgba(225, 29, 72, 0.3) 42%,
+    rgba(225, 29, 72, 0) 70%
+  );
+  transform: scale(0.2);
+  animation: logout-ripple 600ms ease-out forwards;
+}
+
+/* Dock danger flash, on a pseudo-element so it never fights the entrance. */
+.dock::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.dock.is-alerting::after {
+  animation: dock-danger 900ms ease-out;
 }
 
 /* ---------- Motion ---------- */
@@ -537,6 +637,40 @@ async function logout() {
   to {
     opacity: 1;
     transform: none;
+  }
+}
+
+@keyframes logout-ripple {
+  from {
+    transform: scale(0.2);
+    opacity: 0.9;
+  }
+  to {
+    transform: scale(3.5);
+    opacity: 0;
+  }
+}
+
+@keyframes logout-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes dock-danger {
+  0% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 rgba(225, 29, 72, 0.5);
+  }
+  40% {
+    opacity: 1;
+    box-shadow:
+      0 0 0 10px rgba(225, 29, 72, 0.26),
+      0 0 30px 4px rgba(225, 29, 72, 0.4);
+  }
+  100% {
+    opacity: 0;
+    box-shadow: 0 0 0 16px rgba(225, 29, 72, 0);
   }
 }
 
@@ -587,9 +721,20 @@ async function logout() {
   .dock-item:hover,
   .dock-item:active,
   .dock-logout:active,
+  .dock-logout:active .dock-tile,
   .dock-logout.is-leaving,
   .dock-brand:hover .dock-brand-tile {
     transform: none !important;
+  }
+
+  /* No ripple motion, no spinning icon, no dock flash in reduced motion. */
+  .logout-ripple {
+    display: none !important;
+  }
+
+  .dock-logout.is-leaving .material-symbols-outlined,
+  .dock.is-alerting::after {
+    animation: none !important;
   }
 
   .dock.is-entering .dock-item {
