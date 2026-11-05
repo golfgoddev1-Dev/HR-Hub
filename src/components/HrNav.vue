@@ -1,4 +1,7 @@
 <script setup>
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
+
 const navItems = [
   { label: 'หน้าหลัก', to: '/hr', icon: 'home' },
   { label: 'รายชื่อพนักงาน', to: '/hr/employees', icon: 'groups' },
@@ -13,7 +16,92 @@ const navItems = [
   { label: 'ตั้งค่าใบลา', to: '/hr/leave/settings', icon: 'settings' },
 ]
 
+const route = useRoute()
+const rail = ref(null)
+const leaving = ref(false)
+const hasOverflow = ref(false)
+const dot = ref({ x: 0, visible: false })
+
+// Width of the glowing dot under the active item; the rest comes from measuring.
+const DOT_WIDTH = 26
+let observer = null
+
+// The one indicator: its x comes from the active element, never from a constant.
+const indicatorStyle = computed(() => ({
+  transform: `translateX(${dot.value.x}px)`,
+  opacity: dot.value.visible ? '1' : '0',
+}))
+
+function prefersReducedMotion() {
+  return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
+}
+
+function activeItem() {
+  const railEl = rail.value
+  if (!railEl) return null
+  // aria-current="page" is the router's exact match; the active class alone can
+  // also sit on a parent route, so it is only the fallback.
+  return railEl.querySelector('[aria-current="page"]') ?? railEl.querySelector('.dock-item-active')
+}
+
+/** Centres the dot under whichever item the router marked active. */
+function measure() {
+  const railEl = rail.value
+  if (!railEl) return
+  hasOverflow.value = railEl.scrollWidth - railEl.clientWidth > 2
+
+  const active = activeItem()
+  if (!active) {
+    dot.value = { x: 0, visible: false }
+    return
+  }
+  dot.value = {
+    x: active.offsetLeft + (active.offsetWidth - DOT_WIDTH) / 2,
+    visible: true,
+  }
+}
+
+/** Brings a newly opened item into the middle of the narrow, scrolling rail. */
+function revealActive() {
+  const railEl = rail.value
+  if (!railEl || railEl.scrollWidth - railEl.clientWidth <= 2) return
+  const active = activeItem()
+  if (!active) return
+  railEl.scrollTo({
+    left: Math.max(0, active.offsetLeft - (railEl.clientWidth - active.offsetWidth) / 2),
+    behavior: prefersReducedMotion() ? 'auto' : 'smooth',
+  })
+}
+
+onMounted(async () => {
+  await nextTick()
+  measure()
+  window.addEventListener('resize', measure)
+  if (typeof ResizeObserver !== 'undefined' && rail.value) {
+    observer = new ResizeObserver(() => measure())
+    observer.observe(rail.value)
+  }
+  document.fonts?.ready?.then(measure).catch(() => {})
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', measure)
+  observer?.disconnect()
+  observer = null
+})
+
+watch(
+  () => route.path,
+  () =>
+    nextTick(() => {
+      measure()
+      revealActive()
+    })
+)
+
 async function logout() {
+  if (leaving.value) return
+  leaving.value = true
   try {
     await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' })
   } catch {
@@ -24,43 +112,53 @@ async function logout() {
 </script>
 
 <template>
-  <header class="hr-nav-wrapper">
-    <div class="nav-inner">
-      <!-- Brand Segment with Gradient Icon & Badge -->
-      <div class="nav-brand">
-        <div class="nav-brand-badge-icon">
-          <span class="material-symbols-outlined brand-icon">groups</span>
+  <header class="dock">
+    <div class="dock-inner">
+      <div class="dock-brand">
+        <div class="dock-brand-tile">
+          <span class="material-symbols-outlined">groups</span>
         </div>
-        <div class="nav-title-box">
-          <div class="nav-title-row">
-            <span class="nav-title">ระบบบริการงานบุคคลและสวัสดิการพนักงาน</span>
-            <span class="nav-badge">HR</span>
-          </div>
-          <span class="nav-subtitle">HR Management & Welfare Portal</span>
-        </div>
+        <span class="dock-title">ระบบบริการงานบุคคลและสวัสดิการพนักงาน</span>
+        <span class="dock-chip">HR</span>
       </div>
 
-      <!-- Navigation Links -->
-      <nav class="nav-links">
+      <nav
+        ref="rail"
+        class="dock-rail"
+        :class="{ 'is-scrollable': hasOverflow }"
+        aria-label="เมนูผู้ดูแลระบบบุคคล"
+      >
+        <span class="dock-indicator" :style="indicatorStyle" aria-hidden="true"></span>
+
         <RouterLink
-          v-for="item in navItems"
+          v-for="(item, index) in navItems"
           :key="item.to"
           :to="item.to"
-          class="nav-link"
-          active-class="nav-link-active"
+          class="dock-item"
+          active-class="dock-item-active"
+          :style="{ '--i': index }"
         >
-          <span class="material-symbols-outlined link-icon">{{ item.icon }}</span>
-          <span>{{ item.label }}</span>
-          <!-- Active Glow Underline Indicator -->
-          <span class="active-underline" />
+          <span class="dock-tile">
+            <span class="material-symbols-outlined">{{ item.icon }}</span>
+          </span>
+          <span class="dock-label">{{ item.label }}</span>
         </RouterLink>
 
-        <div class="nav-divider" />
+        <span class="dock-divider" aria-hidden="true"></span>
 
-        <!-- Logout Button with Soft Red Accent -->
-        <button type="button" class="nav-link nav-logout" @click="logout">
-          <span class="material-symbols-outlined link-icon-sm">logout</span>
-          <span>ออกจากระบบ</span>
+        <button
+          type="button"
+          class="dock-item dock-logout"
+          :class="{ 'is-leaving': leaving }"
+          :style="{ '--i': navItems.length }"
+          :disabled="leaving"
+          :aria-busy="leaving ? 'true' : 'false'"
+          @click="logout"
+        >
+          <span class="dock-tile">
+            <span class="material-symbols-outlined">logout</span>
+          </span>
+          <span class="dock-label">ออกจากระบบ</span>
         </button>
       </nav>
     </div>
@@ -85,190 +183,368 @@ async function logout() {
   font-feature-settings: 'liga';
 }
 
-.brand-icon {
-  font-size: 22px;
+/* ---------- Dock shell: one glass card, 24px radius, inner highlight ---------- */
+.dock {
+  position: relative;
+  z-index: 40;
+  padding: 8px 10px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  box-shadow:
+    0 18px 40px -24px rgba(16, 80, 78, 0.45),
+    0 2px 8px rgba(16, 80, 78, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  animation: dock-enter 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
 
-.link-icon {
-  font-size: 18px;
-}
-
-.link-icon-sm {
-  font-size: 16px;
-}
-
-/* Glassmorphism & Modern Header Container */
-.hr-nav-wrapper {
-  background: rgba(255, 255, 255, 0.9);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border-radius: 16px;
-  border: 1px solid rgba(223, 231, 229, 0.8);
-  box-shadow: 0 4px 20px rgba(18, 52, 59, 0.05);
-}
-
-.nav-inner {
-  padding: 12px 20px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.nav-brand {
+.dock-inner {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   min-width: 0;
 }
 
-.nav-brand-badge-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, #10504e 0%, #28807d 100%);
-  color: #85f8c4;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 4px 12px rgba(16, 80, 78, 0.2);
-  transition: transform 0.25s ease;
-  flex-shrink: 0;
-}
-
-.nav-brand-badge-icon:hover {
-  transform: scale(1.05);
-}
-
-.nav-title-box {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.nav-title-row {
+/* ---------- Brand: existing icon and Thai name ---------- */
+.dock-brand {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex: 0 0 auto;
+  min-width: 0;
+  padding: 0 10px 0 2px;
+  border-right: 1px solid rgba(16, 80, 78, 0.1);
 }
 
-.nav-title {
-  font-size: 15px;
+.dock-brand-tile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  border-radius: 13px;
+  background: linear-gradient(135deg, #10504e 0%, #176562 100%);
+  color: #85f8c4;
+  box-shadow:
+    0 8px 18px -8px rgba(16, 80, 78, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.dock-brand:hover .dock-brand-tile {
+  transform: translateY(-2px) scale(1.05);
+}
+
+.dock-brand-tile .material-symbols-outlined {
+  font-size: 22px;
+}
+
+.dock-title {
+  max-width: 110px;
+  font-size: 12.5px;
   font-weight: 700;
-  color: #12343b;
+  line-height: 1.25;
   letter-spacing: -0.01em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  color: #12343b;
 }
 
-.nav-badge {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+.dock-chip {
+  flex: 0 0 auto;
   padding: 2px 6px;
   border-radius: 6px;
   background: #e7f2f0;
   color: #10504e;
-  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
 }
 
-.nav-subtitle {
-  font-size: 11px;
-  font-weight: 500;
-  color: #5c7176;
-}
-
-.nav-links {
+/* ---------- Rail: the soft inset tray the items sit in ---------- */
+.dock-rail {
+  position: relative;
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
+  align-items: stretch;
+  justify-content: safe center;
+  gap: 1px;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 8px 4px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(16, 80, 78, 0.055), rgba(16, 80, 78, 0.025));
+  box-shadow:
+    inset 0 1px 2px rgba(16, 80, 78, 0.07),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.8);
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  scroll-snap-type: x proximity;
 }
 
-.nav-link {
+.dock-rail::-webkit-scrollbar {
+  display: none;
+}
+
+/* Fades the edge that has hidden items behind it. */
+.dock-rail.is-scrollable {
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    transparent 0,
+    #000 16px,
+    #000 calc(100% - 16px),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    90deg,
+    transparent 0,
+    #000 16px,
+    #000 calc(100% - 16px),
+    transparent 100%
+  );
+}
+
+/* ---------- Items: icon tile above a wrapping Thai label ---------- */
+.dock-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 3px;
+  flex: 0 0 auto;
+  min-width: 50px;
+  min-height: 44px;
+  max-width: 88px;
+  padding: 4px 5px 9px;
+  border: 0;
+  border-radius: 14px;
+  background: transparent;
+  color: #48615e;
+  font-family: inherit;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+  scroll-snap-align: center;
+  transition:
+    transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1),
+    background-color 0.2s ease,
+    color 0.2s ease;
+  animation: dock-item-in 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
+  animation-delay: calc(var(--i, 0) * 40ms + 120ms);
+}
+
+.dock-item:hover {
+  transform: translateY(-4px) scale(1.04);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.dock-item:active {
+  transform: translateY(-1px) scale(0.97);
+}
+
+.dock-item:focus-visible {
+  outline: 3px solid #0f6f63;
+  outline-offset: 2px;
+}
+
+.dock-tile {
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-radius: 10px;
-  color: #5c7176;
-  font-size: 13px;
-  font-weight: 500; /* ล็อกน้ำหนักฟอนต์ให้เท่ากันตลอดเพื่อป้องกันข้อความดีด/กระพริบ */
-  text-decoration: none;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  font-family: inherit;
-  transition: background-color 0.2s ease, color 0.2s ease;
-  backface-visibility: hidden;
-  -webkit-font-smoothing: antialiased;
-  white-space: nowrap;
-}
-
-.nav-link:hover {
-  background: rgba(231, 242, 240, 0.8);
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 11px;
+  border: 1px solid rgba(16, 80, 78, 0.09);
+  background: rgba(255, 255, 255, 0.9);
   color: #10504e;
+  box-shadow: 0 1px 2px rgba(16, 80, 78, 0.05);
+  transition:
+    background-color 0.22s ease,
+    border-color 0.22s ease,
+    color 0.22s ease,
+    box-shadow 0.28s ease;
 }
 
-.nav-link-active {
-  color: #10504e !important;
-  background: rgba(231, 242, 240, 0.8);
-  font-weight: 500; /* คงค่า 500 ไว้เท่าเดิม ไม่ให้ขนาดตัวอักษรเปลี่ยนไปมาตอนสลับหน้า */
+.dock-tile .material-symbols-outlined {
+  font-size: 20px;
 }
 
-/* Mint Glow Underline Indicator */
-.active-underline {
+.dock-item:hover .dock-tile {
+  border-color: #10504e;
+  background: #10504e;
+  color: #85f8c4;
+  box-shadow: 0 8px 18px -8px rgba(16, 80, 78, 0.7);
+}
+
+.dock-label {
+  max-width: 62px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+  color: inherit;
+}
+
+/* Active: filled gradient tile, white icon, bold label, glowing dot below. */
+.dock-item-active {
+  color: #0f3d3e;
+}
+
+.dock-item-active .dock-tile {
+  border-color: transparent;
+  background: linear-gradient(135deg, #10504e 0%, #1bb193 100%);
+  color: #ffffff;
+  box-shadow:
+    0 8px 18px -8px rgba(27, 177, 147, 0.85),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+
+.dock-item-active .dock-label {
+  font-weight: 700;
+}
+
+.dock-indicator {
   position: absolute;
-  bottom: 0;
-  left: 10px;
-  right: 10px;
-  height: 2.5px;
-  background: #85f8c4;
+  left: 0;
+  bottom: 2px;
+  width: 26px;
+  height: 4px;
   border-radius: 999px;
-  box-shadow: 0 0 8px #85f8c4;
+  background: linear-gradient(90deg, #10504e, #85f8c4);
+  box-shadow:
+    0 0 10px rgba(27, 177, 147, 0.8),
+    0 0 18px rgba(133, 248, 196, 0.5);
   opacity: 0;
-  transform: scaleX(0.4);
-  transition: transform 0.25s ease, opacity 0.25s ease;
+  transform: translateX(0);
+  transition:
+    transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1),
+    opacity 0.25s ease;
   pointer-events: none;
 }
 
-.nav-link-active .active-underline {
-  opacity: 1;
-  transform: scaleX(1);
-}
-
-.nav-divider {
+.dock-divider {
+  flex: 0 0 auto;
   width: 1px;
-  height: 20px;
-  background: #dfe7e5;
-  margin: 0 4px;
+  margin: 6px 4px;
+  align-self: stretch;
+  border-radius: 999px;
+  background: linear-gradient(180deg, transparent, rgba(16, 80, 78, 0.18), transparent);
 }
 
-/* Logout Button Styling */
-.nav-logout {
-  color: #be123c !important;
+/* ---------- Logout: red accent, fills red on hover, pressed on click ---------- */
+.dock-logout {
+  color: #be123c;
+}
+
+.dock-logout .dock-tile {
+  border-color: rgba(190, 18, 60, 0.14);
   background: #fff1f2;
-  font-weight: 600;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  color: #be123c;
 }
 
-.nav-logout:hover {
-  background: #ffe4e6 !important;
-  color: #9f1239 !important;
+.dock-logout:hover {
+  background: rgba(255, 241, 242, 0.9);
 }
 
-@media (max-width: 960px) {
-  .nav-subtitle {
-    display: none;
+.dock-logout:hover .dock-tile {
+  border-color: #e11d48;
+  background: #e11d48;
+  color: #ffffff;
+  box-shadow: 0 8px 18px -8px rgba(225, 29, 72, 0.75);
+}
+
+.dock-logout:active {
+  transform: scale(0.94);
+}
+
+.dock-logout.is-leaving {
+  opacity: 0.7;
+  transform: scale(0.96);
+}
+
+/* ---------- Motion ---------- */
+@keyframes dock-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-16px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
   }
 }
 
+@keyframes dock-item-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ---------- Narrow: one scrolling row of items, no page-level scroll ---------- */
 @media (max-width: 720px) {
-  .nav-title {
+  .dock {
+    padding: 6px 8px;
+    border-radius: 20px;
+  }
+
+  .dock-inner {
+    gap: 6px;
+  }
+
+  .dock-brand {
+    padding-right: 0;
+    border-right: 0;
+  }
+
+  .dock-title,
+  .dock-chip {
     display: none;
+  }
+
+  .dock-brand-tile {
+    width: 36px;
+    height: 36px;
+    border-radius: 11px;
+  }
+
+  .dock-rail {
+    justify-content: flex-start;
+    scroll-snap-type: x mandatory;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dock,
+  .dock-item,
+  .dock-indicator,
+  .dock-brand-tile {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .dock-item:hover,
+  .dock-item:active,
+  .dock-logout:active,
+  .dock-logout.is-leaving,
+  .dock-brand:hover .dock-brand-tile {
+    transform: none !important;
+  }
+
+  .dock-item {
+    animation-delay: 0s !important;
+  }
+
+  .dock-indicator {
+    transition: opacity 0.2s ease !important;
   }
 }
 </style>

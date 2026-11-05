@@ -41,10 +41,27 @@ describe('global stylesheet', () => {
   })
 })
 
-describe.each(Object.entries(NAVS))('%s', (_name, source) => {
+const DOCKS = {
+  LeaveNav: NAVS.LeaveNav,
+  HrNav: NAVS.HrNav,
+}
+
+describe.each(Object.entries(DOCKS))('%s dock', (_name, source) => {
+  it('keeps the rail item box free of font-weight changes', () => {
+    // The active state may emphasise its label, but the item box itself must not
+    // change weight: that is what used to push the following items sideways.
+    expect(blockOf(source, '.dock-item')).not.toContain('font-weight')
+  })
+
+  it('emphasises the active label through its own rule', () => {
+    expect(fontWeightOf(blockOf(source, '.dock-item-active .dock-label'))).toBe('700')
+  })
+})
+
+describe('AdminNav', () => {
   it('keeps the active link at the same font weight as an inactive one', () => {
-    const base = fontWeightOf(blockOf(source, '.nav-link'))
-    const active = fontWeightOf(blockOf(source, '.nav-link-active'))
+    const base = fontWeightOf(blockOf(NAVS.AdminNav, '.nav-link'))
+    const active = fontWeightOf(blockOf(NAVS.AdminNav, '.nav-link-active'))
 
     // No weight in either block is fine; a different one is the shift.
     if (active !== null && base !== null) {
