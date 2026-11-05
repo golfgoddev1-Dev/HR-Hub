@@ -127,13 +127,14 @@ describe('access and wiring', () => {
     expect(ROUTER).toContain('LeaveCalendarPage')
   })
 
-  it('appears in the employee/approver menu and the HR menu', () => {
-    for (const menu of [leaveNavItems(), hrNavItems()]) {
-      const item = menu.find((entry) => entry.to === '/leave/calendar')
-      expect(item).toBeDefined()
-      expect(item.label).toBe('ปฏิทินการลา')
-      expect(item.icon).toBe('calendar_month')
-    }
+  it('appears in งานของฉัน and no longer repeats in the HR section', () => {
+    const item = leaveNavItems().find((entry) => entry.to === '/leave/calendar')
+    expect(item).toBeDefined()
+    expect(item.label).toBe('ปฏิทินการลา')
+    expect(item.icon).toBe('calendar_month')
+
+    // HR reaches it through the shared "งานของฉัน" section only.
+    expect(hrNavItems().some((entry) => entry.to === '/leave/calendar')).toBe(false)
   })
 
   it('is content only: RoleShell supplies the nav for the signed-in role', () => {

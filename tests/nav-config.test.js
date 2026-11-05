@@ -26,7 +26,6 @@ const HR_TABLE = [
   ['จัดการข้อมูลพนักงาน', '/hr/employees/manage', 'edit'],
   ['จัดการรหัสผ่านพนักงาน', '/hr/employees/password', 'password'],
   ['ใบลาทั้งหมด', '/hr/leave', 'event_note'],
-  ['ปฏิทินการลา', '/leave/calendar', 'calendar_month'],
   ['คีย์ใบลาย้อนหลัง', '/hr/leave/backdated', 'edit_calendar'],
   ['วันหยุด', '/hr/leave/holidays', 'event_busy'],
   ['ผู้อนุมัติ', '/hr/leave/approvers', 'how_to_reg'],
@@ -52,20 +51,21 @@ describe('leaveNavItems', () => {
 })
 
 describe('hrNavItems', () => {
-  it('keeps the eleven HR items in order, with unchanged routes and icons', () => {
+  it('keeps the ten HR items in order, with unchanged routes and icons', () => {
     expect(table(hrNavItems())).toEqual(HR_TABLE)
   })
 
-  it('includes the shared leave calendar exactly once', () => {
-    const calendars = hrNavItems().filter((item) => item.to === '/leave/calendar')
-    expect(calendars).toHaveLength(1)
-    expect(calendars[0].label).toBe('ปฏิทินการลา')
+  it('does not repeat the leave calendar: it lives in งานของฉัน', () => {
+    expect(hrNavItems().some((item) => item.to === '/leave/calendar')).toBe(false)
+
+    const mine = navSections({ role: 'hr' }).find((section) => section.id === 'mine')
+    expect(mine.items.filter((item) => item.to === '/leave/calendar')).toHaveLength(1)
   })
 
   it('returns a fresh array', () => {
     const first = hrNavItems()
     first.length = 0
-    expect(hrNavItems()).toHaveLength(11)
+    expect(hrNavItems()).toHaveLength(10)
   })
 })
 
@@ -121,6 +121,14 @@ describe('navSections', () => {
         '/change-pin',
       ])
     }
+  })
+
+  it('shows /leave/calendar exactly once in the HR shell', () => {
+    const paths = navSections({ role: 'hr', isApprover: true, pendingCount: 1 }).flatMap(
+      (section) => section.items.map((item) => item.to)
+    )
+
+    expect(paths.filter((path) => path === '/leave/calendar')).toHaveLength(1)
   })
 
   it('hides a section with nothing to show', () => {
