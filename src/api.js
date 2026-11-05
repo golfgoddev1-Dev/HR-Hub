@@ -1,4 +1,4 @@
-import { getCached } from './lib/data-cache.js'
+import { clearAll, getCached } from './lib/data-cache.js'
 import { DATA_KEYS, SESSION_TTL_MS } from './lib/shared-data.js'
 
 // A 401 means "not signed in", not a value worth remembering: it is thrown so
@@ -21,6 +21,27 @@ async function loadSession() {
 export async function getSession() {
   try {
     return await getCached(DATA_KEYS.session, loadSession, { ttlMs: SESSION_TTL_MS })
+  } catch {
+    return null
+  }
+}
+
+// A forced session read that never uses the cache. Used when a page is restored
+// from the back/forward cache, where the normal cache could still hold the
+// signed-in value from before a logout in this or another tab.
+export async function verifySession() {
+  try {
+    const response = await fetch('/api/auth/me', {
+      method: 'GET',
+      credentials: 'same-origin',
+      cache: 'no-store',
+    })
+    if (response.status === 401) {
+      clearAll()
+      return null
+    }
+    if (!response.ok) return null
+    return response.json()
   } catch {
     return null
   }

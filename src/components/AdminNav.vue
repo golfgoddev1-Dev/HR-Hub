@@ -1,7 +1,7 @@
 <script setup>
 // Same shell as AppDock.vue. Only /admin exists today, so the
 // other two items are disabled labels: no to/href may point at a missing page.
-import { clearAll } from '../lib/data-cache.js'
+import { completeLogout } from '../lib/logout.js'
 defineProps({
   sections: { type: Array, required: true },
 })
@@ -12,9 +12,8 @@ async function logout() {
   } catch {
     // ignore: navigation still happens
   }
-  // Drop every cached read so the next account never sees this one's data.
-  clearAll()
-  window.location.assign('/login')
+  // Drop every cached read and the browser's copies, then replace this page.
+  await completeLogout()
 }
 </script>
 

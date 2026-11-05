@@ -60,6 +60,9 @@ export function serializeCookie(name, value, options = {}) {
     "Path=/",
     `Max-Age=${maxAge}`,
   ];
+  // A clearing cookie must also expire in the past: Max-Age=0 is not honoured
+  // by every client, and the pair makes the deletion unambiguous.
+  if (options.expires instanceof Date) parts.push(`Expires=${options.expires.toUTCString()}`);
   if (options.secure === true) parts.push("Secure");
   return parts.join("; ");
 }

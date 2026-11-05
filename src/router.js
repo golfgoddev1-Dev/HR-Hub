@@ -108,35 +108,13 @@ export const router = createRouter({
   ],
 })
 
-// One session lookup is shared for a short window so a redirect cycle can never
-// call /api/auth/me in a tight loop.
-const SESSION_CACHE_MS = 3000
-let cachedSession = null
-let cachedAt = 0
-let pendingSession = null
-
-async function loadSession() {
-  if (cachedSession && Date.now() - cachedAt < SESSION_CACHE_MS) return cachedSession
-  if (!pendingSession) {
-    pendingSession = getSession()
-      .then((session) => {
-        if (session) {
-          cachedSession = session
-          cachedAt = Date.now()
-        }
-        return session
-      })
-      .finally(() => {
-        pendingSession = null
-      })
-  }
-  return pendingSession
-}
-
 router.beforeEach(async (to) => {
   if (!to.meta.requiresAuth) return true
 
-  const session = await loadSession()
+  // The session comes from the shared cache, which login and logout both clear.
+  // There is no second, module-level copy that could outlive a logout: after
+  // clearAll() the next navigation asks the Worker again and gets a 401.
+  const session = await getSession()
   if (!session) return '/login'
 
   // A HR-issued PIN must be replaced before any other page is reachable. The

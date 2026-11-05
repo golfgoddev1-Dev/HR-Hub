@@ -1,12 +1,12 @@
 <script setup>
 import { onMounted, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { getSession, postLogout } from '../api.js'
+import { completeLogout } from '../lib/logout.js'
 import { navSections } from '../lib/nav-config.js'
 import { APPROVALS_TTL_MS, DATA_KEYS, loaders, loadShared } from '../lib/shared-data.js'
 
 const route = useRoute()
-const router = useRouter()
 const logoutBusy = ref(false)
 
 // The controller keeps its own sidebar, but the items and the "งานของฉัน" /
@@ -48,7 +48,8 @@ async function logout() {
     await postLogout()
   } finally {
     logoutBusy.value = false
-    router.replace('/login')
+    // A full replace, so the protected page is not kept in history.
+    await completeLogout()
   }
 }
 </script>

@@ -28,6 +28,15 @@ const app = new Hono();
 // Measure every API response (total handler time) before any route matches.
 app.use("*", addServerTiming);
 
+// Every API answer depends on the session cookie, so none of them may be kept by
+// the browser HTTP cache, a shared proxy or the back/forward cache. Routes may
+// still set a stricter or more specific value; this guarantee applies when they
+// forget, and it overrides the old reusable lookup values.
+app.use("*", async (c, next) => {
+  await next();
+  c.header("Cache-Control", "no-store");
+});
+
 app.route("/api/auth", auth);
 app.route("/api/register", register);
 app.route("/api/notifications", notifications);

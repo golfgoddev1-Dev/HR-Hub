@@ -4,8 +4,8 @@
 // layout, so both systems use one component and one animation timeline.
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { clearAll } from '../lib/data-cache.js'
 import { takeDockEntrance } from '../lib/dock-entrance.js'
+import { completeLogout } from '../lib/logout.js'
 import { createLogoutFlow, ripplePlacement } from '../lib/logout-flow.js'
 
 const props = defineProps({
@@ -160,11 +160,9 @@ function flashDanger() {
 const logout = createLogoutFlow({
   request: () =>
     fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' }),
-  navigate: () => {
-    // The session and every cached read go before the next account signs in.
-    clearAll()
-    window.location.assign('/login')
-  },
+  // The cache, web storage and Cache Storage go, then the protected page is
+  // replaced in history so Back cannot restore it.
+  navigate: () => completeLogout(),
   isReducedMotion: prefersReducedMotion,
   onStart: () => {
     leaving.value = true

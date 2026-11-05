@@ -147,20 +147,22 @@ function call(path, token) {
   return app.request(`https://fake.local${path}`, init, ENV);
 }
 
-function assertPrivateLookup(response, label) {
+function assertNoStoreLookup(response, label) {
   assert.equal(response.status, 200, label);
-  assert.equal(response.headers.get("Cache-Control"), "private, max-age=300", label);
+  assert.equal(response.headers.get("Cache-Control"), "no-store", label);
 }
 
-test("lookup GETs are private and reusable for five minutes", async (t) => {
+// Lookups depend on the session cookie, so they may not be reused by the browser
+// or a shared cache after a logout.
+test("lookup GETs are no-store as well", async (t) => {
   const fake = await createBackend();
   t.after(() => fake.restore());
 
-  assertPrivateLookup(await call("/api/profile/departments", EMPLOYEE_TOKEN), "departments");
-  assertPrivateLookup(await call("/api/profile/name-prefixes", EMPLOYEE_TOKEN), "prefixes");
-  assertPrivateLookup(await call("/api/leave/holidays", EMPLOYEE_TOKEN), "holidays");
-  assertPrivateLookup(await call("/api/leave/hr/holidays", HR_TOKEN), "hr holidays");
-  assertPrivateLookup(await call("/api/hr/directory/catalog", HR_TOKEN), "catalog");
+  assertNoStoreLookup(await call("/api/profile/departments", EMPLOYEE_TOKEN), "departments");
+  assertNoStoreLookup(await call("/api/profile/name-prefixes", EMPLOYEE_TOKEN), "prefixes");
+  assertNoStoreLookup(await call("/api/leave/holidays", EMPLOYEE_TOKEN), "holidays");
+  assertNoStoreLookup(await call("/api/leave/hr/holidays", HR_TOKEN), "hr holidays");
+  assertNoStoreLookup(await call("/api/hr/directory/catalog", HR_TOKEN), "catalog");
 });
 
 test("admin responses stay no-store and caller-specific reads are not cached", async (t) => {

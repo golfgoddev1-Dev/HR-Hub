@@ -88,7 +88,13 @@ function secureCookie(env) {
 }
 
 function clearSessionCookie(env) {
-  const options = { ...sessionCookieOptions({ secure: secureCookie(env) }), maxAge: 0 };
+  // Same Path, SameSite and Secure as the cookie was set with, Max-Age=0 and an
+  // expiry in the past.
+  const options = {
+    ...sessionCookieOptions({ secure: secureCookie(env) }),
+    maxAge: 0,
+    expires: new Date(0),
+  };
   return serializeCookie(sessionCookieName, "", options);
 }
 
@@ -269,6 +275,11 @@ auth.get("/me", async (c) => {
 auth.post("/logout", async (c) => {
   const env = c.env;
   c.header("Cache-Control", "no-store");
+  // Drop the HTTP cache, the cookie and every storage the origin owns. This is
+  // the server-side half of the logout; the client clears its own copies too.
+  // "executionContexts" is deliberately not sent: it destroys the running page
+  // and would cut off the navigation that follows the response.
+  c.header("Clear-Site-Data", '"cache", "cookies", "storage"');
 
   try {
     const token = parseCookies(c.req.header("Cookie"))[sessionCookieName];

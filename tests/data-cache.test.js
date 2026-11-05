@@ -222,12 +222,16 @@ describe('source checks', () => {
 
   it('the employee dock clears the cache before leaving for /login', () => {
     const dock = read('src/components/AppDock.vue')
-    expect(dock).toMatch(/clearAll\(\)\s*\n\s*window\.location\.assign\('\/login'\)/)
+    expect(dock).toContain("import { completeLogout } from '../lib/logout.js'")
+    expect(dock).toContain('navigate: () => completeLogout()')
+    expect(dock).not.toContain('window.location.assign')
   })
 
   it('the admin nav clears the cache before leaving for /login', () => {
     const nav = read('src/components/AdminNav.vue')
-    expect(nav).toMatch(/clearAll\(\)\s*\n\s*window\.location\.assign\('\/login'\)/)
+    expect(nav).toContain("import { completeLogout } from '../lib/logout.js'")
+    expect(nav).toContain('await completeLogout()')
+    expect(nav).not.toContain('window.location.assign')
   })
 
   it('a successful login starts from an empty cache', () => {
