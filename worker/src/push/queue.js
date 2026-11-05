@@ -116,6 +116,12 @@ export function planSendOutcome({ results, attempts, now }) {
   };
 }
 
+/** A queue timestamp must always be a valid ISO string, even with no usable time. */
+export function queueTimestamp(value, fallback = new Date()) {
+  const date = value instanceof Date ? value : new Date(value ?? fallback);
+  return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
+}
+
 /**
  * Adds one queue row. Returns { ok } or { ok: false, code }; callers that must
  * not fail (a leave submit) use enqueueNotificationSafely instead.
@@ -127,6 +133,10 @@ export async function enqueueNotification(
   const payload = buildNotificationPayload(kind, { requestId: leaveRequestId, status });
   if (!payload || !payloadFits(payload)) return { ok: false, code: "invalid_payload" };
 
+  // One value for both columns, so a null or missing `now` cannot reach the
+  // NOT NULL next_attempt_at column.
+  const queuedAt = queueTimestamp(now);
+
   const result = await db.insert(
     NOTIFICATION_QUEUE_TABLE,
     {
@@ -136,8 +146,8 @@ export async function enqueueNotification(
       payload,
       status: "pending",
       attempts: 0,
-      next_attempt_at: now.toISOString(),
-      created_at: now.toISOString(),
+      next_attempt_at: queuedAt,
+      created_at: queuedAt,
     },
     { returning: true, columns: "id" }
   );
@@ -361,7 +371,11 @@ export async function runNotificationQueue(env, now = new Date(), { ids = null }
         {
           status: outcome.status,
           attempts: outcome.attempts,
-          next_attempt_at: outcome.nextAttemptAt,
+          // Terminal rows (sent, cancelled, failed) have no retry time. The
+          // column is NOT NULL, and their status keeps them out of later
+          // passes, so the run time stands in for null without changing any
+          // pending row's backoff.
+          next_attempt_at: queueTimestamp(outcome.nextAttemptAt, now),
           sent_at: outcome.sentAt,
           last_error: outcome.error,
         },
