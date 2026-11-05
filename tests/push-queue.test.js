@@ -150,7 +150,7 @@ describe('enqueueNotification', () => {
     const db = {
       insert: async (table, row) => {
         rows.push({ table, row })
-        return { error: null }
+        return { data: { id: 'queue-1' }, error: null }
       },
     }
 
@@ -161,7 +161,8 @@ describe('enqueueNotification', () => {
       now: NOW,
     })
 
-    expect(result).toEqual({ ok: true })
+    // The id lets the route dispatch exactly this row right away.
+    expect(result).toEqual({ ok: true, id: 'queue-1' })
     expect(rows).toHaveLength(1)
     expect(rows[0].table).toBe('notification_queue')
     expect(rows[0].row.employee_id).toBe(EMPLOYEE_ID)

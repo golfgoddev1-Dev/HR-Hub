@@ -127,18 +127,41 @@ export async function enqueueNotification(
   const payload = buildNotificationPayload(kind, { requestId: leaveRequestId, status });
   if (!payload || !payloadFits(payload)) return { ok: false, code: "invalid_payload" };
 
-  const result = await db.insert(NOTIFICATION_QUEUE_TABLE, {
-    employee_id: employeeId,
-    leave_request_id: leaveRequestId,
-    kind,
-    payload,
-    status: "pending",
-    attempts: 0,
-    next_attempt_at: now.toISOString(),
-    created_at: now.toISOString(),
-  });
+  const result = await db.insert(
+    NOTIFICATION_QUEUE_TABLE,
+    {
+      employee_id: employeeId,
+      leave_request_id: leaveRequestId,
+      kind,
+      payload,
+      status: "pending",
+      attempts: 0,
+      next_attempt_at: now.toISOString(),
+      created_at: now.toISOString(),
+    },
+    { returning: true, columns: "id" }
+  );
   if (result?.error) return { ok: false, code: result.error.code };
-  return { ok: true };
+  return { ok: true, id: result.data?.id ?? null };
+}
+
+/**
+ * Sends the rows just queued without holding the response: the request's
+ * ExecutionContext runs the pass after the response is returned, while the
+ * cron trigger stays the retry net. Without a context (tests) it does nothing.
+ */
+export function dispatchQueuedNotifications(env, ctx, ids, now = new Date()) {
+  const onlyIds = Array.isArray(ids)
+    ? ids.filter((id) => typeof id === "string" && id.length > 0)
+    : [];
+  if (onlyIds.length === 0 || typeof ctx?.waitUntil !== "function") return false;
+
+  ctx.waitUntil(
+    runNotificationQueue(env, now, { ids: onlyIds }).catch((error) => {
+      console.error("[notification-dispatch-error]", { name: error?.name, code: error?.code });
+    })
+  );
+  return true;
 }
 
 /** Queueing must never break the leave action it belongs to. */
@@ -244,7 +267,7 @@ async function writeRunAudit(db, summary) {
  * One cron pass. Never throws: the summary is returned (and an audit row is
  * written when anything failed) so the scheduler only has to log it.
  */
-export async function runNotificationQueue(env, now = new Date()) {
+export async function runNotificationQueue(env, now = new Date(), { ids = null } = {}) {
   const summary = {
     selected: 0,
     recovered: 0,
@@ -280,12 +303,17 @@ export async function runNotificationQueue(env, now = new Date()) {
       summary.recovered = recovered.data.length;
     }
 
+    const filters = [
+      ["status", "eq", "pending"],
+      ["next_attempt_at", "lte", nowIso],
+    ];
+    // A request-scoped pass only looks at the rows it just queued; the cron
+    // pass (no ids) keeps draining the rest of the queue.
+    if (Array.isArray(ids) && ids.length > 0) filters.push(["id", "in", ids]);
+
     const rows = await db.select(NOTIFICATION_QUEUE_TABLE, {
       columns: "id,employee_id,leave_request_id,kind,payload,attempts,status",
-      filters: [
-        ["status", "eq", "pending"],
-        ["next_attempt_at", "lte", nowIso],
-      ],
+      filters,
       order: "next_attempt_at.asc",
       limit: NOTIFICATION_BATCH,
     });

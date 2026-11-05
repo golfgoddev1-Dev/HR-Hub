@@ -45,7 +45,7 @@ import {
   uploadCertificate,
 } from "../leave-storage.js";
 import { insertWithRequestCode } from "../leave-request-code.js";
-import { enqueueNotificationSafely } from "../push/queue.js";
+import { dispatchQueuedNotifications, enqueueNotificationSafely } from "../push/queue.js";
 import { NOTIFICATION_KINDS } from "../push/payload.js";
 import { CALENDAR_MAX_RANGE_DAYS, CALENDAR_MESSAGES } from "../leave-calendar.js";
 import { isDateString as isCalendarDate, spanDays as calendarSpanDays } from "../leave-rules.js";
@@ -144,6 +144,23 @@ function ensureOk(result) {
     throw error;
   }
   return result;
+}
+
+/**
+ * Sends the rows just queued after the response, through the request's
+ * ExecutionContext. No context (a test call) only leaves them to the cron.
+ */
+function dispatchQueued(c, queued, now) {
+  const ids = queued?.ok === true && typeof queued.id === "string" ? [queued.id] : [];
+  if (ids.length === 0) return false;
+
+  let ctx = null;
+  try {
+    ctx = c.executionCtx;
+  } catch {
+    ctx = null;
+  }
+  return dispatchQueuedNotifications(c.env, ctx, ids, now);
 }
 
 /** JSON object body, at most 8 KB, no other content type accepted. */
@@ -609,11 +626,13 @@ leave.post("/requests", async (c) => {
 
     // The approver gets a push. A queue failure is logged, never returned: the
     // leave itself is already saved and must not look broken.
-    await enqueueNotificationSafely(db, {
+    const queued = await enqueueNotificationSafely(db, {
       employeeId: approverId,
       leaveRequestId: inserted.data?.id ?? null,
       kind: NOTIFICATION_KINDS.SUBMITTED,
     });
+    // The response does not wait for the push; the cron retries a failure.
+    dispatchQueued(c, queued, now);
 
     return c.json(
       {
@@ -895,12 +914,13 @@ async function decide(c, status) {
       })
     );
 
-    await enqueueNotificationSafely(db, {
+    const queued = await enqueueNotificationSafely(db, {
       employeeId: request.employee_id,
       leaveRequestId: id,
       kind: NOTIFICATION_KINDS.DECIDED,
       status,
     });
+    dispatchQueued(c, queued, new Date(nowIso));
 
     return c.json({ ok: true, id, status, decidedAt: nowIso }, 200);
   } catch (error) {

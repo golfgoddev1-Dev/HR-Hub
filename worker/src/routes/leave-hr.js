@@ -42,7 +42,7 @@ import {
   readLeaveSettings,
 } from "../leave-settings.js";
 import { buildBackdatedRow } from "../leave-backdated.js";
-import { enqueueNotificationSafely } from "../push/queue.js";
+import { dispatchQueuedNotifications, enqueueNotificationSafely } from "../push/queue.js";
 import { NOTIFICATION_KINDS } from "../push/payload.js";
 import { MESSAGES, isDateString, isOtherType } from "../leave-rules.js";
 import { insertWithRequestCode } from "../leave-request-code.js";
@@ -158,6 +158,20 @@ function ensureOk(result) {
     throw error;
   }
   return result;
+}
+
+/** Sends the just-queued push after the response; cron retries a failure. */
+function dispatchQueued(c, queued, now) {
+  const ids = queued?.ok === true && typeof queued.id === "string" ? [queued.id] : [];
+  if (ids.length === 0) return false;
+
+  let ctx = null;
+  try {
+    ctx = c.executionCtx;
+  } catch {
+    ctx = null;
+  }
+  return dispatchQueuedNotifications(c.env, ctx, ids, now);
 }
 
 async function readStrictJson(c) {
@@ -674,11 +688,12 @@ leaveHr.post("/requests", async (c) => {
       },
     });
 
-    await enqueueNotificationSafely(db, {
+    const queued = await enqueueNotificationSafely(db, {
       employeeId: employee.id,
       leaveRequestId: inserted.data?.id ?? null,
       kind: NOTIFICATION_KINDS.BACKDATED,
     });
+    dispatchQueued(c, queued, now);
 
     return c.json(
       {
