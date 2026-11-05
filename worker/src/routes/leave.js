@@ -26,7 +26,7 @@ import {
   isDateString,
   isOtherType,
 } from "../leave-rules.js";
-import { activeEmployeeIds, findApproverId } from "../leave-approvers.js";
+import { activeEmployeeIds, findApproverId, isActiveApprover } from "../leave-approvers.js";
 import { normalizeOptionalFields } from "../leave-backdated.js";
 import { readLeaveSettings } from "../leave-settings.js";
 import { HOLIDAYS_UNAVAILABLE, readHolidays } from "../leave-holidays.js";
@@ -713,6 +713,13 @@ leave.get("/approvals", async (c) => {
   try {
     const db = c.get("leaveDb");
     const employee = c.get("leaveEmployee");
+
+    // Only an active approver has a queue. A non-approver, or an approver whose
+    // row was deactivated, is refused here: the menu is a convenience, this is
+    // the control.
+    if (!(await isActiveApprover(db, employee.id))) {
+      return c.json({ ok: false, message: MESSAGE.forbidden }, 403);
+    }
 
     const rows = await db.select(LEAVE_REQUESTS_TABLE, {
       columns:

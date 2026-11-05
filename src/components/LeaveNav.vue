@@ -1,12 +1,20 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import { getSession } from '../api.js'
+import { approvalsMenuItem } from '../lib/leave-nav-items.js'
 
-// The approvals tab appears only while this employee has pending requests, so a
-// normal employee never sees an approval menu. The page is still guarded on the
-// server: hiding a link is convenience, never access control.
+// The approvals tab belongs to every active approver, even with an empty queue.
+// /api/auth/me carries the read-only `isApprover` signal; the pending count only
+// decides the badge. The route itself still answers 403 to a non-approver, so
+// hiding the link is convenience, never access control.
+const isApprover = ref(false)
 const pendingCount = ref(0)
 
 onMounted(async () => {
+  const session = await getSession()
+  isApprover.value = session?.isApprover === true
+  if (!isApprover.value) return
+
   try {
     const response = await fetch('/api/leave/approvals', { credentials: 'same-origin' })
     const data = await response.json().catch(() => ({}))
@@ -22,13 +30,11 @@ const items = computed(() => {
     { label: 'ยื่นใบลา', to: '/leave/new', icon: 'edit_calendar' },
     { label: 'เปลี่ยน PIN', to: '/change-pin', icon: 'password' },
   ]
-  if (pendingCount.value > 0) {
-    list.push({
-      label: `รออนุมัติ (${pendingCount.value})`,
-      to: '/leave/approvals',
-      icon: 'fact_check',
-    })
-  }
+  const approvals = approvalsMenuItem({
+    isApprover: isApprover.value,
+    pendingCount: pendingCount.value,
+  })
+  if (approvals) list.push(approvals)
   return list
 })
 
@@ -68,6 +74,7 @@ async function logout() {
         >
           <span class="material-symbols-outlined link-icon">{{ item.icon }}</span>
           <span>{{ item.label }}</span>
+          <span v-if="item.badge > 0" class="nav-badge">{{ item.badge }}</span>
         </RouterLink>
 
         <button type="button" class="nav-link nav-logout" @click="logout">
@@ -103,6 +110,22 @@ async function logout() {
 
 .link-icon {
   font-size: 18px;
+}
+
+/* Pending approvals count, shown only while the queue is not empty. */
+.nav-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #10504e;
+  color: #85f8c4;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
 }
 
 /* 1. Header Surface & Premium Glassmorphism */

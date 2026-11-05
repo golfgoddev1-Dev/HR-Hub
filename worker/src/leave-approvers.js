@@ -178,3 +178,35 @@ export async function findApproverId(db, employee) {
   });
   return resolved ? resolved.approverId : null;
 }
+
+/**
+ * True when this employee is an active approver in either scope: listed as the
+ * approver of someone (employee scope), or listed for a department (department
+ * scope). Deactivation keeps the row but switches `is_active` off, so a
+ * deactivated approver is no longer an approver at all: no queue, no menu.
+ * One list read per scope, no rows from `leave_requests`.
+ */
+export async function isActiveApprover(db, employeeId) {
+  if (typeof employeeId !== "string" || employeeId.length === 0) return false;
+
+  const [personal, department] = await Promise.all([
+    db.select(EMPLOYEE_APPROVERS_TABLE, {
+      columns: "id",
+      filters: [
+        ["approver_id", "eq", employeeId],
+        ["is_active", "eq", true],
+      ],
+      single: true,
+    }),
+    db.select(DEPARTMENT_APPROVERS_TABLE, {
+      columns: "id",
+      filters: [
+        ["employee_id", "eq", employeeId],
+        ["is_active", "eq", true],
+      ],
+      single: true,
+    }),
+  ]);
+
+  return personal !== null || department !== null;
+}

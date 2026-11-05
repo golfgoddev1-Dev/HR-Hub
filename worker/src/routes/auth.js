@@ -23,6 +23,7 @@ import {
 // dashboard reason route both run it verbatim).
 import { verifyPinAttempt } from "../pin-verify.js";
 import { createDb } from "../db.js";
+import { isActiveApprover } from "../leave-approvers.js";
 
 const auth = new Hono();
 
@@ -236,12 +237,23 @@ auth.get("/me", async (c) => {
       mustChangePin = false;
     }
 
+    // Read-only signal for the leave menu: an active approver keeps the
+    // approvals entry even with an empty queue. A read error answers false, so
+    // the menu stays hidden; /api/leave/approvals still refuses on its own.
+    let isApprover = false;
+    try {
+      isApprover = await isActiveApprover(createDb(c.env), session.employeeId);
+    } catch {
+      isApprover = false;
+    }
+
     return c.json(
       {
         ok: true,
         role: session.role,
         redirectTo: mustChangePin ? CHANGE_PIN_PATH : session.redirectTo,
         mustChangePin,
+        isApprover,
       },
       200
     );

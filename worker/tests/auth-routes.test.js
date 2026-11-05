@@ -549,11 +549,13 @@ test("me: a valid session returns role and redirectTo without employeeId", async
   const res = await me(token);
   assert.equal(res.status, 200);
   const body = await res.json();
+  // `isApprover` is the read-only menu signal; this fake has no approver rows.
   assert.deepEqual(body, {
     ok: true,
     role: "employee",
     redirectTo: "/pending?to=%2Fleave",
     mustChangePin: false,
+    isApprover: false,
   });
   assert.equal("employeeId" in body, false);
 });
