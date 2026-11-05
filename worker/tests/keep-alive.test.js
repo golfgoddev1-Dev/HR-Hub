@@ -9,7 +9,6 @@ import worker from "../src/index.js";
 const ENV = {
   SUPABASE_URL: "https://fake-project.supabase.co",
   SUPABASE_SERVICE_ROLE_KEY: "fake-service-role-key",
-  AUTO_ABSENT_ENABLED: "true",
 };
 
 const NOW_ISO = "2026-01-05T05:30:00.000Z";

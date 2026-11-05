@@ -19,9 +19,6 @@ import worker from "../src/index.js";
 const ENV = {
   SUPABASE_URL: "https://fake-project.supabase.co",
   SUPABASE_SERVICE_ROLE_KEY: "fake-service-role-key",
-  // The every-minute trigger is shared with the push queue; auto-absent only
-  // runs when this cutover switch is on.
-  AUTO_ABSENT_ENABLED: "true",
 };
 
 // Monday 5 January 2026, 12:30 in Bangkok.
@@ -622,13 +619,17 @@ test("scheduled() runs auto-absent from event.scheduledTime", async (t) => {
   assert.equal(fake.state.auditLogs[0].entity_id, "s1");
 });
 
-test("scheduled() ignores an unknown cron string", async (t) => {
+test("scheduled() ignores every cron string auto-absent never used", async (t) => {
   const fake = createBackend({ sessions: [sessionRow("s1")], roster: [rosterRow("e1")] });
   t.after(() => fake.restore());
 
-  const { pending, ctx } = collector();
-  worker.scheduled({ cron: "5 5 * * *", scheduledTime: NOW_ISO }, ENV, ctx);
-  assert.equal(pending.length, 0);
+  // "*/5 * * * *" was the old push trigger; auto-absent only ever matched its
+  // own every-minute expression and must stay a no-op on anything else.
+  for (const cron of ["5 5 * * *", "*/5 * * * *"]) {
+    const { pending, ctx } = collector();
+    worker.scheduled({ cron, scheduledTime: NOW_ISO }, ENV, ctx);
+    assert.equal(pending.length, 0, cron);
+  }
   assert.equal(fake.state.calls.length, 0);
 });
 

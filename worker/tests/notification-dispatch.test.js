@@ -411,7 +411,8 @@ test("the every-minute cron trigger still processes due rows", async (t) => {
     { waitUntil: (promise) => waits.push(promise) }
   );
 
-  assert.equal(waits.length, 1);
-  await waits[0];
+  // Auto-absent and push both run on the shared every-minute expression.
+  assert.equal(waits.length, 2);
+  await Promise.all(waits);
   assert.equal(fake.state.notification_queue[0].status, "cancelled");
 });

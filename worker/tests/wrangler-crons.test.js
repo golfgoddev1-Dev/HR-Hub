@@ -8,10 +8,9 @@ import { CERT_CLEANUP_CRON } from "../src/leave-retention.js";
 import { NOTIFICATION_CRON } from "../src/push/queue.js";
 
 // The deployed trigger list is a cutover decision, not an implementation detail.
-// The every-minute expression now belongs to the push queue; auto-absent shares
-// it but is gated by AUTO_ABSENT_ENABLED until the Express job is off. Reading
-// the real file keeps an accidental edit from passing unnoticed, and the test
-// never touches the network or wrangler.
+// Auto-absent keeps its original every-minute expression, which now also carries
+// the push fallback. Reading the real file keeps an accidental edit from passing
+// unnoticed, and the test never touches the network or wrangler.
 const CONFIG_PATH = fileURLToPath(new URL("../wrangler.toml", import.meta.url));
 
 function cronsInConfig() {
@@ -39,12 +38,18 @@ test("wrangler.toml ships exactly the deployed triggers", () => {
   assert.deepEqual(cronsInConfig(), ["0 1,9,17 * * *", CERT_CLEANUP_CRON, NOTIFICATION_CRON]);
 });
 
-test("the every-minute trigger is deployed once, for the push queue", () => {
+test("the every-minute trigger is deployed once, for auto-absent and push", () => {
   assert.equal(AUTO_ABSENT_CRON, "* * * * *");
   const crons = cronsInConfig();
   assert.equal(crons.filter((cron) => cron === AUTO_ABSENT_CRON).length, 1);
-  // Auto-absent must not start with it: src/index.js requires its cutover
-  // switch, and wrangler.toml does not set AUTO_ABSENT_ENABLED.
+
+  // There is no environment switch: the handler runs auto-absent on the same
+  // every-minute tick that carries the push fallback.
+  const entry = readFileSync(
+    fileURLToPath(new URL("../src/index.js", import.meta.url)),
+    "utf8"
+  );
+  assert.equal(entry.includes("AUTO_ABSENT_ENABLED"), false);
 });
 
 test("the certificate cleanup runs on its own trigger, never on the keep-alive one", () => {
