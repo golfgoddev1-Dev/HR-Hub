@@ -9,6 +9,11 @@
   font-optical-sizing: auto;
 }
 
+/* Always reserve the scrollbar gutter: a page with a scrollbar and a page
+   without one then share the same content width, so fixed headers do not shift
+   sideways when navigating. This is global on purpose. */
+html { scrollbar-gutter: stable; }
+
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; min-height: 100vh; background: #f8f9ff; }
 button, .v-btn { font-family: 'Prompt', sans-serif; }

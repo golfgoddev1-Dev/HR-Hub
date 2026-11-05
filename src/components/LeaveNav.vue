@@ -298,7 +298,6 @@ async function logout() {
   background: #f0f7f6;
   border-color: #d1e5e2;
   color: #10504e;
-  font-weight: 600;
   box-shadow: 0 2px 8px rgba(16, 80, 78, 0.06);
 }
 
