@@ -146,8 +146,8 @@ describe('employee change-PIN menu', () => {
   })
 
   it('renders the employee menu on the change-PIN page', () => {
-    expect(CHANGE_PIN_PAGE).toContain("import LeaveNav from '../components/LeaveNav.vue'")
-    expect(CHANGE_PIN_PAGE).toContain('<LeaveNav />')
+    expect(CHANGE_PIN_PAGE).toContain("import LeaveLayout from '../components/LeaveLayout.vue'")
+    expect(CHANGE_PIN_PAGE).toContain('<LeaveLayout>')
   })
 
   it('is not offered to any other role', () => {

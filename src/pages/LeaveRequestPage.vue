@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
-import LeaveNav from '../components/LeaveNav.vue'
+import LeaveLayout from '../components/LeaveLayout.vue'
 import { formatThaiDate, formatThaiDateRange } from '../lib/thai-date.js'
 import { retentionNotice } from '../leave-certificate.js'
 // The same pure rules module the Worker stores with, so the live preview can
@@ -193,9 +193,7 @@ onMounted(load)
 </script>
 
 <template>
-  <div class="page">
-    <LeaveNav />
-
+  <LeaveLayout>
     <main class="content">
       <div class="head">
         <div>
@@ -377,14 +375,10 @@ onMounted(load)
         </button>
       </section>
     </main>
-  </div>
+  </LeaveLayout>
 </template>
 
 <style scoped>
-.page {
-  min-height: 100vh;
-  background: #f3f6f5;
-}
 
 .content {
   max-width: 720px;

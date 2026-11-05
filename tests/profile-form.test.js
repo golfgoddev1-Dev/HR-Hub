@@ -253,8 +253,8 @@ describe('page wiring', () => {
   })
 
   it('renders the leave menu and keeps the form on screen only', () => {
-    expect(PROFILE_PAGE).toContain("import LeaveNav from '../components/LeaveNav.vue'")
-    expect(PROFILE_PAGE).toContain('<LeaveNav />')
+    expect(PROFILE_PAGE).toContain("import LeaveLayout from '../components/LeaveLayout.vue'")
+    expect(PROFILE_PAGE).toContain('<LeaveLayout>')
     expect(PROFILE_PAGE).toContain('hasProfileChanges')
     expect(PROFILE_PAGE).toContain('onBeforeRouteLeave')
     expect(PROFILE_PAGE).not.toContain('localStorage')

@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import LeaveNav from '../components/LeaveNav.vue'
+import LeaveLayout from '../components/LeaveLayout.vue'
 import { formatThaiDate, formatThaiDateRange } from '../lib/thai-date.js'
 import { postJson } from '../api.js'
 import { CERTIFICATE_OPEN_LABEL, certificateStatus } from '../leave-certificate.js'
@@ -99,9 +99,7 @@ onMounted(load)
 </script>
 
 <template>
-  <div class="page">
-    <LeaveNav />
-
+  <LeaveLayout>
     <main class="content">
       <div class="head">
         <div>
@@ -207,14 +205,10 @@ onMounted(load)
         </section>
       </template>
     </main>
-  </div>
+  </LeaveLayout>
 </template>
 
 <style scoped>
-.page {
-  min-height: 100vh;
-  background: #f3f6f5;
-}
 
 .content {
   max-width: 960px;

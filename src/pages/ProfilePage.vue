@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
-import LeaveNav from '../components/LeaveNav.vue'
+import LeaveLayout from '../components/LeaveLayout.vue'
 import {
   DEPARTMENT_CHANGE_NOTE,
   departmentOptions,
@@ -202,9 +202,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="page">
-    <LeaveNav />
-
+  <LeaveLayout>
     <main class="content">
       <div class="head">
         <div>
@@ -353,7 +351,7 @@ onBeforeUnmount(() => {
         </div>
       </form>
     </main>
-  </div>
+  </LeaveLayout>
 </template>
 
 <style scoped>
@@ -374,12 +372,6 @@ onBeforeUnmount(() => {
   font-feature-settings: 'liga';
 }
 
-.page {
-  min-height: 100vh;
-  background: #f3f6f5;
-  padding: 16px;
-  box-sizing: border-box;
-}
 
 .content {
   max-width: 960px;
