@@ -41,6 +41,13 @@ const DEPARTMENTS = [
 
 const POSITIONS = [{ id: POSITION_ID, name: "เจ้าหน้าที่" }];
 
+const NAME_PREFIXES = [
+  { name: "นาย", is_active: true },
+  { name: "นาง", is_active: true },
+  { name: "นางสาว", is_active: true },
+  { name: "Mr.", is_active: false },
+];
+
 function jsonResponse(body, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -90,6 +97,7 @@ async function createBackend({ token = TOKEN, role = "employee", employeeOverrid
     employee_credentials: [],
     departments: DEPARTMENTS.map((row) => ({ ...row })),
     positions: POSITIONS.map((row) => ({ ...row })),
+    name_prefixes: NAME_PREFIXES.map((row) => ({ ...row })),
     audit_logs: [],
     hr_admins: role === "hr" ? [{ employee_id: EMPLOYEE_ID }] : [],
     meeting_admins: [],
@@ -411,4 +419,78 @@ test("another role and an anonymous caller are refused", async (t) => {
 
   const anonymous = await call("/api/profile/me", null);
   assert.equal(anonymous.status, 401);
+});
+
+test("GET /name-prefixes lists only active lookup values", async (t) => {
+  const fake = await createBackend();
+  t.after(() => fake.restore());
+
+  const response = await call("/api/profile/name-prefixes", TOKEN);
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.count, 3);
+  assert.deepEqual([...body.prefixes].sort(), ["นาง", "นางสาว", "นาย"].sort());
+  assert.equal(body.prefixes.includes("Mr."), false);
+});
+
+test("a prefix outside the active lookup is refused and writes nothing", async (t) => {
+  const fake = await createBackend();
+  t.after(() => fake.restore());
+
+  const unknown = await patch({ name_prefix: "ดร." });
+  assert.equal(unknown.status, 400);
+  assert.equal((await unknown.json()).errors.name_prefix, "ไม่พบคำนำหน้าที่เลือก");
+
+  // A row that exists but is switched off is not selectable either.
+  const inactive = await patch({ name_prefix: "Mr." });
+  assert.equal(inactive.status, 400);
+  assert.equal((await inactive.json()).errors.name_prefix, "ไม่พบคำนำหน้าที่เลือก");
+
+  const empty = await patch({ name_prefix: "  " });
+  assert.equal(empty.status, 400);
+  assert.equal((await empty.json()).errors.name_prefix, "กรุณาเลือกคำนำหน้า");
+
+  assert.deepEqual(writes(fake), []);
+  assert.deepEqual(auditRows(fake), []);
+});
+
+test("a valid prefix updates only name_prefix and writes profile_updated", async (t) => {
+  const fake = await createBackend();
+  t.after(() => fake.restore());
+
+  const response = await patch({ name_prefix: "นาง" });
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.changed, true);
+  assert.equal(body.profile.namePrefix, "นาง");
+
+  const employeeWrites = fake.calls.filter(
+    (entry) => entry.method === "PATCH" && entry.table === "employees"
+  );
+  assert.equal(employeeWrites.length, 1);
+  assert.deepEqual(JSON.parse(employeeWrites[0].body), { name_prefix: "นาง" });
+
+  const row = fake.state.employees[0];
+  assert.equal(row.name_prefix, "นาง");
+  assert.equal(row.full_name, EMPLOYEE.full_name);
+
+  const audit = auditRows(fake);
+  assert.equal(audit.length, 1);
+  assert.equal(audit[0].action, "profile_updated");
+  assert.equal(audit[0].detail, null);
+  assert.equal(JSON.stringify(audit[0]).includes("นาง"), false);
+});
+
+test("an employee with no position reports null and reads no position row", async (t) => {
+  const fake = await createBackend({ employeeOverrides: { position_id: null } });
+  t.after(() => fake.restore());
+
+  const response = await call("/api/profile/me", TOKEN);
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.profile.positionName, null);
+  assert.equal(fake.calls.some((entry) => entry.table === "positions"), false);
 });

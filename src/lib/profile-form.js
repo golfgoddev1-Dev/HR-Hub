@@ -16,6 +16,7 @@ export const PROFILE_MESSAGES = {
   emailInvalid: 'อีเมลไม่ถูกต้อง',
   emailTooLong: 'อีเมลยาวเกิน 254 ตัวอักษร',
   phoneInvalid: 'เบอร์มือถือไม่ถูกต้อง (ต้องเป็นตัวเลข 10 หลัก เริ่มด้วย 0)',
+  prefixInvalid: 'ไม่พบคำนำหน้าที่เลือก',
   departmentRequired: 'กรุณาเลือกแผนกที่ใช้งานอยู่',
   departmentInactive: 'แผนกปัจจุบันปิดใช้งาน กรุณาเลือกแผนกที่ใช้งานอยู่',
 }
@@ -63,9 +64,23 @@ export function isThaiMobile(value) {
   return MOBILE_PATTERN.test(mobileDigits(value))
 }
 
+/** Prefix dropdown values: the lookup names, trimmed, without duplicates. */
+export function prefixOptions(prefixes) {
+  const seen = new Set()
+  const options = []
+  for (const value of Array.isArray(prefixes) ? prefixes : []) {
+    const name = text(value).replace(/\s+/g, ' ').trim()
+    if (name.length === 0 || seen.has(name)) continue
+    seen.add(name)
+    options.push(name)
+  }
+  return options
+}
+
 export function profileToForm(profile) {
   const source = readProfile(profile)
   return {
+    namePrefix: source.namePrefix,
     fullName: source.fullName,
     email: source.email,
     phone: source.phone,
@@ -116,6 +131,9 @@ export function profilePatch(profile, form) {
   const values = form && typeof form === 'object' ? form : {}
   const patch = {}
 
+  const namePrefix = text(values.namePrefix).replace(/\s+/g, ' ').trim()
+  if (namePrefix !== current.namePrefix) patch.name_prefix = namePrefix
+
   const fullName = text(values.fullName).replace(/\s+/g, ' ').trim()
   if (fullName !== current.fullName) patch.full_name = fullName
 
@@ -146,10 +164,18 @@ export function hasProfileChanges(profile, form) {
  * block an email edit; an unchanged inactive department is an error, because
  * the Worker refuses to save it.
  */
-export function validateProfileForm(profile, form, departments = []) {
+export function validateProfileForm(profile, form, departments = [], prefixes = []) {
   const current = readProfile(profile)
   const values = form && typeof form === 'object' ? form : {}
   const errors = {}
+
+  // Empty is allowed: an employee without a prefix is not forced to add one,
+  // and an unchanged value is never sent. A typed value must be a lookup value.
+  const namePrefix = text(values.namePrefix).replace(/\s+/g, ' ').trim()
+  const availablePrefixes = prefixOptions(prefixes)
+  if (namePrefix.length > 0 && availablePrefixes.length > 0 && !availablePrefixes.includes(namePrefix)) {
+    errors.namePrefix = PROFILE_MESSAGES.prefixInvalid
+  }
 
   const fullName = text(values.fullName).replace(/\s+/g, ' ').trim()
   if (fullName.length === 0) errors.fullName = PROFILE_MESSAGES.nameRequired

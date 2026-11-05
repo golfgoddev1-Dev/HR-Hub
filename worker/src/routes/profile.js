@@ -26,10 +26,12 @@ const ALLOWED_ROLES = ["employee"];
 const EMPLOYEES_TABLE = "employees";
 const DEPARTMENTS_TABLE = "departments";
 const POSITIONS_TABLE = "positions";
+const PREFIXES_TABLE = "name_prefixes";
 const AUDIT_TABLE = "audit_logs";
 
 /** The only columns a PATCH may write. Anything else is a 400. */
 export const PROFILE_EDITABLE_FIELDS = Object.freeze([
+  "name_prefix",
   "full_name",
   "email",
   "phone",
@@ -42,6 +44,9 @@ const ENTITY_EMPLOYEE = "employee";
 
 const NAME_MAX_LENGTH = 100;
 const EMAIL_MAX_LENGTH = 254;
+// The same limit the employee import applies to the prefix cell
+// (worker/src/import/validate.js MAX_LENGTHS.prefix).
+const PREFIX_MAX_LENGTH = 20;
 const MAX_BODY_BYTES = 8 * 1024;
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -61,6 +66,9 @@ const MESSAGE = {
   emailInvalid: "อีเมลไม่ถูกต้อง",
   emailTooLong: "อีเมลยาวเกิน 254 ตัวอักษร",
   phoneInvalid: "เบอร์มือถือไม่ถูกต้อง (ต้องเป็นตัวเลข 10 หลัก เริ่มด้วย 0)",
+  prefixRequired: "กรุณาเลือกคำนำหน้า",
+  prefixTooLong: "คำนำหน้ายาวเกิน 20 ตัวอักษร",
+  prefixUnknown: "ไม่พบคำนำหน้าที่เลือก",
   departmentNotFound: "ไม่พบแผนกที่เลือก",
   departmentInactive: "แผนกที่เลือกปิดใช้งาน กรุณาเลือกแผนกที่ใช้งานอยู่",
 };
@@ -254,6 +262,35 @@ profile.get("/departments", async (c) => {
   }
 });
 
+// --- GET /api/profile/name-prefixes -------------------------------------------
+// The prefix dropdown source: active rows of name_prefixes, names only.
+
+profile.get("/name-prefixes", async (c) => {
+  const denied = await guard(c);
+  if (denied) return denied.response;
+
+  try {
+    const rows = await c.get("profileDb").select(PREFIXES_TABLE, {
+      columns: "name",
+      filters: [["is_active", "eq", true]],
+      order: "name.asc",
+    });
+
+    const prefixes = [
+      ...new Set(
+        rows
+          .map((row) => (typeof row.name === "string" ? row.name.replace(/\s+/g, " ").trim() : ""))
+          .filter((name) => name.length > 0)
+      ),
+    ];
+
+    return c.json({ ok: true, count: prefixes.length, prefixes }, 200);
+  } catch (error) {
+    logError("profile name prefixes failed", error);
+    return c.json({ ok: false, message: MESSAGE.saveError }, 500);
+  }
+});
+
 // --- PATCH /api/profile/me ---------------------------------------------------
 
 profile.patch("/me", async (c) => {
@@ -274,6 +311,18 @@ profile.patch("/me", async (c) => {
 
   const errors = {};
   const candidate = {};
+
+  if (Object.prototype.hasOwnProperty.call(body, "name_prefix")) {
+    if (typeof body.name_prefix !== "string") {
+      errors.name_prefix = MESSAGE.prefixRequired;
+    } else {
+      const value = body.name_prefix.replace(/\s+/g, " ").trim();
+      if (value.length === 0) errors.name_prefix = MESSAGE.prefixRequired;
+      else if (Array.from(value).length > PREFIX_MAX_LENGTH) {
+        errors.name_prefix = MESSAGE.prefixTooLong;
+      } else candidate.name_prefix = value;
+    }
+  }
 
   if (Object.prototype.hasOwnProperty.call(body, "full_name")) {
     if (typeof body.full_name !== "string") {
@@ -329,6 +378,25 @@ profile.patch("/me", async (c) => {
 
     const loaded = await loadProfile(db, session.employeeId);
     if (!loaded) return c.json({ ok: false, message: MESSAGE.forbidden }, 403);
+
+    // A prefix is a lookup value, never free text: it must be an active row of
+    // name_prefixes, the same list the HR import validates against.
+    if (candidate.name_prefix !== undefined) {
+      const prefix = await db.select(PREFIXES_TABLE, {
+        columns: "name",
+        filters: [
+          ["name", "eq", candidate.name_prefix],
+          ["is_active", "eq", true],
+        ],
+        single: true,
+      });
+      if (!prefix) {
+        return c.json(
+          { ok: false, message: MESSAGE.invalid, errors: { name_prefix: MESSAGE.prefixUnknown } },
+          400
+        );
+      }
+    }
 
     if (departmentGiven) {
       const department = await db.select(DEPARTMENTS_TABLE, {

@@ -15,10 +15,14 @@ import {
   hasProfileChanges,
   isThaiMobile,
   profilePatch,
+  prefixOptions,
   profileToForm,
   readProfile,
   validateProfileForm,
 } from '../src/lib/profile-form.js'
+
+const B1_SUBTITLE =
+  'แก้ไขคำนำหน้า ชื่อ-นามสกุล อีเมล เบอร์มือถือ และแผนกได้เอง · รหัสพนักงาน เลขบัตรประชาชน และตำแหน่งแก้ไขโดย HR เท่านั้น'
 
 const ROUTER = readFileSync(new URL('../src/router.js', import.meta.url), 'utf8')
 const ROUTE_ACCESS = readFileSync(new URL('../src/lib/route-access.js', import.meta.url), 'utf8')
@@ -189,7 +193,57 @@ describe('field validation', () => {
   })
 })
 
+describe('name prefix dropdown', () => {
+  it('offers lookup values only, trimmed and without duplicates', () => {
+    expect(prefixOptions(['นาย', 'นาง', ' นาย ', '', null])).toEqual(['นาย', 'นาง'])
+    expect(prefixOptions(null)).toEqual([])
+  })
+
+  it('is part of the form and sent as name_prefix only when it changes', () => {
+    const form = profileToForm(PROFILE)
+    expect(form.namePrefix).toBe('นาย')
+    expect(hasProfileChanges(PROFILE, form)).toBe(false)
+
+    expect(profilePatch(PROFILE, { ...form, namePrefix: 'นาง' })).toEqual({
+      name_prefix: 'นาง',
+    })
+  })
+
+  it('reports a value outside the lookup in Thai', () => {
+    const form = { ...profileToForm(PROFILE), namePrefix: 'ดร.' }
+    const check = validateProfileForm(PROFILE, form, DEPARTMENTS, ['นาย', 'นาง'])
+
+    expect(check.ok).toBe(false)
+    expect(check.errors.namePrefix).toBe(PROFILE_MESSAGES.prefixInvalid)
+    expect(PROFILE_MESSAGES.prefixInvalid).toBe('ไม่พบคำนำหน้าที่เลือก')
+  })
+
+  it('leaves an empty prefix alone: nothing is sent and no error is raised', () => {
+    const noPrefix = readProfile({ ...PROFILE, namePrefix: null })
+    const form = profileToForm(noPrefix)
+
+    expect(form.namePrefix).toBe('')
+    expect(profilePatch(noPrefix, form)).toEqual({})
+    expect(validateProfileForm(noPrefix, form, DEPARTMENTS, ['นาย', 'นาง']).ok).toBe(true)
+  })
+})
+
+describe('position row', () => {
+  it('is hidden when the employee has no position', () => {
+    const withoutPosition = readProfile({ ...PROFILE, positionName: null })
+    expect(withoutPosition.positionName).toBe('')
+    expect(PROFILE_PAGE).toContain('v-if="profile.positionName"')
+    expect(PROFILE_PAGE).not.toContain("profile.positionName || '—'")
+  })
+})
+
 describe('page wiring', () => {
+  it('describes the real edit rules in the subtitle', () => {
+    expect(PROFILE_PAGE).toContain(B1_SUBTITLE)
+    expect(PROFILE_PAGE).toContain('/api/profile/name-prefixes')
+    expect(PROFILE_PAGE).toContain('เลือกคำนำหน้า')
+  })
+
   it('is reachable for the employee role and linked from the leave menu', () => {
     expect(ROUTER).toContain("path: '/profile'")
     expect(ROUTER).toContain('ProfilePage')

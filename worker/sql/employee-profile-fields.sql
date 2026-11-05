@@ -15,5 +15,11 @@ alter table public.employees
 alter table public.departments
   add column if not exists is_active boolean not null default true;
 
+-- The profile dropdown offers only active prefixes, like the department one.
+-- The lookup table already exists (worker/src/routes/hr-employees.js reads
+-- name_prefixes.name for the import); only the flag is new.
+alter table public.name_prefixes
+  add column if not exists is_active boolean not null default true;
+
 -- No unique index on email: many employees have none yet and nobody signs in
 -- with an email address.

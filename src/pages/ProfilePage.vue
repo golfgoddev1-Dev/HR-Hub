@@ -6,6 +6,7 @@ import {
   DEPARTMENT_CHANGE_NOTE,
   departmentOptions,
   formatEmail,
+  prefixOptions,
   hasProfileChanges,
   profilePatch,
   profileToForm,
@@ -15,6 +16,7 @@ import {
 
 const PROFILE_URL = '/api/profile/me'
 const DEPARTMENTS_URL = '/api/profile/departments'
+const PREFIXES_URL = '/api/profile/name-prefixes'
 
 const LOAD_ERROR = 'โหลดข้อมูลส่วนตัวไม่สำเร็จ กรุณาลองใหม่'
 const SAVE_ERROR = 'บันทึกไม่สำเร็จ กรุณาลองใหม่'
@@ -23,6 +25,7 @@ const LEAVE_CONFIRM = 'มีข้อมูลที่ยังไม่ได
 
 // The Worker answers field errors in its own names; the form uses camelCase.
 const SERVER_FIELD_KEYS = {
+  name_prefix: 'namePrefix',
   full_name: 'fullName',
   email: 'email',
   phone: 'phone',
@@ -39,11 +42,16 @@ const editing = ref(false)
 
 const profile = ref(readProfile({}))
 const departments = ref([])
+const prefixes = ref([])
+const prefixesError = ref('')
 const serverErrors = ref({})
 const form = reactive(profileToForm(profile.value))
 
 const options = computed(() => departmentOptions(profile.value, departments.value))
-const validation = computed(() => validateProfileForm(profile.value, form, departments.value))
+const prefixChoices = computed(() => prefixOptions(prefixes.value))
+const validation = computed(() =>
+  validateProfileForm(profile.value, form, departments.value, prefixes.value)
+)
 const fieldErrors = computed(() => ({ ...validation.value.errors, ...serverErrors.value }))
 const changed = computed(() => hasProfileChanges(profile.value, form))
 const canSave = computed(() => !saving.value && validation.value.ok && changed.value)
@@ -90,6 +98,23 @@ async function loadDepartments() {
   } catch {
     departmentsError.value = 'โหลดรายการแผนกไม่สำเร็จ'
     departments.value = []
+  }
+}
+
+async function loadPrefixes() {
+  prefixesError.value = ''
+  try {
+    const response = await fetch(PREFIXES_URL, { credentials: 'same-origin' })
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok || data.ok !== true) {
+      prefixesError.value = 'โหลดรายการคำนำหน้าไม่สำเร็จ'
+      prefixes.value = []
+      return
+    }
+    prefixes.value = Array.isArray(data.prefixes) ? data.prefixes : []
+  } catch {
+    prefixesError.value = 'โหลดรายการคำนำหน้าไม่สำเร็จ'
+    prefixes.value = []
   }
 }
 
@@ -167,6 +192,7 @@ function handleBeforeUnload(event) {
 onMounted(() => {
   load()
   loadDepartments()
+  loadPrefixes()
   window.addEventListener('beforeunload', handleBeforeUnload)
 })
 
@@ -184,7 +210,7 @@ onBeforeUnmount(() => {
         <div>
           <h1 class="title">ข้อมูลส่วนตัว</h1>
           <p class="sub">
-            ข้อมูลติดต่อและแผนกของฉัน · รหัสพนักงาน เลขบัตรประชาชน ตำแหน่ง และสิทธิ์การใช้งานแก้ไขได้โดย HR เท่านั้น
+            แก้ไขคำนำหน้า ชื่อ-นามสกุล อีเมล เบอร์มือถือ และแผนกได้เอง · รหัสพนักงาน เลขบัตรประชาชน และตำแหน่งแก้ไขโดย HR เท่านั้น
           </p>
         </div>
         <button v-if="!editing && !loading && !loadError" type="button" class="primary-btn" @click="startEdit">
@@ -229,15 +255,29 @@ onBeforeUnmount(() => {
               <span v-if="profile.departmentActive === false" class="flag">ปิดใช้งาน</span>
             </dd>
           </div>
-          <div class="row">
+          <div v-if="profile.positionName" class="row">
             <dt>ตำแหน่ง</dt>
-            <dd>{{ profile.positionName || '—' }}</dd>
+            <dd>{{ profile.positionName }}</dd>
           </div>
         </dl>
       </section>
 
       <form v-if="!loading && !loadError && editing" class="card" @submit.prevent="save">
         <div class="fields">
+          <label class="field">
+            <span class="label">คำนำหน้า</span>
+            <select v-model="form.namePrefix" class="input">
+              <option value="" disabled>เลือกคำนำหน้า</option>
+              <option v-for="prefix in prefixChoices" :key="prefix" :value="prefix">
+                {{ prefix }}
+              </option>
+            </select>
+            <span v-if="prefixesError" class="field-note warning">{{ prefixesError }}</span>
+            <span v-if="fieldErrors.namePrefix" class="field-error">
+              {{ fieldErrors.namePrefix }}
+            </span>
+          </label>
+
           <label class="field">
             <span class="label">ชื่อ-นามสกุล</span>
             <input
