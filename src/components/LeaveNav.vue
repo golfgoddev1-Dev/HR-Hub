@@ -28,6 +28,7 @@ const items = computed(() => {
   const list = [
     { label: 'ใบลาของฉัน', to: '/leave', icon: 'event_note' },
     { label: 'ยื่นใบลา', to: '/leave/new', icon: 'edit_calendar' },
+    { label: 'ปฏิทินการลา', to: '/leave/calendar', icon: 'calendar_month' },
     { label: 'ข้อมูลส่วนตัว', to: '/profile', icon: 'person' },
     { label: 'เปลี่ยน PIN', to: '/change-pin', icon: 'password' },
   ]

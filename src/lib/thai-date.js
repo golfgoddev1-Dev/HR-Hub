@@ -35,6 +35,13 @@ function toDate(value) {
   return Number.isNaN(parsed.getTime()) ? null : parsed
 }
 
+/** 2026-11-05 → "2569": the Buddhist year only, used in page titles. */
+export function formatThaiYear(value) {
+  const date = toDate(value)
+  if (!date) return ''
+  return String(Number(formatInTimeZone(date, THAI_TIME_ZONE, 'yyyy')) + BUDDHIST_YEAR_OFFSET)
+}
+
 /** 2026-11-05 → "5 พ.ย. 2569" (Buddhist year, Bangkok day). */
 export function formatThaiDate(value) {
   const date = toDate(value)

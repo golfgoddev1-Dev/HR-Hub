@@ -16,6 +16,7 @@ import hrEmployees from "./routes/hr-employees.js";
 import meetingBackfill from "./routes/backfill.js";
 import { createEmployeeDirectoryRoutes } from "./routes/employee-directory.js";
 import leave from "./routes/leave.js";
+import leaveCalendar from "./routes/leave-calendar.js";
 import leaveHr from "./routes/leave-hr.js";
 import admin from "./routes/admin.js";
 import profile from "./routes/profile.js";
@@ -29,6 +30,8 @@ app.route("/api/notifications", notifications);
 app.route("/api/leave/hr", leaveHr);
 app.route("/api/admin", admin);
 app.route("/api/profile", profile);
+// Mounted before /api/leave so the calendar path matches its own app first.
+app.route("/api/leave/calendar", leaveCalendar);
 app.route("/api/leave", leave);
 app.route("/api/meeting/monthly-session", monthlySession);
 app.route("/api/meeting/roster", meetingRoster);

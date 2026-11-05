@@ -14,6 +14,7 @@ const LAYOUT_SOURCE = readFileSync(LAYOUT, 'utf8')
 const MENU_PAGES = [
   'ChangePinPage.vue',
   'LeaveApprovalsPage.vue',
+  'LeaveCalendarPage.vue',
   'LeaveHomePage.vue',
   'LeaveRequestPage.vue',
   'ProfilePage.vue',

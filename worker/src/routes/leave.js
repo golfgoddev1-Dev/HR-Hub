@@ -47,6 +47,9 @@ import {
 import { insertWithRequestCode } from "../leave-request-code.js";
 import { enqueueNotificationSafely } from "../push/queue.js";
 import { NOTIFICATION_KINDS } from "../push/payload.js";
+import { CALENDAR_MAX_RANGE_DAYS, CALENDAR_MESSAGES } from "../leave-calendar.js";
+import { isDateString as isCalendarDate, spanDays as calendarSpanDays } from "../leave-rules.js";
+import { readHolidayRows } from "../leave-holidays.js";
 
 const leave = new Hono();
 
@@ -343,9 +346,38 @@ leave.get("/holidays", async (c) => {
   const denied = await guard(c);
   if (denied) return denied.response;
 
+  // ?from=&to= is optional (the leave form asks for the whole list). When
+  // present both dates are required, so a half-range never looks like "all".
+  const params = new URL(c.req.raw.url).searchParams;
+  const from = params.get("from");
+  const to = params.get("to");
+  const ranged = (from !== null && from !== "") || (to !== null && to !== "");
+
+  if (ranged) {
+    if (isCalendarDate(from) === false || isCalendarDate(to) === false) {
+      return c.json({ ok: false, message: MESSAGES.dateFormat }, 400);
+    }
+    if (from > to) {
+      return c.json({ ok: false, message: MESSAGES.endBeforeStart }, 400);
+    }
+    if (calendarSpanDays(from, to) > CALENDAR_MAX_RANGE_DAYS) {
+      return c.json({ ok: false, message: CALENDAR_MESSAGES.rangeTooLong }, 400);
+    }
+  }
+
   try {
-    const holidays = await readHolidays(c.get("leaveDb"));
-    return c.json({ ok: true, dates: holidays.dates }, 200);
+    // Date and name only: no id, creator or any other column is read here.
+    const holidays = await readHolidayRows(c.get("leaveDb"), ranged ? { from, to } : {});
+    return c.json(
+      {
+        ok: true,
+        count: holidays.length,
+        holidays,
+        // Kept for the leave form, which only needs the set of dates.
+        dates: holidays.map((row) => row.date),
+      },
+      200
+    );
   } catch (error) {
     logError("leave holidays failed", error);
     return c.json({ ok: false, message: HOLIDAYS_UNAVAILABLE }, 503);

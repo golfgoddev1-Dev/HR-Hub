@@ -31,6 +31,7 @@ import { canPrintLeave } from './leave-print.js'
 import LeaveHomePage from './pages/LeaveHomePage.vue'
 import LeaveRequestPage from './pages/LeaveRequestPage.vue'
 import LeaveApprovalsPage from './pages/LeaveApprovalsPage.vue'
+import LeaveCalendarPage from './pages/LeaveCalendarPage.vue'
 // The allow-lists live in src/lib/route-access.js so pages can ask the same
 // question the guard asks before offering a link.
 import { canOpenPath, homePathByRole } from './lib/route-access.js'
@@ -46,6 +47,7 @@ export const router = createRouter({
     { path: '/leave', component: LeaveHomePage, meta: { requiresAuth: true } },
     { path: '/leave/new', component: LeaveRequestPage, meta: { requiresAuth: true } },
     { path: '/leave/approvals', component: LeaveApprovalsPage, meta: { requiresAuth: true } },
+    { path: '/leave/calendar', component: LeaveCalendarPage, meta: { requiresAuth: true } },
     { path: '/meeting/controller', component: ControllerOverviewPage, meta: { requiresAuth: true } },
     { path: '/meeting/controller/qr', component: ControllerQrPage, meta: { requiresAuth: true } },
     { path: '/meeting/controller/roster', component: ControllerRosterPage, meta: { requiresAuth: true } },

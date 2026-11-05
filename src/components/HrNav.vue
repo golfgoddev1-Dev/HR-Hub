@@ -6,6 +6,7 @@ const navItems = [
   { label: 'จัดการข้อมูลพนักงาน', to: '/hr/employees/manage', icon: 'edit' },
   { label: 'จัดการรหัสผ่านพนักงาน', to: '/hr/employees/password', icon: 'password' },
   { label: 'ใบลาทั้งหมด', to: '/hr/leave', icon: 'event_note' },
+  { label: 'ปฏิทินการลา', to: '/leave/calendar', icon: 'calendar_month' },
   { label: 'คีย์ใบลาย้อนหลัง', to: '/hr/leave/backdated', icon: 'edit_calendar' },
   { label: 'วันหยุด', to: '/hr/leave/holidays', icon: 'event_busy' },
   { label: 'ผู้อนุมัติ', to: '/hr/leave/approvers', icon: 'how_to_reg' },

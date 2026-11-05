@@ -30,6 +30,34 @@ export function holidayDateOf(row) {
   return isDateString(value) ? value : null;
 }
 
+/** One row as { date, name }, or null when the date is unusable. */
+export function holidayRowOf(row) {
+  const date = holidayDateOf(row);
+  if (!date) return null;
+  const name = typeof row?.name === "string" ? row.name.replace(/\s+/g, " ").trim() : "";
+  return { date, name: name.length > 0 ? name : null };
+}
+
+/**
+ * Holidays with their names, optionally limited to an inclusive range. Used by
+ * the calendar, which needs the name on the day; the day-counting callers keep
+ * using readHolidays(), which reads the date column only.
+ */
+export async function readHolidayRows(db, { from = null, to = null } = {}) {
+  const filters = [];
+  if (isDateString(from)) filters.push([HOLIDAY_DATE_COLUMN, "gte", from]);
+  if (isDateString(to)) filters.push([HOLIDAY_DATE_COLUMN, "lte", to]);
+
+  const rows = await db.select(HOLIDAYS_TABLE, {
+    columns: `${HOLIDAY_DATE_COLUMN},name`,
+    filters,
+    order: `${HOLIDAY_DATE_COLUMN}.asc`,
+    limit: 400,
+  });
+
+  return (Array.isArray(rows) ? rows : []).map(holidayRowOf).filter(Boolean);
+}
+
 /**
  * Every holiday date. Throws when the table cannot be read: the caller turns
  * that into HOLIDAYS_UNAVAILABLE rather than computing days without holidays.
