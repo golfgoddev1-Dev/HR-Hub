@@ -5,7 +5,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { takeDockEntrance } from '../lib/dock-entrance.js'
-import { completeLogout } from '../lib/logout.js'
+import { completeLogout, logoutRequestOptions } from '../lib/logout.js'
 import { createLogoutFlow, ripplePlacement } from '../lib/logout-flow.js'
 
 const props = defineProps({
@@ -173,8 +173,8 @@ function flashDanger() {
 // Feedback, request and navigation run as one flow: the POST starts on click,
 // but navigation waits for the feedback (and is capped so it cannot hang).
 const logout = createLogoutFlow({
-  request: () =>
-    fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' }),
+  request: async () =>
+    fetch('/api/auth/logout', await logoutRequestOptions()),
   // The cache, web storage and Cache Storage go, then the protected page is
   // replaced in history so Back cannot restore it.
   navigate: () => completeLogout(),

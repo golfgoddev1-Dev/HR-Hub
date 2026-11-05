@@ -147,12 +147,14 @@ describe('POST /api/notifications/subscribe', () => {
     }
   })
 
-  it('refuses a body that tries to choose another employee', async () => {
+  it('ignores a body that tries to choose another employee', async () => {
     const fake = await createFake()
     try {
       const response = await subscribeRequest({ ...validBody(), employeeId: OTHER_EMPLOYEE_ID })
-      expect(response.status).toBe(400)
-      expect(fake.state.inserted).toHaveLength(0)
+      expect(response.status).toBe(201)
+      expect(fake.state.inserted).toHaveLength(1)
+      // The extra body field is accepted and ignored; the session owns the row.
+      expect(fake.state.inserted[0].employee_id).toBe(EMPLOYEE_ID)
     } finally {
       fake.restore()
     }
@@ -197,15 +199,21 @@ describe('POST /api/notifications/subscribe', () => {
     }
   })
 
-  it('refuses an endpoint that belongs to another employee', async () => {
+  it('moves an endpoint that belongs to another employee to the session employee', async () => {
     const fake = await createFake({
       existing: { id: 'sub-other', employee_id: OTHER_EMPLOYEE_ID, is_active: true },
     })
     try {
       const response = await subscribeRequest(validBody())
-      expect(response.status).toBe(409)
+      expect(response.status).toBe(200)
+
+      const body = await response.json()
+      expect(body.reinstated).toBe(true)
       expect(fake.state.inserted).toHaveLength(0)
-      expect(fake.state.updated).toHaveLength(0)
+      expect(fake.state.updated).toHaveLength(1)
+      // The shared browser now belongs to the employee who just signed in.
+      expect(fake.state.updated[0].body.employee_id).toBe(EMPLOYEE_ID)
+      expect(fake.state.updated[0].body.is_active).toBe(true)
     } finally {
       fake.restore()
     }

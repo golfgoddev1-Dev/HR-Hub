@@ -23,6 +23,7 @@ import {
 // dashboard reason route both run it verbatim).
 import { verifyPinAttempt } from "../pin-verify.js";
 import { createDb } from "../db.js";
+import { normalizeEndpoint } from "../push/endpoint.js";
 import { isActiveApprover } from "../leave-approvers.js";
 
 const auth = new Hono();
@@ -32,6 +33,7 @@ const SESSIONS_TABLE = "auth_sessions";
 const CREDENTIALS_TABLE = "employee_credentials";
 const RESET_CODES_TABLE = "pin_reset_codes";
 const AUDIT_TABLE = "audit_logs";
+const PUSH_SUBSCRIPTIONS_TABLE = "push_subscriptions";
 
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCK_MINUTES = 15;
@@ -282,6 +284,12 @@ auth.post("/logout", async (c) => {
   c.header("Clear-Site-Data", '"cache", "cookies", "storage"');
 
   try {
+    // The client may name this browser's push endpoint. It is optional and is
+    // only ever used with the session's own employee id, never logged.
+    const body = await readJson(c);
+    const endpoint =
+      typeof body?.endpoint === "string" ? normalizeEndpoint(body.endpoint) : null;
+
     const token = parseCookies(c.req.header("Cookie"))[sessionCookieName];
     const nowIso = new Date().toISOString();
 
@@ -319,6 +327,21 @@ auth.post("/logout", async (c) => {
           });
         } catch {
           // Audit failures never block logout.
+        }
+
+        // The endpoint belongs to this browser and this employee, so the next
+        // person to sign in here must subscribe again before receiving pushes.
+        if (endpoint) {
+          const removed = await db.remove(PUSH_SUBSCRIPTIONS_TABLE, [
+            ["endpoint", "eq", endpoint],
+            ["employee_id", "eq", session.employee_id],
+          ]);
+          if (removed.error) {
+            logFailure("auth logout push cleanup failed", {
+              name: "push_cleanup",
+              code: removed.error.code,
+            });
+          }
         }
       }
     }

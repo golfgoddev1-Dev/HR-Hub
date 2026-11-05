@@ -1,14 +1,14 @@
 <script setup>
 // Same shell as AppDock.vue. Only /admin exists today, so the
 // other two items are disabled labels: no to/href may point at a missing page.
-import { completeLogout } from '../lib/logout.js'
+import { completeLogout, logoutRequestOptions } from '../lib/logout.js'
 defineProps({
   sections: { type: Array, required: true },
 })
 
 async function logout() {
   try {
-    await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' })
+    await fetch('/api/auth/logout', await logoutRequestOptions())
   } catch {
     // ignore: navigation still happens
   }

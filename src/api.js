@@ -1,4 +1,5 @@
 import { clearAll, getCached } from './lib/data-cache.js'
+import { logoutRequestOptions } from './lib/logout.js'
 import { DATA_KEYS, SESSION_TTL_MS } from './lib/shared-data.js'
 
 // A 401 means "not signed in", not a value worth remembering: it is thrown so
@@ -49,10 +50,8 @@ export async function verifySession() {
 
 export async function postLogout() {
   try {
-    const response = await fetch('/api/auth/logout', {
-      method: 'POST',
-      credentials: 'same-origin',
-    })
+    // Includes this browser's push endpoint, when it has one.
+    const response = await fetch('/api/auth/logout', await logoutRequestOptions())
     return response.ok
   } catch {
     return false

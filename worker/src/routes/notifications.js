@@ -2,14 +2,17 @@
 // Mounted at /api/notifications by src/app.js.
 //
 // The push endpoint identifies a browser, not a person: employee_id always comes
-// from the session, never from the body, and an endpoint that already belongs to
-// another employee is refused rather than silently reassigned.
+// from the session, never from the body. A browser that signs in as someone else
+// moves its row to that employee, so the old account stops reaching the device.
 
 import { Hono } from "hono";
 
 import { createDb } from "../db.js";
 import { requireRole } from "../require-role.js";
 import { base64UrlToBytes } from "../push/base64url.js";
+import { ENDPOINT_MAX_LENGTH, normalizeEndpoint } from "../push/endpoint.js";
+
+export { normalizeEndpoint };
 
 const notifications = new Hono();
 
@@ -18,9 +21,9 @@ const PUSH_SUBSCRIPTIONS_TABLE = "push_subscriptions";
 const ANY_ROLE = ["employee", "hr", "meeting_controller", "system_admin"];
 
 const MAX_BODY_BYTES = 4 * 1024;
-const ENDPOINT_MAX_LENGTH = 1000;
 const USER_AGENT_MAX_LENGTH = 300;
-const SUBSCRIBE_KEYS = ["endpoint", "keys", "userAgent"];
+// employeeId is accepted and ignored: the session alone decides the owner.
+const SUBSCRIBE_KEYS = ["endpoint", "keys", "userAgent", "employeeId"];
 
 const MESSAGE = {
   invalid: "ข้อมูลไม่ถูกต้อง",
@@ -30,7 +33,6 @@ const MESSAGE = {
   notConfigured: "ยังไม่ได้เปิดใช้งานการแจ้งเตือน (ไม่พบ VAPID public key)",
   endpointInvalid: "ที่อยู่ปลายทางการแจ้งเตือนไม่ถูกต้อง (ต้องเป็น https)",
   keysInvalid: "ข้อมูลกุญแจของอุปกรณ์ไม่ถูกต้อง",
-  endpointTaken: "อุปกรณ์นี้ผูกกับการแจ้งเตือนของบัญชีอื่นแล้ว",
 };
 
 notifications.use("*", async (c, next) => {
@@ -73,21 +75,6 @@ async function readStrictJson(c) {
   try {
     const parsed = JSON.parse(text);
     return isPlainObject(parsed) ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-/** https only, a real host, and short enough to store. */
-export function normalizeEndpoint(value) {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim();
-  if (trimmed.length === 0 || trimmed.length > ENDPOINT_MAX_LENGTH) return null;
-  if (/^https:\/\//i.test(trimmed) === false) return null;
-  try {
-    const url = new URL(trimmed);
-    if (url.protocol !== "https:" || url.hostname.length === 0) return null;
-    return url.toString();
   } catch {
     return null;
   }
@@ -154,25 +141,26 @@ notifications.post("/subscribe", async (c) => {
       single: true,
     });
 
-    if (existing && existing.employee_id !== employeeId) {
-      return c.json({ ok: false, message: MESSAGE.endpointTaken }, 409);
-    }
-
-    if (existing) {
+    // One endpoint has one owner: the session that just subscribed. This is
+    // also how a shared browser stops receiving the previous user's pushes.
+    const saveExisting = async (row) => {
       const updated = await db.update(
         PUSH_SUBSCRIPTIONS_TABLE,
         {
+          employee_id: employeeId,
           p256dh: keys.p256dh,
           auth: keys.auth,
           user_agent: userAgent,
           is_active: true,
           last_seen_at: nowIso,
         },
-        [["id", "eq", existing.id]]
+        [["id", "eq", row.id]]
       );
       if (updated.error) throw Object.assign(new Error("resubscribe failed"), { code: updated.error.code });
       return c.json({ ok: true, subscribed: true, reinstated: true }, 200);
-    }
+    };
+
+    if (existing) return saveExisting(existing);
 
     const inserted = await db.insert(
       PUSH_SUBSCRIPTIONS_TABLE,
@@ -189,8 +177,15 @@ notifications.post("/subscribe", async (c) => {
       { returning: true }
     );
     if (inserted.error) {
-      // A concurrent subscribe for the same endpoint hit the unique index.
+      // A concurrent subscribe for the same endpoint hit the unique index:
+      // take that row over for this session's employee as well.
       if (inserted.error.code === "23505") {
+        const current = await db.select(PUSH_SUBSCRIPTIONS_TABLE, {
+          columns: "id,employee_id,is_active",
+          filters: [["endpoint", "eq", endpoint]],
+          single: true,
+        });
+        if (current) return saveExisting(current);
         return c.json({ ok: true, subscribed: true, reinstated: false }, 200);
       }
       throw Object.assign(new Error("subscribe failed"), { code: inserted.error.code });

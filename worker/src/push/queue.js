@@ -6,7 +6,7 @@
 // - a row is claimed with a conditional update (status pending -> sending), so
 //   two overlapping runs cannot send the same row twice;
 // - at most NOTIFICATION_BATCH rows per run, to stay inside the free plan;
-// - 404/410 from the push service deactivates that subscription;
+// - 404/410 from the push service deletes that subscription;
 // - the payload never carries a reason or a leave type (see push/payload.js).
 
 import { createDb } from "../db.js";
@@ -194,15 +194,19 @@ async function claimRow(db, id) {
   return Array.isArray(claimed.data) && claimed.data.length > 0;
 }
 
-async function deactivateSubscriptions(db, endpoints) {
+/** A subscription the push service reports as gone is removed, not kept. */
+async function deleteSubscriptions(db, endpoints, employeeId) {
   let count = 0;
   for (const endpoint of endpoints) {
-    const updated = await db.update(
+    const removed = await db.remove(
       PUSH_SUBSCRIPTIONS_TABLE,
-      { is_active: false },
-      [["endpoint", "eq", endpoint]]
+      [
+        ["endpoint", "eq", endpoint],
+        ["employee_id", "eq", employeeId],
+      ],
+      { returning: true, columns: "id" }
     );
-    if (!updated.error) count += 1;
+    if (!removed.error && Array.isArray(removed.data)) count += removed.data.length;
   }
   return count;
 }
@@ -366,7 +370,11 @@ export async function runNotificationQueue(env, now = new Date(), { ids = null }
       if (updated.error) summary.errors += 1;
 
       if (outcome.deactivated.length > 0) {
-        summary.deactivated += await deactivateSubscriptions(db, outcome.deactivated);
+        summary.deactivated += await deleteSubscriptions(
+          db,
+          outcome.deactivated,
+          row.employee_id
+        );
       }
 
       if (outcome.status === "sent") summary.sent += 1;

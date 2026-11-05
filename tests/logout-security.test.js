@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { clearAll, getCached } from '../src/lib/data-cache.js'
+import { logoutRequestOptions } from '../src/lib/logout.js'
 import { APP_STORAGE_KEYS, clearClientStorage } from '../src/lib/logout-storage.js'
 
 const SRC = fileURLToPath(new URL('../src', import.meta.url))
@@ -132,6 +133,26 @@ describe('logout completion', () => {
     expect(read('components/ControllerNav.vue')).not.toContain("router.replace('/login')")
   })
 
+  it('names this browser push endpoint in the logout request', async () => {
+    vi.stubGlobal('navigator', {
+      serviceWorker: {
+        getRegistration: async () => ({
+          pushManager: {
+            getSubscription: async () => ({ endpoint: 'https://push.example/abc' }),
+          },
+        }),
+      },
+    })
+
+    const options = await logoutRequestOptions()
+
+    expect(options.method).toBe('POST')
+    expect(options.credentials).toBe('same-origin')
+    expect(JSON.parse(options.body)).toEqual({ endpoint: 'https://push.example/abc' })
+
+    vi.unstubAllGlobals()
+  })
+
   it('has no logout path anywhere that uses assign', () => {
     const LOGOUT_SOURCES = new Set([
       'components/AppDock.vue',
@@ -159,6 +180,20 @@ describe('back/forward cache and guard', () => {
     expect(main).toContain('verifySession()')
     expect(main).toContain("window.location.replace('/login')")
     expect(main).not.toContain('window.location.assign')
+  })
+
+  it('drops the browser push subscription before replacing the page', () => {
+    const source = read('lib/logout.js')
+
+    expect(source).toContain('subscription?.unsubscribe?.()')
+    expect(source.indexOf('await forgetBrowserPush()')).toBeLessThan(
+      source.indexOf("window.location.replace('/login')")
+    )
+    // The shells no longer post an empty logout body; the endpoint rides along.
+    for (const file of ['components/AppDock.vue', 'components/AdminNav.vue']) {
+      expect(read(file), file).toContain('await logoutRequestOptions()')
+    }
+    expect(read('api.js')).toContain('await logoutRequestOptions()')
   })
 
   it('checks the session without using the cache when restoring', () => {
