@@ -183,6 +183,8 @@ describe('persistent layout routes', () => {
       '/meeting/register',
       '/leave/hr/requests/:id/print',
       '/admin',
+      // ระบบสิทธิ์ผู้ใช้: a second child of the admin layout, added with the page.
+      '/admin/permissions',
       '',
       '/:pathMatch(.*)*',
     ]

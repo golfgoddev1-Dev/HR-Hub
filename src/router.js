@@ -27,6 +27,7 @@ import HrLeaveHolidaysPage from './pages/HrLeaveHolidaysPage.vue'
 import HrLeaveSettingsPage from './pages/HrLeaveSettingsPage.vue'
 import HrLeavePrintPage from './pages/HrLeavePrintPage.vue'
 import AdminPage from './pages/AdminPage.vue'
+import AdminPermissionsPage from './pages/AdminPermissionsPage.vue'
 import ProfilePage from './pages/ProfilePage.vue'
 import { canPrintLeave } from './leave-print.js'
 import LeaveHomePage from './pages/LeaveHomePage.vue'
@@ -108,7 +109,16 @@ export const router = createRouter({
       component: AppLayout,
       props: { nav: 'admin' },
       meta: { requiresAuth: true },
-      children: [{ path: '', component: AdminPage, meta: { requiresAuth: true } }],
+      children: [
+        { path: '', component: AdminPage, meta: { requiresAuth: true } },
+        // The permission screen names its one role, so any other role is sent to
+        // its own home instead of reaching a page whose API would answer 403.
+        {
+          path: '/admin/permissions',
+          component: AdminPermissionsPage,
+          meta: { requiresAuth: true, role: 'system_admin' },
+        },
+      ],
     },
 
     { path: '/:pathMatch(.*)*', component: PendingPage, meta: { requiresAuth: true, catchAll: true } },
@@ -166,6 +176,12 @@ router.beforeEach(async (to) => {
   // Redirecting to the address we are already on never resolves, so stop and let
   // the page show its message instead of looping.
   const canRedirect = redirectTo !== '' && redirectTo !== to.fullPath
+
+  // A route may name the single role it belongs to. Checking it here means the
+  // redirect does not depend on the session carrying a redirectTo value.
+  if (typeof to.meta.role === 'string' && to.meta.role !== session.role) {
+    return homePathByRole[session.role] ?? '/login'
+  }
 
   if (to.meta.catchAll) return canRedirect ? redirectTo : true
   if (!allowed && canRedirect) return redirectTo

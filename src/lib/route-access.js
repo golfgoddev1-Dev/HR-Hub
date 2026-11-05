@@ -35,7 +35,8 @@ export const allowedPathsByRole = {
     '/meeting/controller/backfill',
     '/meeting/controller/backfill/import',
   ],
-  system_admin: ['/admin'],
+  // The overview and the permission screen; both are system_admin only.
+  system_admin: ['/admin', '/admin/permissions'],
 }
 
 // Detail pages carry an id in the path, so exact-path matching is not enough.

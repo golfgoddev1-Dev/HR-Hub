@@ -30,6 +30,15 @@ async function logout() {
           <span>ภาพรวมผู้ดูแล</span>
         </RouterLink>
 
+        <RouterLink
+          to="/admin/permissions"
+          class="nav-link"
+          active-class="nav-link-active"
+        >
+          <span class="material-symbols-outlined nav-icon">manage_accounts</span>
+          <span>สิทธิ์ผู้ใช้</span>
+        </RouterLink>
+
         <span
           v-for="item in disabledItems"
           :key="item.label"
@@ -87,6 +96,12 @@ async function logout() {
   flex-wrap: wrap;
   gap: 4px;
   align-items: center;
+}
+
+.nav-icon {
+  font-family: 'Material Symbols Outlined';
+  font-size: 18px;
+  line-height: 1;
 }
 
 .nav-link {

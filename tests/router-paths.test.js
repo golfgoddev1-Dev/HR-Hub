@@ -81,16 +81,18 @@ describe('system_admin landing page', () => {
     expect(ADMIN_NAV).toContain('to="/admin"')
   })
 
-  it('the admin menu links only to the page that exists', () => {
+  it('the admin menu links only to the pages that exist', () => {
+    // The permission screen added a second real link; both are in the router.
     const targets = [...ADMIN_NAV.matchAll(/to="([^"]+)"/g)].map((match) => match[1])
-    expect(targets).toEqual(['/admin'])
+    expect(targets).toEqual(['/admin', '/admin/permissions'])
+    for (const target of targets) expect(ROUTER).toContain(`path: '${target}'`)
     expect(ADMIN_NAV).not.toContain('href=')
   })
 
   it('marks the unfinished items as disabled without a route', () => {
-    // Exactly one real link in the menu, and it is the page that exists.
-    expect((ADMIN_NAV.match(/<RouterLink/g) ?? []).length).toBe(1)
-    expect((ADMIN_NAV.match(/to="/g) ?? []).length).toBe(1)
+    // Two real links (overview and permissions) plus the disabled placeholders.
+    expect((ADMIN_NAV.match(/<RouterLink/g) ?? []).length).toBe(2)
+    expect((ADMIN_NAV.match(/to="/g) ?? []).length).toBe(2)
 
     expect(ADMIN_NAV).toContain('aria-disabled="true"')
     expect(ADMIN_NAV).toContain('nav-link-disabled')
