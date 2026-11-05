@@ -23,18 +23,6 @@ export function leaveNavItems() {
   ]
 }
 
-// The "งานของฉัน" group for a login role that is not the employee role. The
-// leave calendar is not repeated here: HR already has it in its own section and
-// the meeting/system roles may not open it.
-export function myWorkItems() {
-  return [
-    { label: 'ใบลาของฉัน', to: '/leave', icon: 'event_note' },
-    { label: 'ยื่นใบลา', to: '/leave/new', icon: 'edit_calendar' },
-    { label: 'ข้อมูลส่วนตัว', to: '/profile', icon: 'person' },
-    { label: 'เปลี่ยน PIN', to: '/change-pin', icon: 'password' },
-  ]
-}
-
 export function hrNavItems() {
   return [
     { label: 'หน้าหลัก', to: '/hr', icon: 'home' },
@@ -75,22 +63,15 @@ export function adminNavItems() {
 }
 
 /**
- * The menu as ordered, labelled sections. A section with no item is omitted, so
- * a role never sees a heading it cannot use. The order is fixed: my work, the
- * approvals queue, then the role's own work.
+ * The menu as ordered, labelled sections, the same in every shell: my work
+ * first (the same five items for every active employee, so nothing moves when a
+ * role signs in), then that shell's own work, then the approvals queue.
+ * A section with no item is omitted, so a role never sees an empty heading.
  */
 export function navSections({ role, isApprover = false, pendingCount = 0 } = {}) {
-  const sections = []
-
-  const mine = role === 'employee' ? leaveNavItems() : myWorkItems()
-  if (mine.length > 0) {
-    sections.push({ id: 'mine', label: NAV_SECTION_LABELS.mine, items: mine })
-  }
-
-  const approval = approvalsMenuItem({ isApprover, pendingCount })
-  if (approval) {
-    sections.push({ id: 'approver', label: NAV_SECTION_LABELS.approver, items: [approval] })
-  }
+  const sections = [
+    { id: 'mine', label: NAV_SECTION_LABELS.mine, items: leaveNavItems() },
+  ]
 
   if (role === 'meeting_controller') {
     sections.push({ id: 'meeting', label: NAV_SECTION_LABELS.meeting, items: meetingNavItems() })
@@ -100,6 +81,11 @@ export function navSections({ role, isApprover = false, pendingCount = 0 } = {})
   }
   if (role === 'system_admin') {
     sections.push({ id: 'admin', label: NAV_SECTION_LABELS.admin, items: adminNavItems() })
+  }
+
+  const approval = approvalsMenuItem({ isApprover, pendingCount })
+  if (approval) {
+    sections.push({ id: 'approver', label: NAV_SECTION_LABELS.approver, items: [approval] })
   }
 
   return sections.filter((section) => section.items.length > 0)

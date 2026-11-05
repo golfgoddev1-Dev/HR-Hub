@@ -1,7 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import * as XLSX from 'xlsx'
-import ControllerLayout from '../components/ControllerLayout.vue'
+
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024
 const BATCH_ROWS = 500
@@ -390,7 +390,6 @@ const modeLabel = (mode) => ({ new: 'รอบใหม่', existing: 'ใช�
 </script>
 
 <template>
-  <ControllerLayout>
       <main class="content">
         <div class="page-head">
           <div>
@@ -538,7 +537,6 @@ const modeLabel = (mode) => ({ new: 'รอบใหม่', existing: 'ใช�
           </div>
         </section>
       </main>
-  </ControllerLayout>
 </template>
 
 <style scoped>

@@ -147,6 +147,15 @@ onBeforeUnmount(() => {
   min-width: 0;
 }
 
+/* Pages shared with the dock shells (leave, calendar, profile, PIN) keep their
+   own `.content` box. Inside this frame the content wrapper already supplies
+   the width and padding, so the page must not add a second, narrower one. */
+.controller-content :deep(.content) {
+  max-width: none;
+  margin: 0;
+  padding: 0 0 48px;
+}
+
 /* The app shell sets another font on headings and buttons; the Meeting
    Controller console uses Sarabun only, so it is restored here. Scoped
    styles do not reach slotted content, hence :deep(). */

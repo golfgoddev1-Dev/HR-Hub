@@ -1,6 +1,6 @@
-// One dock, mounted by the layout route. These checks pin the structure that
-// removes the flicker: AppLayout owns the dock and the routed page renders below
-// it, while pages are content only and can never mount a menu themselves.
+// One shell, mounted by the router. These checks pin the structure that keeps a
+// signed-in user inside one navigation: RoleShell owns the shell for the session
+// role, the routed page renders below it, and pages are content only.
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -15,6 +15,8 @@ const PAGES = join(SRC, 'pages')
 
 const LAYOUT = readFileSync(join(COMPONENTS, 'AppLayout.vue'), 'utf8')
 const ROUTER = readFileSync(join(SRC, 'router.js'), 'utf8')
+const ROLE_SHELL = readFileSync(join(COMPONENTS, 'RoleShell.vue'), 'utf8')
+const CONTROLLER_SHELL = readFileSync(join(COMPONENTS, 'ControllerShell.vue'), 'utf8')
 
 const PAGE_FILES = readdirSync(PAGES).filter((name) => name.endsWith('.vue'))
 
@@ -51,21 +53,25 @@ const HR_PATHS = [
   '/hr/leave/settings',
 ]
 
+const MEETING_PATHS = [
+  '/meeting/controller',
+  '/meeting/controller/qr',
+  '/meeting/controller/roster',
+  '/meeting/controller/dashboard',
+  '/meeting/controller/registrants',
+  '/meeting/controller/employees',
+  '/meeting/controller/backfill',
+  '/meeting/controller/backfill/import',
+]
+
 /** Every path string the router declares, in source order, de-duplicated. */
 const DECLARED_PATHS = [...new Set([...ROUTER.matchAll(/path: '([^']*)'/g)].map((m) => m[1]))]
 
-/** The route record that declares `props: { nav: '...' }`, up to the next one. */
-function layoutBlock(nav) {
-  const marker = `props: { nav: '${nav}' }`
-  const start = ROUTER.indexOf(marker)
-  if (start === -1) return ''
-  const next = ROUTER.indexOf("props: { nav: '", start + marker.length)
-  return ROUTER.slice(start, next === -1 ? ROUTER.length : next)
-}
-
-const LEAVE_BLOCK = layoutBlock('leave')
-const HR_BLOCK = layoutBlock('hr')
-const ADMIN_BLOCK = layoutBlock('admin')
+/** The one shell parent and its children, up to the shell-less print page. */
+const SHELL_BLOCK = ROUTER.slice(
+  ROUTER.indexOf('component: RoleShell'),
+  ROUTER.indexOf("path: '/leave/hr/requests/:id/print'")
+)
 
 describe('shared app layout', () => {
   it('positions the dock with the same box every page used', () => {
@@ -99,54 +105,60 @@ describe('shared app layout', () => {
       const source = page(name)
       expect(source, name).not.toMatch(/<AppDock/)
       expect(source, name).not.toMatch(/<AdminNav/)
+      expect(source, name).not.toMatch(/<ControllerLayout/)
     }
   })
 
   it('gives every page content only: no layout wrapper, no layout import', () => {
     for (const name of PAGE_FILES) {
       const source = page(name)
-      expect(source, name).not.toMatch(/<AppLayout|<LeaveLayout/)
-      expect(source, name).not.toMatch(/<\/AppLayout>|<\/LeaveLayout>/)
-      expect(source, name).not.toMatch(/import (AppLayout|LeaveLayout|LeaveNav|HrNav) from/)
+      expect(source, name).not.toMatch(/<AppLayout|<LeaveLayout|<ControllerLayout/)
+      expect(source, name).not.toMatch(/<\/AppLayout>|<\/LeaveLayout>|<\/ControllerLayout>/)
+      expect(source, name).not.toMatch(
+        /import (AppLayout|LeaveLayout|ControllerLayout|LeaveNav|HrNav) from/
+      )
     }
   })
 })
 
-describe('persistent layout routes', () => {
-  it('declares one layout route per system, with AppLayout as parent', () => {
-    expect(LEAVE_BLOCK).not.toBe('')
-    expect(HR_BLOCK).not.toBe('')
-    expect(ADMIN_BLOCK).not.toBe('')
-    expect((ROUTER.match(/component: AppLayout,/g) ?? []).length).toBe(3)
-    expect(ROUTER).toContain('props: { nav: \'leave\' }')
-    expect(ROUTER).toContain('props: { nav: \'hr\' }')
-    expect(ROUTER).toContain('props: { nav: \'admin\' }')
+describe('persistent shell route', () => {
+  it('declares one shell parent that chooses the nav from the session role', () => {
+    expect((ROUTER.match(/component: RoleShell,/g) ?? []).length).toBe(1)
+    expect(ROLE_SHELL).toContain("role === 'meeting_controller'")
+    expect(ROLE_SHELL).toContain('<ControllerShell')
+    expect(ROLE_SHELL).toContain('<AppLayout')
+    // The shell never mounts a menu itself: it delegates to the one real nav.
+    expect(ROLE_SHELL).not.toContain('<AppDock')
+    expect(ROLE_SHELL).not.toContain('<AdminNav')
   })
 
-  it('keeps the employee/approver pages under the leave layout', () => {
+  it('keeps the employee/approver pages under the shell', () => {
     for (const path of LEAVE_PATHS) {
-      expect(LEAVE_BLOCK, path).toContain(`path: '${path}'`)
+      expect(SHELL_BLOCK, path).toContain(`path: '${path}'`)
       expect(DECLARED_PATHS, path).toContain(path)
     }
-    expect(LEAVE_BLOCK).toContain('hrDock: true')
-    // The HR calendar branch is chosen by the route, not by the page.
-    expect(LEAVE_BLOCK).toContain("meta: { requiresAuth: true, hrDock: true }")
   })
 
-  it('keeps every HR page under the HR layout', () => {
+  it('keeps every HR page under the same shell', () => {
     for (const path of HR_PATHS) {
-      expect(HR_BLOCK, path).toContain(`path: '${path}'`)
+      expect(SHELL_BLOCK, path).toContain(`path: '${path}'`)
       expect(DECLARED_PATHS, path).toContain(path)
     }
-    expect(HR_BLOCK).not.toContain("path: '/leave'")
-    expect(HR_BLOCK).not.toContain("path: '/profile'")
   })
 
-  it('keeps /admin a single child of the admin layout', () => {
-    expect(ROUTER).toMatch(/path: '\/admin',\s*component: AppLayout,/)
-    expect(ADMIN_BLOCK).toContain('AdminPage')
-    expect(ADMIN_BLOCK).toContain("path: ''")
-    expect(ADMIN_BLOCK).not.toContain("path: '/leave'")
+  it('keeps every meeting page under the same shell, not a per-page wrapper', () => {
+    for (const path of MEETING_PATHS) {
+      expect(SHELL_BLOCK, path).toContain(`path: '${path}'`)
+      expect(DECLARED_PATHS, path).toContain(path)
+    }
+    expect(CONTROLLER_SHELL).toContain('<RouterView />')
+  })
+
+  it('keeps /admin and its permission child under the shell', () => {
+    expect(SHELL_BLOCK).toContain("path: '/admin'")
+    expect(SHELL_BLOCK).toContain('AdminPage')
+    expect(SHELL_BLOCK).toContain("path: '/admin/permissions'")
+    expect(SHELL_BLOCK).toContain("meta: { requiresAuth: true, role: 'system_admin' }")
   })
 
   it('declares the same path strings as before, plus nothing new', () => {
@@ -183,29 +195,38 @@ describe('persistent layout routes', () => {
       '/meeting/register',
       '/leave/hr/requests/:id/print',
       '/admin',
-      // ระบบสิทธิ์ผู้ใช้: a second child of the admin layout, added with the page.
       '/admin/permissions',
-      '',
       '/:pathMatch(.*)*',
     ]
     expect(DECLARED_PATHS.sort()).toEqual(expected.sort())
   })
 
-  it('keeps every child reachable for the role the layout serves', () => {
+  it('keeps every child reachable for the role the shell serves', () => {
     for (const path of LEAVE_PATHS) {
       expect(canOpenPath('employee', path), path).toBe(true)
     }
-    expect(canOpenPath('hr', '/leave/calendar')).toBe(true)
 
     for (const path of HR_PATHS) {
       const concrete = path.replace(':id', 'emp-1')
       expect(canOpenPath('hr', concrete), path).toBe(true)
     }
-  })
 
-  it('leaves the meeting controller routes outside both app layouts', () => {
-    expect(ROUTER).toContain("path: '/meeting/controller'")
-    // The controller shell is still chosen by each page, not by these routes.
-    expect(ROUTER).not.toMatch(/meeting\/controller[\s\S]{0,80}AppLayout/)
+    for (const path of MEETING_PATHS) {
+      expect(canOpenPath('meeting_controller', path), path).toBe(true)
+    }
+
+    // A meeting session reaches the shared leave pages through its employee row.
+    const meeting = { role: 'meeting_controller', hasEmployee: true }
+    for (const path of LEAVE_PATHS) {
+      if (path === '/leave/approvals') continue
+      expect(canOpenPath('meeting_controller', path, meeting), path).toBe(true)
+    }
+    // The queue itself follows the approver row.
+    expect(
+      canOpenPath('meeting_controller', '/leave/approvals', {
+        ...meeting,
+        isApprover: true,
+      })
+    ).toBe(true)
   })
 })

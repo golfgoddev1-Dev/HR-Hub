@@ -1,10 +1,9 @@
 <script setup>
-import ControllerLayout from '../components/ControllerLayout.vue'
+
 import EmployeeDirectoryManager from '../components/EmployeeDirectoryManager.vue'
 </script>
 
 <template>
-  <ControllerLayout>
       <main class="page-main">
         <div class="page-head">
           <div>
@@ -19,7 +18,6 @@ import EmployeeDirectoryManager from '../components/EmployeeDirectoryManager.vue
 
         <EmployeeDirectoryManager base="/api/meeting/directory" />
       </main>
-  </ControllerLayout>
 </template>
 
 <style scoped>

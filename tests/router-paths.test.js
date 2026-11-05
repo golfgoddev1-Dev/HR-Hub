@@ -108,8 +108,13 @@ describe('system_admin landing page', () => {
   })
 
   it('is rendered by the admin page only, so no other role sees it', () => {
-    // AppLayout owns the menu component; pages only pick it through the prop.
-    expect(ROUTER).toContain("props: { nav: 'admin' }")
+    // RoleShell picks the admin nav from the session role; pages never do.
+    expect(ROUTER).toContain('component: RoleShell')
+    const roleShell = readFileSync(
+      new URL('../src/components/RoleShell.vue', import.meta.url),
+      'utf8'
+    )
+    expect(roleShell).toContain("system_admin: 'admin'")
     const layout = readFileSync(new URL('../src/components/AppLayout.vue', import.meta.url), 'utf8')
     expect(layout).toContain('<AdminNav')
 

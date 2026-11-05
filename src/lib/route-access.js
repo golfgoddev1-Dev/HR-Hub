@@ -43,8 +43,16 @@ export const allowedPathsByRole = {
   system_admin: ['/admin', '/admin/permissions'],
 }
 
-// Pages any active employee may open with any login role.
-export const employeeSelfPaths = ['/leave', '/leave/new', '/change-pin', '/profile']
+// Pages any active employee may open with any login role, so the "งานของฉัน"
+// section is the same in every shell and no item leads to a page the role is
+// refused. The calendar is the employee's own leave view.
+export const employeeSelfPaths = [
+  '/leave',
+  '/leave/new',
+  '/leave/calendar',
+  '/change-pin',
+  '/profile',
+]
 
 // Detail pages carry an id in the path, so exact-path matching is not enough.
 export const allowedPrefixesByRole = {

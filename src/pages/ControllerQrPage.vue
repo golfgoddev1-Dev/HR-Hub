@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import QRCode from 'qrcode'
-import ControllerLayout from '../components/ControllerLayout.vue'
+
 
 const route = useRoute()
 const router = useRouter()
@@ -301,7 +301,6 @@ loadMonthlySessions()
 </script>
 
 <template>
-  <ControllerLayout>
       <main class="page-main">
         <RouterLink to="/meeting/controller" class="back-link">
           <span class="material-symbols-outlined back-icon">arrow_back</span>
@@ -506,7 +505,6 @@ loadMonthlySessions()
         </div>
       </div>
     </v-dialog>
-  </ControllerLayout>
 </template>
 
 <style scoped>

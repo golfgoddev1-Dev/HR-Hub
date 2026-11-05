@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import ControllerLayout from '../components/ControllerLayout.vue'
+
 
 const LOAD_ERROR = 'โหลดข้อมูลไม่สำเร็จ กรุณาลองใหม่'
 
@@ -153,7 +153,6 @@ onMounted(async () => {
 </script>
 
 <template>
-  <ControllerLayout>
       <main class="content">
         <div class="page-head">
           <div>
@@ -346,7 +345,6 @@ onMounted(async () => {
           </div>
         </section>
       </main>
-  </ControllerLayout>
 </template>
 
 <style scoped>

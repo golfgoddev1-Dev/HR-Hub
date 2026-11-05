@@ -92,14 +92,14 @@ describe('approvals entry in the shared menu', () => {
 })
 
 describe('navSections', () => {
-  it('orders the groups my work, approver, then the role section', () => {
+  it('orders the groups my work, the role section, then the approver section', () => {
     const sections = navSections({ role: 'hr', isApprover: true, pendingCount: 2 })
 
-    expect(sections.map((section) => section.id)).toEqual(['mine', 'approver', 'hr'])
+    expect(sections.map((section) => section.id)).toEqual(['mine', 'hr', 'approver'])
     expect(sections.map((section) => section.label)).toEqual([
       NAV_SECTION_LABELS.mine,
-      NAV_SECTION_LABELS.approver,
       NAV_SECTION_LABELS.hr,
+      NAV_SECTION_LABELS.approver,
     ])
     expect(NAV_SECTION_LABELS).toMatchObject({
       mine: 'งานของฉัน',
@@ -110,27 +110,17 @@ describe('navSections', () => {
     })
   })
 
-  it('gives hr, meeting and system_admin the four self items', () => {
-    for (const role of ['hr', 'meeting_controller', 'system_admin']) {
+  it('gives every shell the same five my-work items, calendar included', () => {
+    for (const role of ['employee', 'hr', 'meeting_controller', 'system_admin']) {
       const mine = navSections({ role }).find((section) => section.id === 'mine')
       expect(mine.items.map((item) => item.to), role).toEqual([
         '/leave',
         '/leave/new',
+        '/leave/calendar',
         '/profile',
         '/change-pin',
       ])
     }
-  })
-
-  it('keeps the employee menu exactly as before, calendar included', () => {
-    const mine = navSections({ role: 'employee' }).find((section) => section.id === 'mine')
-    expect(mine.items.map((item) => item.to)).toEqual([
-      '/leave',
-      '/leave/new',
-      '/leave/calendar',
-      '/profile',
-      '/change-pin',
-    ])
   })
 
   it('hides a section with nothing to show', () => {

@@ -3,7 +3,7 @@
 // existing Worker GET endpoints (dashboard summary for the cycle picker and
 // status labels, dashboard registrants for the rows) and never writes.
 import { computed, ref, watch } from 'vue'
-import ControllerLayout from '../components/ControllerLayout.vue'
+
 import { postJson } from '../api.js'
 
 const LOAD_ERROR_MESSAGE = 'ไม่สามารถโหลดรายชื่อผู้ลงทะเบียนได้ กรุณาลองใหม่'
@@ -364,7 +364,6 @@ loadPage()
 </script>
 
 <template>
-  <ControllerLayout>
       <main class="page-main">
         <RouterLink to="/meeting/controller" class="back-link">
           <span class="material-symbols-outlined back-icon">arrow_back</span>
@@ -571,7 +570,6 @@ loadPage()
           </div>
         </div>
       </main>
-  </ControllerLayout>
 </template>
 
 <style scoped>

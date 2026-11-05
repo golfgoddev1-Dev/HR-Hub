@@ -44,16 +44,21 @@ describe('canOpenPath', () => {
     expect(canOpenPath('hr', null)).toBe(false)
   })
 
-  it('opens the four self pages for another role only with an employee record', () => {
+  it('opens the five self pages for another role only with an employee record', () => {
     for (const role of ['hr', 'meeting_controller', 'system_admin']) {
-      for (const path of ['/leave', '/leave/new', '/change-pin', '/profile']) {
+      for (const path of ['/leave', '/leave/new', '/leave/calendar', '/change-pin', '/profile']) {
         const withEmployee = { role, hasEmployee: true }
         expect(canOpenPath(role, path, withEmployee), `${role} ${path}`).toBe(true)
-        expect(canOpenPath(role, path, { role, hasEmployee: false }), `${role} ${path}`).toBe(
-          false
-        )
+
+        // HR already carries the calendar in its own allow-list; the other roles
+        // reach it through the employee record only.
+        const ownRule = role === 'hr' && path === '/leave/calendar'
+        expect(
+          canOpenPath(role, path, { role, hasEmployee: false }),
+          `${role} ${path}`
+        ).toBe(ownRule)
         // No session handed in means no employee proof either.
-        expect(canOpenPath(role, path), `${role} ${path}`).toBe(false)
+        expect(canOpenPath(role, path), `${role} ${path}`).toBe(ownRule)
       }
     }
   })
@@ -62,7 +67,6 @@ describe('canOpenPath', () => {
     const meeting = { role: 'meeting_controller', hasEmployee: true }
     expect(canOpenPath('meeting_controller', '/hr', meeting)).toBe(false)
     expect(canOpenPath('meeting_controller', '/admin', meeting)).toBe(false)
-    expect(canOpenPath('meeting_controller', '/leave/calendar', meeting)).toBe(false)
 
     const admin = { role: 'system_admin', hasEmployee: true }
     expect(canOpenPath('system_admin', '/hr/leave', admin)).toBe(false)

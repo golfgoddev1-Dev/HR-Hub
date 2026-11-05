@@ -136,14 +136,19 @@ describe('access and wiring', () => {
     }
   })
 
-  it('is content only: the layout route supplies the dock for the signed-in role', () => {
-    // The page no longer chooses a shell. The leave layout route reads meta.hrDock
-    // and shows the HR items when the visitor is HR, so behaviour is unchanged.
+  it('is content only: RoleShell supplies the nav for the signed-in role', () => {
+    // The page no longer chooses a shell. RoleShell shows the HR items on every
+    // page an HR session opens, the calendar included.
     expect(PAGE).not.toContain('AppLayout')
     expect(PAGE).not.toContain('AppDock')
     expect(PAGE).toContain('<LeaveCalendarView')
     expect(PAGE).toContain('isHr')
-    expect(ROUTER).toContain('hrDock: true')
+    expect(ROUTER).not.toContain('hrDock')
+    const roleShell = readFileSync(
+      new URL('../src/components/RoleShell.vue', import.meta.url),
+      'utf8'
+    )
+    expect(roleShell).toContain("hr: 'hr'")
     expect(VIEW).toContain("from '@fullcalendar/vue3'")
     expect(VIEW).toContain('/api/leave/calendar?')
     // The range URL now comes from the shared cached loader.

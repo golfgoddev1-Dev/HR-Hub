@@ -1,6 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { getSession } from './api.js'
-import AppLayout from './components/AppLayout.vue'
+import RoleShell from './components/RoleShell.vue'
 import LoginPage from './pages/LoginPage.vue'
 import PendingPage from './pages/PendingPage.vue'
 import SetPinPage from './pages/SetPinPage.vue'
@@ -46,35 +46,25 @@ export const router = createRouter({
     { path: '/', redirect: '/login' },
     { path: '/set-pin', component: SetPinPage },
 
-    // Employee/approver system. The layout is a route parent, so AppLayout (and
-    // the dock it owns) mounts once and stays mounted while these pages change.
+    // One shell route for every signed-in page. RoleShell picks the navigation
+    // from the session role (employee dock, HR dock, admin nav, or the meeting
+    // controller sidebar), so the menu is never replaced when the page changes.
     // Child paths stay absolute so every URL is the same string as before.
     {
       path: '/',
-      component: AppLayout,
-      props: { nav: 'leave' },
+      component: RoleShell,
       children: [
+        // งานของฉัน: these belong to the active employee record, so they are
+        // children here and reachable in every shell.
         { path: '/change-pin', component: ChangePinPage, meta: { requiresAuth: true } },
         { path: '/leave', component: LeaveHomePage, meta: { requiresAuth: true } },
         { path: '/leave/new', component: LeaveRequestPage, meta: { requiresAuth: true } },
         { path: '/leave/approvals', component: LeaveApprovalsPage, meta: { requiresAuth: true } },
-        {
-          path: '/leave/calendar',
-          component: LeaveCalendarPage,
-          // HR may open this page; the route says which dock to show then.
-          meta: { requiresAuth: true, hrDock: true },
-        },
+        { path: '/leave/calendar', component: LeaveCalendarPage, meta: { requiresAuth: true } },
         { path: '/profile', component: ProfilePage, meta: { requiresAuth: true } },
-      ],
-    },
 
-    // HR system: its own persistent layout, so moving between HR pages keeps the
-    // same dock element.
-    {
-      path: '/',
-      component: AppLayout,
-      props: { nav: 'hr' },
-      children: [
+        // HR system: the same HR dock stays mounted between these pages and the
+        // leave pages above.
         { path: '/hr', component: HrHomePage, meta: { requiresAuth: true } },
         { path: '/hr/employees', component: HrEmployeesPage, meta: { requiresAuth: true } },
         { path: '/hr/employees/manage', component: HrEmployeeDataPage, meta: { requiresAuth: true } },
@@ -86,31 +76,21 @@ export const router = createRouter({
         { path: '/hr/leave/approvers', component: HrLeaveApproversPage, meta: { requiresAuth: true } },
         { path: '/hr/leave/holidays', component: HrLeaveHolidaysPage, meta: { requiresAuth: true } },
         { path: '/hr/leave/settings', component: HrLeaveSettingsPage, meta: { requiresAuth: true } },
-      ],
-    },
 
-    // Meeting controller keeps its own layout inside each page (unchanged).
-    { path: '/meeting/controller', component: ControllerOverviewPage, meta: { requiresAuth: true } },
-    { path: '/meeting/controller/qr', component: ControllerQrPage, meta: { requiresAuth: true } },
-    { path: '/meeting/controller/roster', component: ControllerRosterPage, meta: { requiresAuth: true } },
-    { path: '/meeting/controller/dashboard', component: ControllerDashboardPage, meta: { requiresAuth: true } },
-    { path: '/meeting/controller/registrants', component: RegistrantsPage, meta: { requiresAuth: true } },
-    { path: '/meeting/controller/employees', component: ControllerEmployeeDataPage, meta: { requiresAuth: true } },
-    { path: '/meeting/controller/backfill', component: MeetingBackfillHistoryPage, meta: { requiresAuth: true } },
-    { path: '/meeting/controller/backfill/import', component: MeetingBackfillImportPage, meta: { requiresAuth: true } },
-    { path: '/meeting/register', component: RegisterPage },
+        // Meeting controller: the controller sidebar is the shell for all of
+        // these and for the leave pages above.
+        { path: '/meeting/controller', component: ControllerOverviewPage, meta: { requiresAuth: true } },
+        { path: '/meeting/controller/qr', component: ControllerQrPage, meta: { requiresAuth: true } },
+        { path: '/meeting/controller/roster', component: ControllerRosterPage, meta: { requiresAuth: true } },
+        { path: '/meeting/controller/dashboard', component: ControllerDashboardPage, meta: { requiresAuth: true } },
+        { path: '/meeting/controller/registrants', component: RegistrantsPage, meta: { requiresAuth: true } },
+        { path: '/meeting/controller/employees', component: ControllerEmployeeDataPage, meta: { requiresAuth: true } },
+        { path: '/meeting/controller/backfill', component: MeetingBackfillHistoryPage, meta: { requiresAuth: true } },
+        { path: '/meeting/controller/backfill/import', component: MeetingBackfillImportPage, meta: { requiresAuth: true } },
+        { path: '/meeting/register', component: RegisterPage },
 
-    // The printed leave form is a document, not an app page: no dock.
-    { path: '/leave/hr/requests/:id/print', component: HrLeavePrintPage, meta: { requiresAuth: true } },
-
-    // system_admin keeps AdminNav, inside its own layout route.
-    {
-      path: '/admin',
-      component: AppLayout,
-      props: { nav: 'admin' },
-      meta: { requiresAuth: true },
-      children: [
-        { path: '', component: AdminPage, meta: { requiresAuth: true } },
+        // system_admin keeps AdminNav, drawn by the same RoleShell.
+        { path: '/admin', component: AdminPage, meta: { requiresAuth: true } },
         // The permission screen names its one role, so any other role is sent to
         // its own home instead of reaching a page whose API would answer 403.
         {
@@ -120,6 +100,9 @@ export const router = createRouter({
         },
       ],
     },
+
+    // The printed leave form is a document, not an app page: no shell.
+    { path: '/leave/hr/requests/:id/print', component: HrLeavePrintPage, meta: { requiresAuth: true } },
 
     { path: '/:pathMatch(.*)*', component: PendingPage, meta: { requiresAuth: true, catchAll: true } },
   ],

@@ -1,6 +1,6 @@
 <script setup>
 import { computed, reactive, ref } from 'vue'
-import ControllerLayout from '../components/ControllerLayout.vue'
+
 
 const LOAD_ERROR_MESSAGE = 'ไม่สามารถโหลดแดชบอร์ดได้ กรุณาลองใหม่'
 const DEPT_ERROR_MESSAGE = 'ไม่สามารถโหลดรายชื่อแผนกได้ กรุณาลองใหม่'
@@ -437,7 +437,6 @@ loadDashboard()
 </script>
 
 <template>
-  <ControllerLayout>
       <main class="page-main">
         <RouterLink to="/meeting/controller" class="back-link">
           <span class="material-symbols-outlined back-icon">arrow_back</span>
@@ -925,7 +924,6 @@ loadDashboard()
         </div>
       </form>
     </div>
-  </ControllerLayout>
 </template>
 
 <style scoped>

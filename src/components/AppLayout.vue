@@ -1,9 +1,8 @@
 <script setup>
-// The shell for both persistent layout routes. It owns the dock (so the dock
-// mounts once per system and survives page changes) and the approvals lookup
-// (so pages no longer fetch it), then renders the matched page below.
+// The dock/admin shell drawn by RoleShell. It owns the dock (so the dock mounts
+// once per system and survives page changes) and the approvals lookup (so pages
+// no longer fetch it), then renders the matched page below.
 import { computed, onMounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
 import AdminNav from './AdminNav.vue'
 import AppDock from './AppDock.vue'
 import { getSession } from '../api.js'
@@ -18,22 +17,13 @@ const props = defineProps({
   },
 })
 
-const route = useRoute()
 const session = ref(null)
 const isApprover = ref(false)
 const pendingCount = ref(0)
 
-// /leave/calendar is reachable by HR and then shows the HR dock. The route says
-// so through meta.hrDock, so the page itself never chooses a shell.
-const dockNav = computed(() => {
-  if (route.meta.hrDock === true && session.value?.role === 'hr') return 'hr'
-  return props.nav
-})
-
-const isHrDock = computed(() => dockNav.value === 'hr')
-
-// The menu follows the signed-in role, not the route group: an HR user on
-// /leave still sees both "งานของฉัน" and "งาน HR".
+// RoleShell passes the nav for the signed-in role, so the menu is the same on
+// every page that role can open: an HR user on /leave still sees both
+// "งานของฉัน" and "งาน HR".
 const sessionRole = computed(() => {
   if (props.nav === 'admin') return 'system_admin'
   if (typeof session.value?.role === 'string') return session.value.role
@@ -49,7 +39,7 @@ const sections = computed(() =>
 )
 
 const brand = computed(() =>
-  isHrDock.value
+  props.nav === 'hr'
     ? { icon: 'groups', title: 'ระบบบริการงานบุคคลและสวัสดิการพนักงาน', subtitle: '', badge: true }
     : { icon: 'beach_access', title: 'ระบบใบลา', subtitle: '', badge: false }
 )
@@ -61,7 +51,7 @@ onMounted(async () => {
   const current = await getSession()
   session.value = current
   isApprover.value = current?.isApprover === true
-  if (!isApprover.value || props.nav !== 'leave') return
+  if (!isApprover.value) return
 
   try {
     await loadShared(DATA_KEYS.approvals, loaders.approvals, {

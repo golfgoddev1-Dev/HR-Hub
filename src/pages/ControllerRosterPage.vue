@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import ControllerLayout from '../components/ControllerLayout.vue'
+
 
 const MIN_SEARCH_LENGTH = 2
 const SEARCH_DEBOUNCE_MS = 300
@@ -154,7 +154,6 @@ loadMembers()
 </script>
 
 <template>
-  <ControllerLayout>
       <main class="page-main">
         <RouterLink to="/meeting/controller" class="back-link">
           <span class="material-symbols-outlined back-icon">arrow_back</span>
@@ -261,7 +260,6 @@ loadMembers()
         </section>
       </div>
       </main>
-  </ControllerLayout>
 </template>
 
 <style scoped>

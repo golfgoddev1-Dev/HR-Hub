@@ -76,11 +76,13 @@ describe('AppLayout wiring', () => {
     expect(APP_LAYOUT).toContain('navSections({')
   })
 
-  it('places the approver section after the my-work section', () => {
+  it('places the approver section after the my-work and role sections', () => {
     const mine = NAV_CONFIG.indexOf("id: 'mine'")
+    const role = NAV_CONFIG.indexOf("id: 'meeting'")
     const approval = NAV_CONFIG.indexOf("id: 'approver'")
     expect(mine).toBeGreaterThan(-1)
-    expect(approval).toBeGreaterThan(mine)
+    expect(role).toBeGreaterThan(mine)
+    expect(approval).toBeGreaterThan(role)
   })
 
   it('keeps the five base items, including change PIN, in the shared config', () => {

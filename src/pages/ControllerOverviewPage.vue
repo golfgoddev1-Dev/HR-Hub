@@ -1,6 +1,6 @@
 <script setup>
 import { computed, reactive, ref } from 'vue'
-import ControllerLayout from '../components/ControllerLayout.vue'
+
 
 const LOAD_ERROR_MESSAGE = 'ไม่สามารถโหลดข้อมูลภาพรวมได้ กรุณาลองใหม่'
 const PENDING_ERROR_MESSAGE = 'ไม่สามารถโหลดรายชื่อที่ยังไม่ลงทะเบียนได้ กรุณาลองใหม่'
@@ -118,7 +118,6 @@ loadOverview()
 </script>
 
 <template>
-  <ControllerLayout>
       <main class="page-main">
         <div class="page-head">
           <div>
@@ -268,7 +267,6 @@ loadOverview()
           </section>
         </template>
       </main>
-  </ControllerLayout>
 </template>
 
 <style scoped>
