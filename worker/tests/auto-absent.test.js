@@ -19,6 +19,9 @@ import worker from "../src/index.js";
 const ENV = {
   SUPABASE_URL: "https://fake-project.supabase.co",
   SUPABASE_SERVICE_ROLE_KEY: "fake-service-role-key",
+  // The every-minute trigger is shared with the push queue; auto-absent only
+  // runs when this cutover switch is on.
+  AUTO_ABSENT_ENABLED: "true",
 };
 
 // Monday 5 January 2026, 12:30 in Bangkok.

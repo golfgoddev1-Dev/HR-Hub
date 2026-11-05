@@ -55,11 +55,11 @@
 - Secrets สำหรับ Web Push (ระบบลา/แจ้งเตือน) ตั้งบน Worker ชื่อเดียวกัน:
   `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` (ค่าจริงสร้างนอก repo และห้าม commit)
 - Cron triggers ตามที่อยู่ใน `wrangler.toml` ปัจจุบัน (3 ตัว จากเพดานฟรี 5 ตัว):
-  `crons = ["0 1,9,17 * * *", "0 2 * * *", "*/5 * * * *"]`
+  `crons = ["0 1,9,17 * * *", "0 2 * * *", "* * * * *"]`
   - `0 1,9,17 * * *` — keep-alive ของ Supabase (เดิม ไม่เปลี่ยน)
   - `0 2 * * *` — ลบไฟล์ใบรับรองแพทย์ที่หมดอายุตาม `leave_settings`
-  - `*/5 * * * *` — คิว Web Push
-  - งาน auto-absent รายนาที (`* * * * *`) ยังไม่ถูกเปิดใน config นี้ (Express ถูกถอดออกแล้ว แต่ branch ยังอยู่ใน Worker)
+  - `* * * * *` — คิว Web Push (fallback ทุกนาที; แจ้งเตือนใหม่ส่งทันทีใน request)
+  - auto-absent ใช้ expression เดียวกันแต่ยังปิดอยู่ เปิดด้วย `AUTO_ABSENT_ENABLED="true"` เมื่อพร้อม
 - (ประวัติ) Worker เก่าชื่อ `hr-workers-spike` ไม่ได้ใช้งานแล้ว — ชื่อที่ใช้อยู่คือ `hr-hub-api`
 - ตัวแปรที่ไม่ใช่ secret:
   - `APP_ORIGIN` = origin จริงของ Pages (ปัจจุบันใน `wrangler.toml` คือ `https://hr-hub-3yr.pages.dev`)
@@ -184,9 +184,10 @@
 |---|---|---|
 | `0 1,9,17 * * *` | keep-alive ของ Supabase | **เดิม ไม่เปลี่ยน** |
 | `0 2 * * *` | ลบไฟล์ใบรับรองแพทย์ที่หมดอายุ (ตาม `leave_settings`) | ใหม่ |
-| `*/5 * * * *` | คิว Web Push | ใหม่ |
+| `* * * * *` | คิว Web Push (fallback ทุกนาที) | ใหม่ |
 
-- ใช้ 3 จากเพดาน 5 trigger ของ Workers Free; ห้ามเพิ่ม `* * * * *` (auto-absent) ในรอบนี้
+- ใช้ 3 จากเพดาน 5 trigger ของ Workers Free; `* * * * *` ถูกใช้โดยคิว Web Push แล้ว
+- auto-absent แชร์ expression นี้แต่ถูก gate ด้วย `AUTO_ABSENT_ENABLED` จึงยังไม่ทำงาน
 - ตรวจว่า trigger ถูก deploy จริง: `cd worker && npx wrangler deployments list` หรือดูใน Dashboard → Triggers
 - ตรวจ log ของ cron ด้วย `npx wrangler tail` แล้วดูว่าไม่มี `[cert-cleanup-error]` หรือ `[notification-cron-error]`
 
@@ -195,7 +196,7 @@
 1. **SQL ที่รันแล้ว** — ตรวจตาม 8.1 ไม่ต้องรันซ้ำ (ไฟล์ draft ไม่ถูก commit)
 2. **bucket** `leave-certificates` แบบ private (10 MB, jpeg/png/pdf) ตาม 8.2
 3. **secrets ของ Worker** — `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` เพิ่มจาก secrets เดิม (8.3)
-4. **`cd worker && npx wrangler deploy`** — ต้องมี cron สามตัว: `"0 1,9,17 * * *"`, `"0 2 * * *"`, `"*/5 * * * *"`
+4. **`cd worker && npx wrangler deploy`** — ต้องมี cron สามตัว: `"0 1,9,17 * * *"`, `"0 2 * * *"`, `"* * * * *"`
 5. **push branch `release`** เพื่อให้ Pages build (ต้องได้รับอนุมัติก่อนทุกครั้ง)
 6. **ทดสอบตาม checklist หลัง deploy** ใน 8.6 และตรวจ `dist` ว่ามี `manifest.webmanifest`, `sw.js`, `icon.svg`, `fonts/`
 
@@ -208,5 +209,5 @@
 5. คีย์ใบลาย้อนหลัง → ติ๊ก "มีใบรับรองแพทย์" → บันทึกแล้วขึ้น "มีใบรับรองแพทย์ (บันทึกโดย HR)" ไม่มีปุ่มเปิดไฟล์
 6. เปิดหน้าพิมพ์ใบลา → กด "พิมพ์ / บันทึกเป็น PDF" → ได้ A4 หนึ่งหน้า ฟอนต์ไทยครบ ไม่มีช่องลายเซ็น
 7. เปิด `/hr/leave/settings` เปลี่ยนจำนวนวันเก็บไฟล์ → กลับไปหน้าใบลาเห็นข้อความ N เปลี่ยนตาม
-8. เปิดการแจ้งเตือน (PushToggle) → อนุมัติใบลา → ตรวจว่ามีแถวในคิวและ push ถูกส่งภายในรอบ `*/5 * * * *`
+8. เปิดการแจ้งเตือน (PushToggle) → อนุมัติใบลา → ตรวจว่ามีแถวในคิวและ push ถูกส่งภายในไม่กี่วินาที (fallback cron ทุกนาที)
 9. ตรวจว่า `/api/leave/hr/*` ตอบ 403 เมื่อเรียกด้วยบัญชีที่ไม่ใช่ HR

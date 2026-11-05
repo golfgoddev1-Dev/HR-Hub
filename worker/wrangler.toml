@@ -9,15 +9,14 @@ compatibility_date = "2026-09-01"
 # Workers Free allows 5 cron triggers per account. Deployed set:
 #   0 1,9,17 * * *   keep-alive (Phase 4b), 00:00 / 08:00 / 16:00 Asia/Bangkok
 #   0 2 * * *        leave certificate retention (phase 2), 09:00 Asia/Bangkok
-#   */5 * * * *       web push queue (phase 3), every five minutes
+#   * * * * *        web push queue fallback, every minute
 #
-# CUTOVER: add "* * * * *" here only after the Express auto-absent job is off,
-# then deploy. The every-minute dispatch already exists in src/index.js and its
-# constant is AUTO_ABSENT_CRON in src/auto-absent.js, so cutover is adding the
-# trigger below; it is left out until then because both writers would run.
+# Auto-absent shares the every-minute expression. It stays disabled until the
+# Express job is off; enable it with AUTO_ABSENT_ENABLED="true" at cutover, not
+# by adding another trigger (the expression is already present).
 # The expected list is pinned by tests/wrangler-crons.test.js.
 [triggers]
-crons = ["0 1,9,17 * * *", "0 2 * * *", "*/5 * * * *"]
+crons = ["0 1,9,17 * * *", "0 2 * * *", "* * * * *"]
 
 # Rate limiters: SQLite-backed Durable Objects. Workers Free only supports the
 # SQLite storage backend, confirmed at

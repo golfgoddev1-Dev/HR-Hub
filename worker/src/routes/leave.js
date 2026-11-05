@@ -148,7 +148,8 @@ function ensureOk(result) {
 
 /**
  * Sends the rows just queued after the response, through the request's
- * ExecutionContext. No context (a test call) only leaves them to the cron.
+ * ExecutionContext. No context (a test call) runs the pass here, bounded to
+ * three seconds, so the leave response is still never failed by it.
  */
 function dispatchQueued(c, queued, now) {
   const ids = queued?.ok === true && typeof queued.id === "string" ? [queued.id] : [];
@@ -632,7 +633,7 @@ leave.post("/requests", async (c) => {
       kind: NOTIFICATION_KINDS.SUBMITTED,
     });
     // The response does not wait for the push; the cron retries a failure.
-    dispatchQueued(c, queued, now);
+    await dispatchQueued(c, queued, now);
 
     return c.json(
       {
@@ -920,7 +921,7 @@ async function decide(c, status) {
       kind: NOTIFICATION_KINDS.DECIDED,
       status,
     });
-    dispatchQueued(c, queued, new Date(nowIso));
+    await dispatchQueued(c, queued, new Date(nowIso));
 
     return c.json({ ok: true, id, status, decidedAt: nowIso }, 200);
   } catch (error) {

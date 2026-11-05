@@ -7,10 +7,11 @@ import { AUTO_ABSENT_CRON } from "../src/auto-absent.js";
 import { CERT_CLEANUP_CRON } from "../src/leave-retention.js";
 import { NOTIFICATION_CRON } from "../src/push/queue.js";
 
-// The deployed trigger list is a cutover decision, not an implementation detail:
-// the every-minute auto-absent trigger must not reach production while the
-// Express job still runs. Reading the real file keeps an accidental edit from
-// passing unnoticed, and the test never touches the network or wrangler.
+// The deployed trigger list is a cutover decision, not an implementation detail.
+// The every-minute expression now belongs to the push queue; auto-absent shares
+// it but is gated by AUTO_ABSENT_ENABLED until the Express job is off. Reading
+// the real file keeps an accidental edit from passing unnoticed, and the test
+// never touches the network or wrangler.
 const CONFIG_PATH = fileURLToPath(new URL("../wrangler.toml", import.meta.url));
 
 function cronsInConfig() {
@@ -38,10 +39,12 @@ test("wrangler.toml ships exactly the deployed triggers", () => {
   assert.deepEqual(cronsInConfig(), ["0 1,9,17 * * *", CERT_CLEANUP_CRON, NOTIFICATION_CRON]);
 });
 
-test("the every-minute trigger is implemented but not deployed", () => {
-  // Cutover is one line in wrangler.toml: add this string to crons.
+test("the every-minute trigger is deployed once, for the push queue", () => {
   assert.equal(AUTO_ABSENT_CRON, "* * * * *");
-  assert.equal(cronsInConfig().includes(AUTO_ABSENT_CRON), false);
+  const crons = cronsInConfig();
+  assert.equal(crons.filter((cron) => cron === AUTO_ABSENT_CRON).length, 1);
+  // Auto-absent must not start with it: src/index.js requires its cutover
+  // switch, and wrangler.toml does not set AUTO_ABSENT_ENABLED.
 });
 
 test("the certificate cleanup runs on its own trigger, never on the keep-alive one", () => {
@@ -51,8 +54,8 @@ test("the certificate cleanup runs on its own trigger, never on the keep-alive o
   assert.equal(crons.filter((cron) => cron === CERT_CLEANUP_CRON).length, 1);
 });
 
-test("the push queue has its own five-minute trigger", () => {
-  assert.equal(NOTIFICATION_CRON, "*/5 * * * *");
+test("the push queue has its own every-minute trigger", () => {
+  assert.equal(NOTIFICATION_CRON, "* * * * *");
   const crons = cronsInConfig();
   assert.equal(crons.filter((cron) => cron === NOTIFICATION_CRON).length, 1);
   // The retention and keep-alive triggers are untouched by phase 3.

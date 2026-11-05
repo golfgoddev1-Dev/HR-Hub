@@ -693,7 +693,7 @@ leaveHr.post("/requests", async (c) => {
       leaveRequestId: inserted.data?.id ?? null,
       kind: NOTIFICATION_KINDS.BACKDATED,
     });
-    dispatchQueued(c, queued, now);
+    await dispatchQueued(c, queued, now);
 
     return c.json(
       {

@@ -9,8 +9,10 @@ import assert from "node:assert/strict";
 
 import app from "../src/app.js";
 import { sha256Hex } from "../src/crypto.js";
+import worker from "../src/index.js";
 import {
   dispatchQueuedNotifications,
+  NOTIFICATION_CRON,
   runNotificationQueue,
 } from "../src/push/queue.js";
 
@@ -236,13 +238,19 @@ test("a leave submit queues the push with next_attempt_at and dispatches it", as
 
   const queued = fake.state.notification_queue[0];
   assert.equal(queued.employee_id, APPROVER_ID);
-  assert.equal(queued.status, "pending");
+  // The in-request pass may already have claimed the row, so its final status
+  // is asserted after waitUntil below.
   assert.equal(queued.next_attempt_at, queued.created_at);
   assert.equal(typeof queued.next_attempt_at, "string");
 
   // The response was returned before dispatch ran; the pass is in waitUntil.
   assert.equal(waits.length, 1);
   await waits[0];
+
+  // The pass selected the row by id and finished it before the cron was due.
+  assert.equal(queued.status, "cancelled");
+  assert.equal(queued.last_error, "no_subscription");
+  assert.equal(queued.attempts, 0);
 
   const dispatchRead = fake.calls.find(
     (call) => call.table === "notification_queue" && call.method === "GET"
@@ -276,9 +284,10 @@ test("dispatch is handed to waitUntil and never awaited", async (t) => {
     ["queue-missing"]
   );
 
-  // A boolean, not a promise: the request had nothing to await.
-  assert.equal(returned, true);
+  // Async for the no-context fallback, but with a context it only schedules.
+  assert.equal(typeof returned.then, "function");
   assert.equal(waits.length, 1);
+  await returned;
   await waits[0];
 });
 
@@ -331,4 +340,78 @@ test("a failed send keeps the row pending with backoff and is retried", async (t
   const later = await runNotificationQueue(ENV, new Date(NOW.getTime() + 2 * 60 * 1000));
   assert.equal(later.selected, 1);
   assert.equal(fake.state.notification_queue[0].attempts, 2);
+});
+
+test("without an ExecutionContext the dispatch still runs inside the request", async (t) => {
+  const fake = await createBackend();
+  t.after(() => fake.restore());
+
+  const response = await submit(EMPLOYEE_TOKEN);
+  assert.equal(response.status, 201);
+
+  // The fallback awaited the pass (bounded to three seconds), so the row is
+  // already finished when the response arrives.
+  const row = fake.state.notification_queue[0];
+  assert.equal(row.status, "cancelled");
+  assert.equal(row.last_error, "no_subscription");
+  assert.equal(row.attempts, 0);
+});
+
+test("a dispatch failure never fails the leave submit", async (t) => {
+  const fake = await createBackend({
+    subscriptions: [
+      {
+        id: "sub-1",
+        employee_id: APPROVER_ID,
+        endpoint: "https://push.invalid/one",
+        p256dh: "AAAA",
+        auth: "BBBB",
+        is_active: true,
+      },
+    ],
+  });
+  t.after(() => fake.restore());
+  const restoreLog = fake.silence();
+  t.after(restoreLog);
+
+  const waits = [];
+  const response = await submit(EMPLOYEE_TOKEN, { waitUntil: (p) => waits.push(p) });
+
+  assert.equal(response.status, 201);
+  await waits[0];
+  const row = fake.state.notification_queue[0];
+  assert.equal(row.status, "pending");
+  assert.equal(row.attempts, 1);
+});
+
+test("a row with no active subscription is cancelled and not retried", async (t) => {
+  const fake = await createBackend({ queue: [queueRow()] });
+  t.after(() => fake.restore());
+
+  const first = await runNotificationQueue(ENV, NOW);
+  assert.equal(first.cancelled, 1);
+
+  const row = fake.state.notification_queue[0];
+  assert.equal(row.status, "cancelled");
+  assert.equal(row.last_error, "no_subscription");
+  assert.equal(row.attempts, 0);
+
+  const later = await runNotificationQueue(ENV, new Date(NOW.getTime() + 10 * 60 * 1000));
+  assert.equal(later.selected, 0);
+});
+
+test("the every-minute cron trigger still processes due rows", async (t) => {
+  const fake = await createBackend({ queue: [queueRow()] });
+  t.after(() => fake.restore());
+
+  const waits = [];
+  worker.scheduled(
+    { cron: NOTIFICATION_CRON, scheduledTime: NOW.toISOString() },
+    ENV,
+    { waitUntil: (promise) => waits.push(promise) }
+  );
+
+  assert.equal(waits.length, 1);
+  await waits[0];
+  assert.equal(fake.state.notification_queue[0].status, "cancelled");
 });

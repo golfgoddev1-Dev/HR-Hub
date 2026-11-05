@@ -19,7 +19,7 @@ export const NOTIFICATION_QUEUE_TABLE = "notification_queue";
 export const PUSH_SUBSCRIPTIONS_TABLE = "push_subscriptions";
 export const AUDIT_TABLE = "audit_logs";
 
-export const NOTIFICATION_CRON = "*/5 * * * *";
+export const NOTIFICATION_CRON = "* * * * *";
 export const NOTIFICATION_BATCH = 50;
 export const MAX_ATTEMPTS = 5;
 export const RETRY_DELAY_MINUTES = [1, 5, 15, 60, 240];
@@ -158,19 +158,35 @@ export async function enqueueNotification(
 /**
  * Sends the rows just queued without holding the response: the request's
  * ExecutionContext runs the pass after the response is returned, while the
- * cron trigger stays the retry net. Without a context (tests) it does nothing.
+ * cron trigger stays the retry net. Without a context (a plain fetch call or a
+ * test) the pass still runs inside the request, bounded to three seconds.
  */
-export function dispatchQueuedNotifications(env, ctx, ids, now = new Date()) {
+export async function dispatchQueuedNotifications(env, ctx, ids, now = new Date()) {
   const onlyIds = Array.isArray(ids)
     ? ids.filter((id) => typeof id === "string" && id.length > 0)
     : [];
-  if (onlyIds.length === 0 || typeof ctx?.waitUntil !== "function") return false;
+  if (onlyIds.length === 0) return false;
 
-  ctx.waitUntil(
-    runNotificationQueue(env, now, { ids: onlyIds }).catch((error) => {
-      console.error("[notification-dispatch-error]", { name: error?.name, code: error?.code });
-    })
-  );
+  const run = runNotificationQueue(env, now, { ids: onlyIds }).catch((error) => {
+    console.error("[notification-dispatch-error]", { name: error?.name, code: error?.code });
+  });
+
+  if (typeof ctx?.waitUntil === "function") {
+    ctx.waitUntil(run);
+    return true;
+  }
+
+  let timer = null;
+  try {
+    await Promise.race([
+      run,
+      new Promise((resolve) => {
+        timer = setTimeout(resolve, 3000);
+      }),
+    ]);
+  } finally {
+    if (timer !== null) clearTimeout(timer);
+  }
   return true;
 }
 
@@ -317,13 +333,16 @@ export async function runNotificationQueue(env, now = new Date(), { ids = null }
       summary.recovered = recovered.data.length;
     }
 
-    const filters = [
-      ["status", "eq", "pending"],
-      ["next_attempt_at", "lte", nowIso],
-    ];
-    // A request-scoped pass only looks at the rows it just queued; the cron
-    // pass (no ids) keeps draining the rest of the queue.
-    if (Array.isArray(ids) && ids.length > 0) filters.push(["id", "in", ids]);
+    const filters = [["status", "eq", "pending"]];
+    // A request-scoped pass only looks at the rows it just queued and does not
+    // re-apply the due-time filter: the request's clock reading can be older
+    // than the row's next_attempt_at, which left fresh rows for the cron. The
+    // cron pass (no ids) still drains only rows that are due.
+    if (Array.isArray(ids) && ids.length > 0) {
+      filters.push(["id", "in", ids]);
+    } else {
+      filters.push(["next_attempt_at", "lte", nowIso]);
+    }
 
     const rows = await db.select(NOTIFICATION_QUEUE_TABLE, {
       columns: "id,employee_id,leave_request_id,kind,payload,attempts,status",
