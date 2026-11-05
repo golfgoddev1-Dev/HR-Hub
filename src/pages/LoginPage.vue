@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { postJson } from '../api.js'
 import { clearAll } from '../lib/data-cache.js'
+import { currentPushEndpoint } from '../lib/logout.js'
 import LockoutDialog from '../components/LockoutDialog.vue'
 
 const router = useRouter()
@@ -54,11 +55,16 @@ async function submitLogin() {
   loading.value = true
   errorMessage.value = ''
   try {
-    const { status, data } = await postJson('/api/auth/login', {
+    const endpoint = await currentPushEndpoint()
+    const body = {
       loginType: loginType.value,
       nationalId: nationalId.value,
       pin: pin.value,
-    })
+    }
+    // Names this browser's endpoint so signing in here takes the row over and
+    // clears any signed-out mark left by the previous employee.
+    if (endpoint) body.endpoint = endpoint
+    const { status, data } = await postJson('/api/auth/login', body)
     if (status === 200 && typeof data.redirectTo === 'string') {
       pin.value = ''
       // A new session is a new cache: drop the previous account's reads.

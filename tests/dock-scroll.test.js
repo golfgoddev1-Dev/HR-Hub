@@ -90,7 +90,7 @@ describe('AppDock scrolling layout', () => {
   it('leaves the logout flow and its animation untouched', () => {
     expect(DOCK).toContain('const logout = createLogoutFlow({')
     expect(DOCK).toContain("fetch('/api/auth/logout'")
-    expect(DOCK).toContain('navigate: () => completeLogout()')
+    expect(DOCK).toContain('navigate: () => completeLogout({ keepPushSubscription })')
     expect(DOCK).toContain('@click="logout"')
     expect(DOCK).toContain('class="logout-ripple"')
     expect(DOCK).toContain('กำลังออก...')

@@ -44,12 +44,14 @@ onMounted(async () => {
 async function logout() {
   if (logoutBusy.value) return
   logoutBusy.value = true
+  let keepPushSubscription = false
   try {
-    await postLogout()
+    const result = await postLogout()
+    keepPushSubscription = result.keepPushSubscription === true
   } finally {
     logoutBusy.value = false
     // A full replace, so the protected page is not kept in history.
-    await completeLogout()
+    await completeLogout({ keepPushSubscription })
   }
 }
 </script>

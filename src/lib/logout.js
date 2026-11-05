@@ -5,7 +5,7 @@ import { clearAll } from './data-cache.js'
 import { clearClientStorage } from './logout-storage.js'
 
 /** This browser's push endpoint, or null when push is unavailable. */
-async function currentPushEndpoint() {
+export async function currentPushEndpoint() {
   try {
     const registration = await globalThis.navigator?.serviceWorker?.getRegistration?.('/')
     const subscription = await registration?.pushManager?.getSubscription?.()
@@ -41,11 +41,13 @@ async function forgetBrowserPush() {
   }
 }
 
-export async function completeLogout() {
+export async function completeLogout({ keepPushSubscription = false } = {}) {
   // 1. the in-memory API cache, 2. web storage and Cache Storage, 3. push.
   clearAll()
   await clearClientStorage()
-  await forgetBrowserPush()
+  // An approver who opted in keeps the browser subscription: the server marked
+  // that endpoint signed out and sends only the generic pending count to it.
+  if (!keepPushSubscription) await forgetBrowserPush()
   // replace(), not assign(): Back must not return to the protected page.
   window.location.replace('/login')
 }

@@ -37,6 +37,7 @@ export const PROFILE_EDITABLE_FIELDS = Object.freeze([
   "email",
   "phone",
   "department_id",
+  "notify_pending_on_logout",
 ]);
 
 const ACTION_PROFILE_UPDATED = "profile_updated";
@@ -70,12 +71,13 @@ const MESSAGE = {
   prefixRequired: "กรุณาเลือกคำนำหน้า",
   prefixTooLong: "คำนำหน้ายาวเกิน 20 ตัวอักษร",
   prefixUnknown: "ไม่พบคำนำหน้าที่เลือก",
+  preferenceInvalid: "ค่าการแจ้งเตือนไม่ถูกต้อง",
   departmentNotFound: "ไม่พบแผนกที่เลือก",
   departmentInactive: "แผนกที่เลือกปิดใช้งาน กรุณาเลือกแผนกที่ใช้งานอยู่",
 };
 
 const EMPLOYEE_COLUMNS =
-  "id,employee_code,name_prefix,full_name,email,phone,department_id,position_id,is_active";
+  "id,employee_code,name_prefix,full_name,email,phone,department_id,position_id,is_active,notify_pending_on_logout";
 
 profile.use("*", async (c, next) => {
   c.header("Cache-Control", "no-store");
@@ -163,6 +165,7 @@ function publicProfile({ employee, department, position }) {
     departmentActive: department ? department.is_active !== false : null,
     positionName: position?.name ?? null,
     isActive: employee.is_active === true,
+    notifyPendingOnLogout: employee.notify_pending_on_logout !== false,
   };
 }
 
@@ -371,6 +374,14 @@ profile.patch("/me", async (c) => {
   if (departmentGiven && !isUuid(body.department_id)) {
     // A department name or any free text lands here: only an id is accepted.
     errors.department_id = MESSAGE.departmentNotFound;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, "notify_pending_on_logout")) {
+    if (typeof body.notify_pending_on_logout !== "boolean") {
+      errors.notify_pending_on_logout = MESSAGE.preferenceInvalid;
+    } else {
+      candidate.notify_pending_on_logout = body.notify_pending_on_logout;
+    }
   }
 
   if (Object.keys(errors).length > 0) {

@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { clearAll, getCached } from '../src/lib/data-cache.js'
-import { logoutRequestOptions } from '../src/lib/logout.js'
+import { completeLogout, logoutRequestOptions } from '../src/lib/logout.js'
 import { APP_STORAGE_KEYS, clearClientStorage } from '../src/lib/logout-storage.js'
 
 const SRC = fileURLToPath(new URL('../src', import.meta.url))
@@ -120,6 +120,52 @@ describe('logout completion', () => {
     expect(storage).toBeGreaterThan(cache)
     expect(navigate).toBeGreaterThan(storage)
     expect(source).not.toContain('window.location.assign')
+  })
+
+  it('keeps the browser subscription when the server kept the row', async () => {
+    const unsubscribe = vi.fn(async () => true)
+    const replace = vi.fn()
+    vi.stubGlobal('navigator', {
+      serviceWorker: {
+        getRegistration: async () => ({
+          pushManager: {
+            getSubscription: async () => ({ endpoint: 'https://push.example/kept', unsubscribe }),
+          },
+        }),
+      },
+    })
+    vi.stubGlobal('window', { location: { replace } })
+
+    try {
+      await completeLogout({ keepPushSubscription: true })
+      expect(unsubscribe).not.toHaveBeenCalled()
+      expect(replace).toHaveBeenCalledWith('/login')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('unsubscribes the browser when the server deleted the row', async () => {
+    const unsubscribe = vi.fn(async () => true)
+    const replace = vi.fn()
+    vi.stubGlobal('navigator', {
+      serviceWorker: {
+        getRegistration: async () => ({
+          pushManager: {
+            getSubscription: async () => ({ endpoint: 'https://push.example/dropped', unsubscribe }),
+          },
+        }),
+      },
+    })
+    vi.stubGlobal('window', { location: { replace } })
+
+    try {
+      await completeLogout()
+      expect(unsubscribe).toHaveBeenCalledTimes(1)
+      expect(replace).toHaveBeenCalledWith('/login')
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it('is used by every shell, never a direct navigation', () => {

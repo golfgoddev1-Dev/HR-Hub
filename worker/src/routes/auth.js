@@ -34,6 +34,7 @@ const CREDENTIALS_TABLE = "employee_credentials";
 const RESET_CODES_TABLE = "pin_reset_codes";
 const AUDIT_TABLE = "audit_logs";
 const PUSH_SUBSCRIPTIONS_TABLE = "push_subscriptions";
+const EMPLOYEES_TABLE = "employees";
 
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCK_MINUTES = 15;
@@ -130,7 +131,10 @@ function failedAttempts(value) {
 auth.post("/login", async (c) => {
   try {
     const body = await readJson(c);
-    if (!hasExactStringKeys(body, ["loginType", "nationalId", "pin"])) {
+    const hasLoginBody =
+      hasExactStringKeys(body, ["loginType", "nationalId", "pin"]) ||
+      hasExactStringKeys(body, ["loginType", "nationalId", "pin", "endpoint"]);
+    if (!hasLoginBody) {
       return c.json({ ok: false, message: INVALID_MESSAGE }, 400);
     }
     if (!Object.prototype.hasOwnProperty.call(LOGIN_ROLES, body.loginType)) {
@@ -195,6 +199,34 @@ auth.post("/login", async (c) => {
     }
 
     const token = await createSession(env, employee.id, role);
+
+    // This browser's endpoint, when the login page could read it. The session
+    // owner takes the row over and any signed-out mark is cleared, so a shared
+    // device never keeps receiving the previous employee's notifications.
+    const endpoint = typeof body.endpoint === "string" ? normalizeEndpoint(body.endpoint) : null;
+    if (endpoint) {
+      try {
+        const moved = await db.update(
+          PUSH_SUBSCRIPTIONS_TABLE,
+          {
+            employee_id: employee.id,
+            is_active: true,
+            signed_out: false,
+            signed_out_at: null,
+            last_seen_at: nowIso,
+          },
+          [["endpoint", "eq", endpoint]]
+        );
+        if (moved.error) {
+          logFailure("auth login push reassignment failed", {
+            name: "push_reassignment",
+            code: moved.error.code,
+          });
+        }
+      } catch (error) {
+        logFailure("auth login push reassignment failed", error);
+      }
+    }
 
     // An initial PIN issued by HR is a one-time way in: the session may only
     // change it, so that page is the landing path.
@@ -277,11 +309,10 @@ auth.get("/me", async (c) => {
 auth.post("/logout", async (c) => {
   const env = c.env;
   c.header("Cache-Control", "no-store");
-  // Drop the HTTP cache, the cookie and every storage the origin owns. This is
-  // the server-side half of the logout; the client clears its own copies too.
   // "executionContexts" is deliberately not sent: it destroys the running page
-  // and would cut off the navigation that follows the response.
-  c.header("Clear-Site-Data", '"cache", "cookies", "storage"');
+  // and would cut off the navigation that follows the response. The storage
+  // directive unregisters service workers, so the kept-push response leaves it
+  // out and the client clears its own storage instead.
 
   try {
     // The client may name this browser's push endpoint. It is optional and is
@@ -329,27 +360,80 @@ auth.post("/logout", async (c) => {
           // Audit failures never block logout.
         }
 
-        // The endpoint belongs to this browser and this employee, so the next
-        // person to sign in here must subscribe again before receiving pushes.
+        // An active approver who opted in keeps this browser's row as signed
+        // out, so the generic pending-count push can still reach them. Every
+        // other logout removes the row as before. Nothing about the row is
+        // logged here.
         if (endpoint) {
-          const removed = await db.remove(PUSH_SUBSCRIPTIONS_TABLE, [
-            ["endpoint", "eq", endpoint],
-            ["employee_id", "eq", session.employee_id],
-          ]);
-          if (removed.error) {
-            logFailure("auth logout push cleanup failed", {
-              name: "push_cleanup",
-              code: removed.error.code,
-            });
+          let keepPushSubscription = false;
+          try {
+            if (await isActiveApprover(db, session.employee_id)) {
+              const preference = await db.select(EMPLOYEES_TABLE, {
+                columns: "notify_pending_on_logout",
+                filters: [["id", "eq", session.employee_id]],
+                single: true,
+              });
+              const optedIn = preference?.notify_pending_on_logout !== false;
+
+              if (optedIn) {
+                const marked = await db.update(
+                  PUSH_SUBSCRIPTIONS_TABLE,
+                  { signed_out: true, signed_out_at: nowIso, last_seen_at: nowIso },
+                  [
+                    ["endpoint", "eq", endpoint],
+                    ["employee_id", "eq", session.employee_id],
+                  ],
+                  { returning: true, columns: "id" }
+                );
+                if (marked.error) {
+                  logFailure("auth logout push mark failed", {
+                    name: "push_mark",
+                    code: marked.error.code,
+                  });
+                } else {
+                  keepPushSubscription =
+                    Array.isArray(marked.data) && marked.data.length > 0;
+                }
+              }
+            }
+          } catch (error) {
+            logFailure("auth logout push preference failed", error);
           }
+
+          if (!keepPushSubscription) {
+            const removed = await db.remove(PUSH_SUBSCRIPTIONS_TABLE, [
+              ["endpoint", "eq", endpoint],
+              ["employee_id", "eq", session.employee_id],
+            ]);
+            if (removed.error) {
+              logFailure("auth logout push cleanup failed", {
+                name: "push_cleanup",
+                code: removed.error.code,
+              });
+            }
+          }
+
+          c.set("keepPushSubscription", keepPushSubscription);
         }
       }
     }
 
     c.header("Set-Cookie", clearSessionCookie(env));
-    return c.json({ ok: true }, 200);
+    const keepPushSubscription = c.get("keepPushSubscription") === true;
+    c.header(
+      "Clear-Site-Data",
+      keepPushSubscription ? '"cache", "cookies"' : '"cache", "cookies", "storage"'
+    );
+    // Only the kept case needs the extra field; false stays the old response.
+    return c.json(
+      keepPushSubscription
+        ? { ok: true, keepPushSubscription: true }
+        : { ok: true },
+      200
+    );
   } catch (error) {
     logFailure("auth logout failed", error);
+    c.header("Clear-Site-Data", '"cache", "cookies", "storage"');
     c.header("Set-Cookie", clearSessionCookie(env));
     return c.json({ ok: false, message: LOGOUT_FAILED_MESSAGE }, 500);
   }

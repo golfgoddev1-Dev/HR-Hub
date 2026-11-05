@@ -8,6 +8,7 @@ export const NOTIFICATION_KINDS = {
   SUBMITTED: "leave_submitted",
   DECIDED: "leave_decided",
   BACKDATED: "leave_backdated",
+  PENDING_SIGNED_OUT: "leave_pending_signed_out",
 };
 
 /** A push body is capped at 3993 bytes by RFC 8291; stay well below it. */
@@ -56,6 +57,23 @@ export function buildNotificationPayload(kind, { requestId = null, status = null
   }
 
   return null;
+}
+
+/**
+ * The only notification a signed-out browser may receive: a count of the
+ * recipient's own pending approvals. It carries no request id, employee name,
+ * code, department, leave type, date or reason, and it links only to the app
+ * root so a shared device learns nothing about the people in the queue.
+ */
+export function buildSignedOutPendingPayload(count) {
+  const total = Number.isInteger(count) && count > 0 ? count : 0;
+  return {
+    title: "ระบบใบลา",
+    body: `คุณมีรายการรออนุมัติ ${total} รายการ`,
+    url: "/",
+    tag: "leave-pending-signed-out",
+    kind: NOTIFICATION_KINDS.PENDING_SIGNED_OUT,
+  };
 }
 
 /** True when the serialised payload still fits a single push record. */

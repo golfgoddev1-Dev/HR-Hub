@@ -278,7 +278,10 @@ test("send reads only the recipient employee's subscriptions", async (t) => {
   await runNotificationQueue(ENV, NOW);
 
   const reads = fake.calls.filter(
-    (call) => call.table === "push_subscriptions" && call.method === "GET"
+    (call) =>
+      call.table === "push_subscriptions" &&
+      call.method === "GET" &&
+      paramsOf(call.url).has("employee_id")
   );
   assert.ok(reads.length > 0);
   for (const read of reads) {

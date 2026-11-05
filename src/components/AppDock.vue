@@ -172,12 +172,18 @@ function flashDanger() {
 
 // Feedback, request and navigation run as one flow: the POST starts on click,
 // but navigation waits for the feedback (and is capped so it cannot hang).
+// The server decides whether this browser keeps its push row while signed out.
+let keepPushSubscription = false
 const logout = createLogoutFlow({
-  request: async () =>
-    fetch('/api/auth/logout', await logoutRequestOptions()),
+  request: async () => {
+    const response = await fetch('/api/auth/logout', await logoutRequestOptions())
+    const data = await response.json().catch(() => ({}))
+    keepPushSubscription = response.ok && data.keepPushSubscription === true
+    return response
+  },
   // The cache, web storage and Cache Storage go, then the protected page is
   // replaced in history so Back cannot restore it.
-  navigate: () => completeLogout(),
+  navigate: () => completeLogout({ keepPushSubscription }),
   isReducedMotion: prefersReducedMotion,
   onStart: () => {
     leaving.value = true

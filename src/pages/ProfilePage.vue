@@ -46,6 +46,9 @@ const successMessage = ref('')
 const saveError = ref('')
 const saving = ref(false)
 const editing = ref(false)
+const notifySaving = ref(false)
+const notifyError = ref('')
+const notifyMessage = ref('')
 
 const profile = ref(readProfile({}))
 const departments = ref([])
@@ -170,6 +173,39 @@ async function save() {
   }
 }
 
+async function toggleNotifyPending() {
+  if (notifySaving.value) return
+  notifySaving.value = true
+  notifyError.value = ''
+  notifyMessage.value = ''
+
+  try {
+    const response = await fetch(PROFILE_URL, {
+      method: 'PATCH',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        notify_pending_on_logout: !profile.value.notifyPendingOnLogout,
+      }),
+    })
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok || data.ok !== true) {
+      notifyError.value = typeof data.message === 'string' ? data.message : SAVE_ERROR
+      return
+    }
+
+    profile.value = readProfile(data)
+    invalidateProfile()
+    notifyMessage.value = profile.value.notifyPendingOnLogout
+      ? 'เปิดรับแจ้งเตือนรายการรออนุมัติแล้ว'
+      : 'ปิดรับแจ้งเตือนรายการรออนุมัติแล้ว'
+  } catch {
+    notifyError.value = SAVE_ERROR
+  } finally {
+    notifySaving.value = false
+  }
+}
+
 watch(form, () => {
   serverErrors.value = {}
 })
@@ -222,6 +258,29 @@ onBeforeUnmount(() => {
       <v-alert v-if="successMessage" type="success" variant="tonal" class="notice">
         {{ successMessage }}
       </v-alert>
+
+      <section v-if="!loading && !loadError" class="card pref-card">
+        <div class="pref-copy">
+          <h2 class="pref-title">การแจ้งเตือน</h2>
+          <p class="pref-label">รับแจ้งเตือนรายการรออนุมัติแม้ออกจากระบบ</p>
+          <p class="pref-note">
+            ใช้สำหรับผู้อนุมัติเท่านั้น: ระบบจะส่งเฉพาะจำนวนรายการที่รอคุณอนุมัติ
+            โดยไม่มีชื่อ ประเภทการลา วันที่ หรือเหตุผล
+          </p>
+          <p v-if="notifyMessage" class="pref-hint">{{ notifyMessage }}</p>
+          <p v-if="notifyError" class="pref-error" role="alert">{{ notifyError }}</p>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          :aria-checked="profile.notifyPendingOnLogout"
+          :class="['pref-switch', { 'pref-switch-on': profile.notifyPendingOnLogout }]"
+          :disabled="notifySaving"
+          @click="toggleNotifyPending"
+        >
+          {{ notifySaving ? 'กำลังบันทึก…' : profile.notifyPendingOnLogout ? 'เปิด' : 'ปิด' }}
+        </button>
+      </section>
 
       <section v-if="!loading && !loadError && !editing" class="card">
         <dl class="rows">
@@ -416,6 +475,73 @@ onBeforeUnmount(() => {
 
 .notice {
   margin: 0 0 14px;
+}
+
+.pref-card {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.pref-copy {
+  flex: 1 1 320px;
+  min-width: 240px;
+}
+
+.pref-title {
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 700;
+  color: #12343b;
+}
+
+.pref-label {
+  margin: 0 0 4px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #12343b;
+}
+
+.pref-note,
+.pref-hint {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: #5c7176;
+}
+
+.pref-error {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  color: #a01b1b;
+}
+
+.pref-switch {
+  min-width: 84px;
+  min-height: 42px;
+  padding: 0 18px;
+  border: 1px solid #cfdcda;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #5c7176;
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pref-switch-on {
+  border-color: #10504e;
+  background: #10504e;
+  color: #ffffff;
+}
+
+.pref-switch:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .rows {

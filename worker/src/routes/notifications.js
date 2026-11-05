@@ -152,6 +152,8 @@ notifications.post("/subscribe", async (c) => {
           auth: keys.auth,
           user_agent: userAgent,
           is_active: true,
+          signed_out: false,
+          signed_out_at: null,
           last_seen_at: nowIso,
         },
         [["id", "eq", row.id]]
@@ -171,6 +173,8 @@ notifications.post("/subscribe", async (c) => {
         auth: keys.auth,
         user_agent: userAgent,
         is_active: true,
+        signed_out: false,
+        signed_out_at: null,
         created_at: nowIso,
         last_seen_at: nowIso,
       },

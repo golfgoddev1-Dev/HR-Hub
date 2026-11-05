@@ -52,14 +52,14 @@ describe('AppDock', () => {
 
   it('logs out through the real endpoint, then lets the flow navigate', () => {
     const post = DOCK.indexOf("fetch('/api/auth/logout'")
-    const go = DOCK.indexOf('navigate: () => completeLogout()')
+    const go = DOCK.indexOf('navigate: () => completeLogout({ keepPushSubscription })')
     expect(post).toBeGreaterThan(-1)
     expect(go).toBeGreaterThan(post)
     // The click no longer navigates directly: the shared flow enforces the delay.
     expect(DOCK).toContain('const logout = createLogoutFlow({')
     // Navigation still waits for the flow, and every browser copy is dropped
     // first by the shared completion (clearAll, storage, replace).
-    expect(DOCK).toContain('navigate: () => completeLogout()')
+    expect(DOCK).toContain('navigate: () => completeLogout({ keepPushSubscription })')
     expect(DOCK).not.toContain('window.location.assign')
   })
 

@@ -7,13 +7,16 @@ defineProps({
 })
 
 async function logout() {
+  let keepPushSubscription = false
   try {
-    await fetch('/api/auth/logout', await logoutRequestOptions())
+    const response = await fetch('/api/auth/logout', await logoutRequestOptions())
+    const data = await response.json().catch(() => ({}))
+    keepPushSubscription = response.ok && data.keepPushSubscription === true
   } catch {
     // ignore: navigation still happens
   }
   // Drop every cached read and the browser's copies, then replace this page.
-  await completeLogout()
+  await completeLogout({ keepPushSubscription })
 }
 </script>
 

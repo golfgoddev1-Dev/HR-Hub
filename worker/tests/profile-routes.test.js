@@ -205,6 +205,31 @@ test("GET /me returns the caller's own record and no national id", async (t) => 
   }
 });
 
+test("the signed-out approver preference is exposed and can be turned off", async (t) => {
+  const fake = await createBackend();
+  t.after(() => fake.restore());
+
+  const initial = await call("/api/profile/me", TOKEN);
+  const initialBody = await initial.json();
+  assert.equal(initialBody.profile.notifyPendingOnLogout, true);
+
+  const invalid = await patch({ notify_pending_on_logout: "no" });
+  assert.equal(invalid.status, 400);
+  assert.equal(
+    (await invalid.json()).errors.notify_pending_on_logout,
+    "ค่าการแจ้งเตือนไม่ถูกต้อง"
+  );
+  assert.equal(fake.state.employees[0].notify_pending_on_logout, undefined);
+
+  const response = await patch({ notify_pending_on_logout: false });
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.changed, true);
+  assert.equal(body.profile.notifyPendingOnLogout, false);
+  assert.equal(fake.state.employees[0].notify_pending_on_logout, false);
+});
+
 test("GET /departments lists only active departments, id and name", async (t) => {
   const fake = await createBackend();
   t.after(() => fake.restore());

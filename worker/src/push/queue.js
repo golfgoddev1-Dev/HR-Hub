@@ -10,9 +10,14 @@
 // - the payload never carries a reason or a leave type (see push/payload.js).
 
 import { createDb } from "../db.js";
+import { isActiveApprover } from "../leave-approvers.js";
 import { base64UrlToBytes, utf8 } from "./base64url.js";
 import { encryptWebPush } from "./encrypt.js";
-import { buildNotificationPayload, payloadFits } from "./payload.js";
+import {
+  buildNotificationPayload,
+  buildSignedOutPendingPayload,
+  payloadFits,
+} from "./payload.js";
 import { buildVapidAuthorization } from "./vapid.js";
 
 export const NOTIFICATION_QUEUE_TABLE = "notification_queue";
@@ -26,6 +31,16 @@ export const RETRY_DELAY_MINUTES = [1, 5, 15, 60, 240];
 export const PUSH_TTL_SECONDS = 3600;
 export const MAX_SUBSCRIPTIONS_PER_EMPLOYEE = 10;
 export const STALE_CLAIM_MINUTES = 10;
+export const PENDING_NOTICE_INTERVAL_MINUTES = 60;
+const PENDING_NOTICE_INTERVAL_MS = PENDING_NOTICE_INTERVAL_MINUTES * 60 * 1000;
+
+/** One generic pending-count notice per approver per hour. */
+export function pendingNoticeIsDue(lastNoticeAt, now) {
+  if (!lastNoticeAt) return true;
+  const last = Date.parse(String(lastNoticeAt));
+  if (!Number.isFinite(last)) return true;
+  return now.getTime() - last >= PENDING_NOTICE_INTERVAL_MS;
+}
 
 /**
  * A row claimed but not finished is a crashed run, not a live one. Anything
@@ -237,6 +252,109 @@ async function deleteSubscriptions(db, endpoints, employeeId) {
   return count;
 }
 
+/**
+ * Generic pending-count notices for approvers whose only rows are signed out.
+ * A row is eligible only when its employee opted in, is still an active
+ * approver, has at least one pending request where they are the approver, and
+ * that employee has not had a notice in the last hour. The count is the
+ * recipient's own queue; no other employee's request is read or mentioned.
+ * Each employee is claimed on `employees.pending_notice_at` before sending, so
+ * overlapping runs cannot send twice. Nothing here is logged with an endpoint
+ * or a count.
+ */
+export async function sendPendingApproverNotices(env, db, now, summary = null) {
+  let sent = 0;
+  const rows = await db.select(PUSH_SUBSCRIPTIONS_TABLE, {
+    columns: "id,employee_id,endpoint,p256dh,auth",
+    filters: [
+      ["signed_out", "eq", true],
+      ["is_active", "eq", true],
+    ],
+    limit: MAX_SUBSCRIPTIONS_PER_EMPLOYEE * 10,
+  });
+
+  const byEmployee = new Map();
+  for (const row of rows) {
+    if (typeof row.employee_id !== "string" || row.employee_id.length === 0) continue;
+    const list = byEmployee.get(row.employee_id) ?? [];
+    list.push(row);
+    byEmployee.set(row.employee_id, list);
+  }
+
+  const nowIso = now.toISOString();
+  for (const [employeeId, subscriptions] of byEmployee) {
+    try {
+      const employee = await db.select("employees", {
+        columns: "id,notify_pending_on_logout,pending_notice_at",
+        filters: [["id", "eq", employeeId]],
+        single: true,
+      });
+      if (!employee || employee.notify_pending_on_logout === false) continue;
+      if (!pendingNoticeIsDue(employee.pending_notice_at, now)) continue;
+      if (!(await isActiveApprover(db, employeeId))) continue;
+
+      let pendingCount = 0;
+      try {
+        pendingCount = await db.count("leave_requests", {
+          filters: [
+            ["approver_id", "eq", employeeId],
+            ["status", "eq", "pending"],
+          ],
+        });
+      } catch (error) {
+        console.error("[notification-pending-count-error]", {
+          name: error?.name,
+          code: error?.code,
+        });
+        continue;
+      }
+      if (!Number.isInteger(pendingCount) || pendingCount <= 0) continue;
+
+      const claimFilters = [["id", "eq", employeeId]];
+      if (employee.pending_notice_at) {
+        claimFilters.push(["pending_notice_at", "eq", employee.pending_notice_at]);
+      } else {
+        claimFilters.push(["pending_notice_at", "is", null]);
+      }
+      const claimed = await db.update(
+        "employees",
+        { pending_notice_at: nowIso },
+        claimFilters,
+        { returning: true, columns: "id" }
+      );
+      if (claimed.error || !Array.isArray(claimed.data) || claimed.data.length === 0) continue;
+
+      const payloadText = JSON.stringify(buildSignedOutPendingPayload(pendingCount));
+      const results = [];
+      for (const subscription of subscriptions) {
+        try {
+          results.push(await sendToSubscription(env, subscription, payloadText, now));
+        } catch (error) {
+          console.error("[notification-send-error]", { name: error?.name });
+          results.push({ ok: false, status: 0, gone: false, endpoint: subscription.endpoint });
+        }
+      }
+
+      const gone = results
+        .filter((result) => result.gone === true && typeof result.endpoint === "string")
+        .map((result) => result.endpoint);
+      if (gone.length > 0) await deleteSubscriptions(db, gone, employeeId);
+
+      if (results.some((result) => result.ok === true)) {
+        sent += 1;
+        if (summary) summary.pendingNotices += 1;
+      }
+    } catch (error) {
+      console.error("[notification-pending-notice-error]", {
+        name: error?.name,
+        code: error?.code,
+      });
+    }
+  }
+
+  return sent;
+}
+
 /** One push to one subscription. Throws only on unexpected programming errors. */
 export async function sendToSubscription(env, subscription, payloadText, now) {
   const uaPublicKey = base64UrlToBytes(subscription.p256dh);
@@ -306,6 +424,7 @@ export async function runNotificationQueue(env, now = new Date(), { ids = null }
     failed: 0,
     cancelled: 0,
     deactivated: 0,
+    pendingNotices: 0,
     errors: 0,
   };
 
@@ -363,7 +482,7 @@ export async function runNotificationQueue(env, now = new Date(), { ids = null }
       }
 
       const subscriptions = await db.select(PUSH_SUBSCRIPTIONS_TABLE, {
-        columns: "id,endpoint,p256dh,auth",
+        columns: "id,endpoint,p256dh,auth,signed_out",
         filters: [
           ["employee_id", "eq", row.employee_id],
           ["is_active", "eq", true],
@@ -374,6 +493,9 @@ export async function runNotificationQueue(env, now = new Date(), { ids = null }
       const results = [];
       if (payloadText) {
         for (const subscription of subscriptions) {
+          // A signed-out browser only ever receives the generic pending-count
+          // notice below, never a request-scoped payload on a shared device.
+          if (subscription.signed_out === true) continue;
           try {
             results.push(await sendToSubscription(env, subscription, payloadText, now));
           } catch (error) {
@@ -416,6 +538,13 @@ export async function runNotificationQueue(env, now = new Date(), { ids = null }
       else summary.retried += 1;
 
       if (outcome.error) summary.errors += 1;
+    }
+
+    // Only the cron pass sweeps signed-out approvers. A request-scoped pass
+    // sends the row it just queued and leaves this once-a-minute work to the
+    // trigger, so a leave submit does not count every signed-out queue.
+    if (!Array.isArray(ids) || ids.length === 0) {
+      await sendPendingApproverNotices(env, db, now, summary);
     }
 
     if (summary.errors > 0 || summary.failed > 0 || summary.deactivated > 0) {

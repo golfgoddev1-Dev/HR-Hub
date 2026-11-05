@@ -74,6 +74,13 @@ describe('profile card', () => {
     expect('nationalId' in PROFILE).toBe(false)
   })
 
+  it('offers the signed-out approval notification toggle with the Thai label', () => {
+    expect(PROFILE.notifyPendingOnLogout).toBe(true)
+    expect(PROFILE_PAGE).toContain('รับแจ้งเตือนรายการรออนุมัติแม้ออกจากระบบ')
+    expect(PROFILE_PAGE).toContain('role="switch"')
+    expect(PROFILE_PAGE).toContain('toggleNotifyPending')
+  })
+
   it('always explains what a department change means', () => {
     expect(DEPARTMENT_CHANGE_NOTE).toBe('การเปลี่ยนแผนกจะมีผลกับผู้อนุมัติใบลาครั้งถัดไป')
     expect(PROFILE_PAGE).toContain('DEPARTMENT_CHANGE_NOTE')

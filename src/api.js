@@ -52,9 +52,13 @@ export async function postLogout() {
   try {
     // Includes this browser's push endpoint, when it has one.
     const response = await fetch('/api/auth/logout', await logoutRequestOptions())
-    return response.ok
+    const data = await response.json().catch(() => ({}))
+    return {
+      ok: response.ok,
+      keepPushSubscription: response.ok && data.keepPushSubscription === true,
+    }
   } catch {
-    return false
+    return { ok: false, keepPushSubscription: false }
   }
 }
 

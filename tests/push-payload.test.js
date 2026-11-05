@@ -6,10 +6,16 @@ import {
   MAX_PAYLOAD_BYTES,
   NOTIFICATION_KINDS,
   buildNotificationPayload,
+  buildSignedOutPendingPayload,
   payloadFits,
 } from '../worker/src/push/payload.js'
 
 const REQUEST_ID = '11111111-1111-4111-8111-111111111111'
+const REQUEST_KINDS = [
+  NOTIFICATION_KINDS.SUBMITTED,
+  NOTIFICATION_KINDS.DECIDED,
+  NOTIFICATION_KINDS.BACKDATED,
+]
 
 describe('buildNotificationPayload', () => {
   it('sends the approver to the approval queue', () => {
@@ -47,7 +53,7 @@ describe('buildNotificationPayload', () => {
   })
 
   it('never carries a leave type, reason, date or health detail', () => {
-    for (const kind of Object.values(NOTIFICATION_KINDS)) {
+    for (const kind of REQUEST_KINDS) {
       const payload = buildNotificationPayload(kind, { requestId: REQUEST_ID, status: 'approved' })
       const text = JSON.stringify(payload)
       expect(text).not.toMatch(/ป่วย|ใบรับรองแพทย์|โรงพยาบาล|ลากิจ|ลาพักร้อน/)
@@ -70,13 +76,24 @@ describe('buildNotificationPayload', () => {
     })
     expect(encoded.url).toBe('/leave/approvals?focus=a%20b%26c')
   })
+
+  it('builds the signed-out notice as a count at the app root only', () => {
+    const payload = buildSignedOutPendingPayload(3)
+
+    expect(payload.title).toBe('ระบบใบลา')
+    expect(payload.body).toBe('คุณมีรายการรออนุมัติ 3 รายการ')
+    expect(payload.url).toBe('/')
+    expect(payload.kind).toBe(NOTIFICATION_KINDS.PENDING_SIGNED_OUT)
+    expect(JSON.stringify(payload)).not.toMatch(/\d{4}-\d{2}-\d{2}|ลากิจ|เหตุผล/)
+  })
 })
 
 describe('payloadFits', () => {
   it('accepts every real payload and rejects an oversized one', () => {
-    for (const kind of Object.values(NOTIFICATION_KINDS)) {
+    for (const kind of REQUEST_KINDS) {
       expect(payloadFits(buildNotificationPayload(kind, { requestId: REQUEST_ID }))).toBe(true)
     }
+    expect(payloadFits(buildSignedOutPendingPayload(1))).toBe(true)
     expect(payloadFits({ body: 'x'.repeat(MAX_PAYLOAD_BYTES) })).toBe(false)
   })
 })
