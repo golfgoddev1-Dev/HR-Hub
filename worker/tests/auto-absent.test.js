@@ -19,6 +19,8 @@ import worker from "../src/index.js";
 const ENV = {
   SUPABASE_URL: "https://fake-project.supabase.co",
   SUPABASE_SERVICE_ROLE_KEY: "fake-service-role-key",
+  // This suite covers the enabled path; production defaults to off.
+  AUTO_ABSENT_ENABLED: "true",
 };
 
 // Monday 5 January 2026, 12:30 in Bangkok.

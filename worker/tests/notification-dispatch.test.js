@@ -400,19 +400,46 @@ test("a row with no active subscription is cancelled and not retried", async (t)
   assert.equal(later.selected, 0);
 });
 
-test("the every-minute cron trigger still processes due rows", async (t) => {
+test("the every-minute trigger runs push always, auto-absent only with the exact switch", async (t) => {
+  for (const [label, value, expectedWaits] of [
+    ["unset", undefined, 1],
+    ["false", "false", 1],
+    ["true", "true", 2],
+  ]) {
+    const fake = await createBackend({ queue: [queueRow()] });
+    const waits = [];
+    try {
+      const env = value === undefined ? { ...ENV } : { ...ENV, AUTO_ABSENT_ENABLED: value };
+      worker.scheduled(
+        { cron: NOTIFICATION_CRON, scheduledTime: NOW.toISOString() },
+        env,
+        { waitUntil: (promise) => waits.push(promise) }
+      );
+
+      assert.equal(waits.length, expectedWaits, label);
+      await Promise.all(waits);
+      // Push finishes the queued row even while auto-absent is off.
+      assert.equal(fake.state.notification_queue[0].status, "cancelled", label);
+    } finally {
+      fake.restore();
+    }
+  }
+});
+
+test("other cron expressions run neither job", async (t) => {
   const fake = await createBackend({ queue: [queueRow()] });
-  t.after(() => fake.restore());
-
-  const waits = [];
-  worker.scheduled(
-    { cron: NOTIFICATION_CRON, scheduledTime: NOW.toISOString() },
-    ENV,
-    { waitUntil: (promise) => waits.push(promise) }
-  );
-
-  // Auto-absent and push both run on the shared every-minute expression.
-  assert.equal(waits.length, 2);
-  await Promise.all(waits);
-  assert.equal(fake.state.notification_queue[0].status, "cancelled");
+  try {
+    for (const cron of ["*/5 * * * *", "5 5 * * *"]) {
+      const waits = [];
+      worker.scheduled(
+        { cron, scheduledTime: NOW.toISOString() },
+        { ...ENV, AUTO_ABSENT_ENABLED: "true" },
+        { waitUntil: (promise) => waits.push(promise) }
+      );
+      assert.equal(waits.length, 0, cron);
+    }
+    assert.equal(fake.state.notification_queue[0].status, "pending");
+  } finally {
+    fake.restore();
+  }
 });

@@ -58,7 +58,8 @@
   `crons = ["0 1,9,17 * * *", "0 2 * * *", "* * * * *"]`
   - `0 1,9,17 * * *` — keep-alive ของ Supabase (เดิม ไม่เปลี่ยน)
   - `0 2 * * *` — ลบไฟล์ใบรับรองแพทย์ที่หมดอายุตาม `leave_settings`
-  - `* * * * *` — auto-absent และคิว Web Push (fallback ทุกนาที; แจ้งเตือนใหม่ส่งทันทีใน request)
+  - `* * * * *` — คิว Web Push (fallback ทุกนาที; แจ้งเตือนใหม่ส่งทันทีใน request)
+  - auto-absent ใช้ trigger เดียวกันแต่ **ปิดโดยค่าเริ่มต้น**; จะทำงานเมื่อตั้ง `AUTO_ABSENT_ENABLED="true"` ใน `[vars]` เท่านั้น
 - (ประวัติ) Worker เก่าชื่อ `hr-workers-spike` ไม่ได้ใช้งานแล้ว — ชื่อที่ใช้อยู่คือ `hr-hub-api`
 - ตัวแปรที่ไม่ใช่ secret:
   - `APP_ORIGIN` = origin จริงของ Pages (ปัจจุบันใน `wrangler.toml` คือ `https://hr-hub-3yr.pages.dev`)
@@ -183,10 +184,12 @@
 |---|---|---|
 | `0 1,9,17 * * *` | keep-alive ของ Supabase | **เดิม ไม่เปลี่ยน** |
 | `0 2 * * *` | ลบไฟล์ใบรับรองแพทย์ที่หมดอายุ (ตาม `leave_settings`) | ใหม่ |
-| `* * * * *` | auto-absent และคิว Web Push (fallback ทุกนาที) | ใหม่ |
+| `* * * * *` | คิว Web Push (fallback ทุกนาที) + auto-absent แบบ opt-in | ใหม่ |
 
 - ใช้ 3 จากเพดาน 5 trigger ของ Workers Free
-- ทั้ง auto-absent และคิว Web Push ทำงานบน trigger ทุกนาทีเดียวกัน
+- คิว Web Push ทำงานบน trigger ทุกนาทีเสมอ
+- auto-absent **ปิดโดยค่าเริ่มต้น**: ทำงานเฉพาะเมื่อ `AUTO_ABSENT_ENABLED` เป็นสตริง `"true"` ตรงตัว; ค่าที่หายไปหรือค่าอื่น (รวม `"false"`) คือปิด
+- การเปิด auto-absent เป็นการตัดสินใจแยกของผู้ดูแล: เพิ่ม `AUTO_ABSENT_ENABLED = "true"` ใต้ `[vars]` ใน `worker/wrangler.toml` แล้ว deploy ใหม่; ไฟล์นี้ไม่ตั้งค่าไว้
 - ตรวจว่า trigger ถูก deploy จริง: `cd worker && npx wrangler deployments list` หรือดูใน Dashboard → Triggers
 - ตรวจ log ของ cron ด้วย `npx wrangler tail` แล้วดูว่าไม่มี `[cert-cleanup-error]` หรือ `[notification-cron-error]`
 

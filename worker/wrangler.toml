@@ -9,10 +9,11 @@ compatibility_date = "2026-09-01"
 # Workers Free allows 5 cron triggers per account. Deployed set:
 #   0 1,9,17 * * *   keep-alive (Phase 4b), 00:00 / 08:00 / 16:00 Asia/Bangkok
 #   0 2 * * *        leave certificate retention (phase 2), 09:00 Asia/Bangkok
-#   * * * * *        auto-absent + web push queue fallback, every minute
+#   * * * * *        web push queue fallback (every minute) + opt-in auto-absent
 #
-# Auto-absent and the push queue share the every-minute expression; src/index.js
-# runs both on that tick. The expected list is pinned by
+# Auto-absent shares the every-minute expression but is off by default. It runs
+# only when AUTO_ABSENT_ENABLED is exactly "true"; the push fallback runs on the
+# same tick regardless. The expected list is pinned by
 # tests/wrangler-crons.test.js.
 [triggers]
 crons = ["0 1,9,17 * * *", "0 2 * * *", "* * * * *"]
@@ -42,3 +43,7 @@ new_sqlite_classes = [
 
 [vars]
 APP_ORIGIN = "https://hr-hub-3yr.pages.dev"
+# AUTO_ABSENT_ENABLED is intentionally not set: auto-absent is off by default.
+# The owner turns it on deliberately by adding it here with the value "true"
+# (the exact string; anything else, including "false", keeps it off), then
+# deploying. It is a separate decision from the every-minute push fallback.

@@ -1,8 +1,9 @@
 // Workers entry: mounts the auth and public registration apps, exports the
 // rate limiter Durable Object classes, and dispatches the approved cron
-// triggers. Auto-absent and the push queue share the every-minute expression and
-// both run on it. The read-only keep-alive runs three times a day (Phase 4b).
-// Any other cron string is a silent no-op.
+// triggers. Auto-absent and the push queue share the every-minute expression:
+// push always runs there, while auto-absent runs only when the owner sets
+// AUTO_ABSENT_ENABLED to exactly "true". The read-only keep-alive runs three
+// times a day (Phase 4b). Any other cron string is a silent no-op.
 
 import app from "./app.js";
 import { AUTO_ABSENT_CRON, runAutoAbsentOnce } from "./auto-absent.js";
@@ -21,10 +22,10 @@ export default {
   scheduled(event, env, ctx) {
     const cron = event?.cron;
 
-    // Auto-absent keeps its original every-minute trigger. It shares the
-    // expression with the push queue, so this branch does not return: both jobs
-    // run on the same tick.
-    if (cron === AUTO_ABSENT_CRON) {
+    // Auto-absent is opt-in: only the exact string "true" enables it. It shares
+    // the every-minute expression with the push queue, so this branch does not
+    // return and cannot block the push fallback below.
+    if (cron === AUTO_ABSENT_CRON && env.AUTO_ABSENT_ENABLED === "true") {
       const now = new Date(event.scheduledTime);
       const run = runAutoAbsentOnce(env, now).catch((error) => {
         // Code or name only: never a body, URL or environment value.

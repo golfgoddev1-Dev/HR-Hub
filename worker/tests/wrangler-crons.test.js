@@ -38,18 +38,20 @@ test("wrangler.toml ships exactly the deployed triggers", () => {
   assert.deepEqual(cronsInConfig(), ["0 1,9,17 * * *", CERT_CLEANUP_CRON, NOTIFICATION_CRON]);
 });
 
-test("the every-minute trigger is deployed once, for auto-absent and push", () => {
+test("the every-minute trigger is deployed once, with auto-absent opt-in", () => {
   assert.equal(AUTO_ABSENT_CRON, "* * * * *");
   const crons = cronsInConfig();
   assert.equal(crons.filter((cron) => cron === AUTO_ABSENT_CRON).length, 1);
 
-  // There is no environment switch: the handler runs auto-absent on the same
-  // every-minute tick that carries the push fallback.
+  // The handler gates auto-absent on the exact string, while push runs on the
+  // same tick regardless. The shipped config must not enable it silently.
   const entry = readFileSync(
     fileURLToPath(new URL("../src/index.js", import.meta.url)),
     "utf8"
   );
-  assert.equal(entry.includes("AUTO_ABSENT_ENABLED"), false);
+  assert.equal(entry.includes('env.AUTO_ABSENT_ENABLED === "true"'), true);
+  const config = readFileSync(CONFIG_PATH, "utf8");
+  assert.equal(/^\s*AUTO_ABSENT_ENABLED\s*=\s*"true"\s*$/m.test(config), false);
 });
 
 test("the certificate cleanup runs on its own trigger, never on the keep-alive one", () => {
