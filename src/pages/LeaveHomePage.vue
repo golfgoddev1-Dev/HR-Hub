@@ -1,7 +1,6 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import LeaveLayout from '../components/LeaveLayout.vue'
 import PushToggle from '../components/PushToggle.vue'
 import { formatThaiDate, formatThaiDateRange } from '../lib/thai-date.js'
 import { CERTIFICATE_OPEN_LABEL, certificateStatus } from '../leave-certificate.js'
@@ -107,7 +106,6 @@ onMounted(() => {
 </script>
 
 <template>
-  <LeaveLayout>
     <main class="content">
       <div class="head">
         <div>
@@ -198,7 +196,6 @@ onMounted(() => {
         </article>
       </section>
     </main>
-  </LeaveLayout>
 </template>
 
 <style scoped>

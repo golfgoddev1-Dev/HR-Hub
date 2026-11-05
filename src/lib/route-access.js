@@ -11,7 +11,7 @@ export const allowedPathsByRole = {
     '/change-pin',
     '/profile',
   ],
-  // HR landing plus every leave tool; all of them are linked from HrNav.
+  // HR landing plus every leave tool; all of them are linked from hrNavItems().
   hr: [
     '/hr',
     '/hr/employees',

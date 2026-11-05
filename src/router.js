@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { getSession } from './api.js'
+import AppLayout from './components/AppLayout.vue'
 import LoginPage from './pages/LoginPage.vue'
 import PendingPage from './pages/PendingPage.vue'
 import SetPinPage from './pages/SetPinPage.vue'
@@ -43,11 +44,51 @@ export const router = createRouter({
     { path: '/pending', component: PendingPage },
     { path: '/', redirect: '/login' },
     { path: '/set-pin', component: SetPinPage },
-    { path: '/change-pin', component: ChangePinPage, meta: { requiresAuth: true } },
-    { path: '/leave', component: LeaveHomePage, meta: { requiresAuth: true } },
-    { path: '/leave/new', component: LeaveRequestPage, meta: { requiresAuth: true } },
-    { path: '/leave/approvals', component: LeaveApprovalsPage, meta: { requiresAuth: true } },
-    { path: '/leave/calendar', component: LeaveCalendarPage, meta: { requiresAuth: true } },
+
+    // Employee/approver system. The layout is a route parent, so AppLayout (and
+    // the dock it owns) mounts once and stays mounted while these pages change.
+    // Child paths stay absolute so every URL is the same string as before.
+    {
+      path: '/',
+      component: AppLayout,
+      props: { nav: 'leave' },
+      children: [
+        { path: '/change-pin', component: ChangePinPage, meta: { requiresAuth: true } },
+        { path: '/leave', component: LeaveHomePage, meta: { requiresAuth: true } },
+        { path: '/leave/new', component: LeaveRequestPage, meta: { requiresAuth: true } },
+        { path: '/leave/approvals', component: LeaveApprovalsPage, meta: { requiresAuth: true } },
+        {
+          path: '/leave/calendar',
+          component: LeaveCalendarPage,
+          // HR may open this page; the route says which dock to show then.
+          meta: { requiresAuth: true, hrDock: true },
+        },
+        { path: '/profile', component: ProfilePage, meta: { requiresAuth: true } },
+      ],
+    },
+
+    // HR system: its own persistent layout, so moving between HR pages keeps the
+    // same dock element.
+    {
+      path: '/',
+      component: AppLayout,
+      props: { nav: 'hr' },
+      children: [
+        { path: '/hr', component: HrHomePage, meta: { requiresAuth: true } },
+        { path: '/hr/employees', component: HrEmployeesPage, meta: { requiresAuth: true } },
+        { path: '/hr/employees/manage', component: HrEmployeeDataPage, meta: { requiresAuth: true } },
+        { path: '/hr/employees/password', component: HrPasswordPage, meta: { requiresAuth: true } },
+        { path: '/hr/employees/import', component: HrEmployeeImportPage, meta: { requiresAuth: true } },
+        { path: '/hr/employees/:id', component: HrEmployeeDetailPage, meta: { requiresAuth: true } },
+        { path: '/hr/leave', component: HrLeaveRequestsPage, meta: { requiresAuth: true } },
+        { path: '/hr/leave/backdated', component: HrLeaveBackdatedPage, meta: { requiresAuth: true } },
+        { path: '/hr/leave/approvers', component: HrLeaveApproversPage, meta: { requiresAuth: true } },
+        { path: '/hr/leave/holidays', component: HrLeaveHolidaysPage, meta: { requiresAuth: true } },
+        { path: '/hr/leave/settings', component: HrLeaveSettingsPage, meta: { requiresAuth: true } },
+      ],
+    },
+
+    // Meeting controller keeps its own layout inside each page (unchanged).
     { path: '/meeting/controller', component: ControllerOverviewPage, meta: { requiresAuth: true } },
     { path: '/meeting/controller/qr', component: ControllerQrPage, meta: { requiresAuth: true } },
     { path: '/meeting/controller/roster', component: ControllerRosterPage, meta: { requiresAuth: true } },
@@ -57,20 +98,19 @@ export const router = createRouter({
     { path: '/meeting/controller/backfill', component: MeetingBackfillHistoryPage, meta: { requiresAuth: true } },
     { path: '/meeting/controller/backfill/import', component: MeetingBackfillImportPage, meta: { requiresAuth: true } },
     { path: '/meeting/register', component: RegisterPage },
-    { path: '/hr', component: HrHomePage, meta: { requiresAuth: true } },
-    { path: '/hr/employees', component: HrEmployeesPage, meta: { requiresAuth: true } },
-    { path: '/hr/employees/manage', component: HrEmployeeDataPage, meta: { requiresAuth: true } },
-    { path: '/hr/employees/password', component: HrPasswordPage, meta: { requiresAuth: true } },
-    { path: '/hr/employees/import', component: HrEmployeeImportPage, meta: { requiresAuth: true } },
-    { path: '/hr/employees/:id', component: HrEmployeeDetailPage, meta: { requiresAuth: true } },
-    { path: '/hr/leave', component: HrLeaveRequestsPage, meta: { requiresAuth: true } },
-    { path: '/hr/leave/backdated', component: HrLeaveBackdatedPage, meta: { requiresAuth: true } },
-    { path: '/hr/leave/approvers', component: HrLeaveApproversPage, meta: { requiresAuth: true } },
-    { path: '/hr/leave/holidays', component: HrLeaveHolidaysPage, meta: { requiresAuth: true } },
-    { path: '/hr/leave/settings', component: HrLeaveSettingsPage, meta: { requiresAuth: true } },
+
+    // The printed leave form is a document, not an app page: no dock.
     { path: '/leave/hr/requests/:id/print', component: HrLeavePrintPage, meta: { requiresAuth: true } },
-    { path: '/admin', component: AdminPage, meta: { requiresAuth: true } },
-    { path: '/profile', component: ProfilePage, meta: { requiresAuth: true } },
+
+    // system_admin keeps AdminNav, inside its own layout route.
+    {
+      path: '/admin',
+      component: AppLayout,
+      props: { nav: 'admin' },
+      meta: { requiresAuth: true },
+      children: [{ path: '', component: AdminPage, meta: { requiresAuth: true } }],
+    },
+
     { path: '/:pathMatch(.*)*', component: PendingPage, meta: { requiresAuth: true, catchAll: true } },
   ],
 })

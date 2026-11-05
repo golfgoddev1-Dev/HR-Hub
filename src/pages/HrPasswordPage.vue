@@ -1,6 +1,5 @@
 <script setup>
 import { onBeforeUnmount, ref } from 'vue'
-import AppLayout from '../components/AppLayout.vue'
 import EmployeePicker from '../components/EmployeePicker.vue'
 import { postJson } from '../api.js'
 
@@ -115,7 +114,6 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <AppLayout nav="hr">
 
     <main class="content">
       <div class="head">
@@ -210,7 +208,6 @@ onBeforeUnmount(() => {
         </div>
       </section>
     </main>
-  </AppLayout>
 </template>
 
 <style scoped>

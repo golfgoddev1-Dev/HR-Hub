@@ -1,7 +1,6 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
-import LeaveLayout from '../components/LeaveLayout.vue'
 import {
   DEPARTMENT_CHANGE_NOTE,
   departmentOptions,
@@ -202,7 +201,6 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <LeaveLayout>
     <main class="content">
       <div class="head">
         <div>
@@ -351,7 +349,6 @@ onBeforeUnmount(() => {
         </div>
       </form>
     </main>
-  </LeaveLayout>
 </template>
 
 <style scoped>

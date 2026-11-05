@@ -9,11 +9,12 @@ import { describe, expect, it } from 'vitest'
 
 const STYLES = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8')
 const MAIN = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
-const NAVS = {
-  LeaveNav: readFileSync(new URL('../src/components/LeaveNav.vue', import.meta.url), 'utf8'),
-  HrNav: readFileSync(new URL('../src/components/HrNav.vue', import.meta.url), 'utf8'),
-  AdminNav: readFileSync(new URL('../src/components/AdminNav.vue', import.meta.url), 'utf8'),
-}
+// The dock is shared now, so one file carries both systems' menu styles.
+const DOCK = readFileSync(new URL('../src/components/AppDock.vue', import.meta.url), 'utf8')
+const ADMIN_NAV = readFileSync(
+  new URL('../src/components/AdminNav.vue', import.meta.url),
+  'utf8'
+)
 
 /** The declaration block that follows `selector`, up to its closing brace. */
 function blockOf(source, selector) {
@@ -41,12 +42,7 @@ describe('global stylesheet', () => {
   })
 })
 
-const DOCKS = {
-  LeaveNav: NAVS.LeaveNav,
-  HrNav: NAVS.HrNav,
-}
-
-describe.each(Object.entries(DOCKS))('%s dock', (_name, source) => {
+describe.each([['AppDock.vue', DOCK]])('%s dock', (_name, source) => {
   it('keeps the rail item box free of font-weight changes', () => {
     // The active state may emphasise its label, but the item box itself must not
     // change weight: that is what used to push the following items sideways.
@@ -60,8 +56,8 @@ describe.each(Object.entries(DOCKS))('%s dock', (_name, source) => {
 
 describe('AdminNav', () => {
   it('keeps the active link at the same font weight as an inactive one', () => {
-    const base = fontWeightOf(blockOf(NAVS.AdminNav, '.nav-link'))
-    const active = fontWeightOf(blockOf(NAVS.AdminNav, '.nav-link-active'))
+    const base = fontWeightOf(blockOf(ADMIN_NAV, '.nav-link'))
+    const active = fontWeightOf(blockOf(ADMIN_NAV, '.nav-link-active'))
 
     // No weight in either block is fine; a different one is the shift.
     if (active !== null && base !== null) {

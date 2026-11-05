@@ -1,6 +1,5 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import AppLayout from '../components/AppLayout.vue'
 import EmployeePicker from '../components/EmployeePicker.vue'
 import { postJson } from '../api.js'
 import {
@@ -162,7 +161,6 @@ onMounted(async () => {
 </script>
 
 <template>
-  <AppLayout nav="hr">
 
     <main class="content">
       <div class="head">
@@ -315,7 +313,6 @@ onMounted(async () => {
         </div>
       </section>
     </main>
-  </AppLayout>
 </template>
 
 <style scoped>

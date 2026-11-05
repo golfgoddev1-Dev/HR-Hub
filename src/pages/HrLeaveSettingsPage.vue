@@ -1,6 +1,5 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import AppLayout from '../components/AppLayout.vue'
 
 const LOAD_ERROR = 'โหลดการตั้งค่าไม่สำเร็จ กรุณาลองใหม่'
 const SAVE_ERROR = 'บันทึกการตั้งค่าไม่สำเร็จ กรุณาลองใหม่'
@@ -69,7 +68,6 @@ onMounted(load)
 </script>
 
 <template>
-  <AppLayout nav="hr">
 
     <main class="content">
       <div class="head">
@@ -117,7 +115,6 @@ onMounted(load)
         </template>
       </section>
     </main>
-  </AppLayout>
 </template>
 
 <style scoped>

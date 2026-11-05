@@ -1,7 +1,6 @@
 <script setup>
 import { onBeforeUnmount, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import AppLayout from '../components/AppLayout.vue'
 
 const MIN_LENGTH = 2
 const SEARCH_ERROR = 'ไม่สามารถค้นหาได้ กรุณาลองใหม่'
@@ -77,7 +76,6 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <AppLayout nav="hr">
 
     <main class="content">
       <div class="head">
@@ -138,7 +136,6 @@ onBeforeUnmount(() => {
 
       <p v-else-if="searched && !loading" class="empty">{{ EMPTY }}</p>
     </main>
-  </AppLayout>
 </template>
 
 <style scoped>

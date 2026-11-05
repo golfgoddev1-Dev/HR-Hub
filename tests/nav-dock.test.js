@@ -1,111 +1,101 @@
-// The two top menus are a floating dock. These checks pin the behaviour the
-// restyle must not lose: real routes, a real pending badge, the real logout call
-// and one indicator that follows the router instead of a hardcoded position.
+// The shared dock. These checks pin the behaviour the restyle must not lose:
+// real routes, a real pending badge, the real logout call, one indicator that
+// follows the router, and an entrance that only plays on the first mount.
 import { readFileSync } from 'node:fs'
 
 import { describe, expect, it } from 'vitest'
 
-const LEAVE = readFileSync(new URL('../src/components/LeaveNav.vue', import.meta.url), 'utf8')
-const HR = readFileSync(new URL('../src/components/HrNav.vue', import.meta.url), 'utf8')
-const APPROVAL_ITEMS = readFileSync(
-  new URL('../src/lib/leave-nav-items.js', import.meta.url),
-  'utf8'
-)
+const DOCK = readFileSync(new URL('../src/components/AppDock.vue', import.meta.url), 'utf8')
+const LAYOUT = readFileSync(new URL('../src/components/AppLayout.vue', import.meta.url), 'utf8')
+const NAV_CONFIG = readFileSync(new URL('../src/lib/nav-config.js', import.meta.url), 'utf8')
+const ENTRANCE = readFileSync(new URL('../src/lib/dock-entrance.js', import.meta.url), 'utf8')
 
-const NAVS = [
-  ['LeaveNav.vue', LEAVE],
-  ['HrNav.vue', HR],
-]
+/** The declaration block of one selector, up to its closing brace. */
+function selectorBlock(source, selector) {
+  const start = source.indexOf(`\n${selector} {`)
+  if (start === -1) return ''
+  const end = source.indexOf('\n}', start)
+  return end === -1 ? '' : source.slice(start, end)
+}
 
-const HR_ROUTES = [
-  '/hr',
-  '/hr/employees',
-  '/hr/employees/import',
-  '/hr/employees/manage',
-  '/hr/employees/password',
-  '/hr/leave',
-  '/leave/calendar',
-  '/hr/leave/backdated',
-  '/hr/leave/holidays',
-  '/hr/leave/approvers',
-  '/hr/leave/settings',
-]
-
-const LEAVE_LABELS = [
-  "label: 'ใบลาของฉัน'",
-  "label: 'ยื่นใบลา'",
-  "label: 'ปฏิทินการลา'",
-  "label: 'ข้อมูลส่วนตัว'",
-  "label: 'เปลี่ยน PIN'",
-]
-
-describe.each(NAVS)('%s dock', (_name, source) => {
+describe('AppDock', () => {
   it('never links to a hash', () => {
-    expect(source).not.toMatch(/href\s*=\s*["']#/)
+    expect(DOCK).not.toMatch(/href\s*=\s*["']#/)
   })
 
   it('takes the active state from RouterLink', () => {
-    expect(source).toContain('<RouterLink')
-    expect(source).toContain('active-class="dock-item-active"')
-    expect(source).not.toMatch(/\bisActive\b/)
+    expect(DOCK).toContain('<RouterLink')
+    expect(DOCK).toContain('active-class="dock-item-active"')
+    expect(DOCK).not.toMatch(/\bisActive\b/)
   })
 
   it('moves one indicator from measured element state', () => {
-    expect(source).toContain('ref="rail"')
-    expect(source).toContain('offsetLeft')
-    expect(source).toContain('offsetWidth')
-    expect(source).toContain(':style="indicatorStyle"')
-    expect(source).toContain('translateX(${dot.value.x}px)')
+    expect(DOCK).toContain('ref="rail"')
+    expect(DOCK).toContain('offsetLeft')
+    expect(DOCK).toContain('offsetWidth')
+    expect(DOCK).toContain(':style="indicatorStyle"')
+    expect(DOCK).toContain('translateX(${dot.value.x}px)')
     // No fixed pixel offset anywhere: the x must come from the measurement.
-    expect(source).not.toMatch(/translateX\(\s*-?\d+px/)
+    expect(DOCK).not.toMatch(/translateX\(\s*-?\d+px/)
+  })
+
+  it('renders the brand through props, including the optional HR chip', () => {
+    expect(DOCK).toContain('brandIcon')
+    expect(DOCK).toContain('brandTitle')
+    expect(DOCK).toContain('brandSubtitle')
+    expect(DOCK).toContain('showBrandBadge')
+    expect(DOCK).toMatch(/v-if="showBrandBadge"[^>]*>HR</)
+    expect(LAYOUT).toContain("title: 'ระบบบริการงานบุคคลและสวัสดิการพนักงาน'")
+    expect(LAYOUT).toContain("title: 'ระบบใบลา'")
   })
 
   it('logs out through the real endpoint before navigating', () => {
-    const post = source.indexOf("fetch('/api/auth/logout'")
-    const go = source.indexOf("window.location.assign('/login')")
+    const post = DOCK.indexOf("fetch('/api/auth/logout'")
+    const go = DOCK.indexOf("window.location.assign('/login')")
     expect(post).toBeGreaterThan(-1)
     expect(go).toBeGreaterThan(post)
-    expect(source).not.toMatch(/กำลังออก|logging out/i)
+    expect(DOCK).not.toMatch(/กำลังออก|logging out/i)
+  })
+
+  it('emits nothing: logout is built in', () => {
+    expect(DOCK).not.toContain('defineEmits')
+    expect(DOCK).not.toContain("$emit('logout')")
   })
 
   it('keeps a 3px focus ring and disables motion when asked', () => {
-    expect(source).toContain(':focus-visible')
-    expect(source).toContain('outline: 3px solid #0f6f63')
-    expect(source).toContain('prefers-reduced-motion: reduce')
-  })
-})
-
-describe('leave dock badge', () => {
-  it('renders the real pending count', () => {
-    expect(LEAVE).toContain('pendingCount')
-    expect(LEAVE).toContain('{{ item.badge }}')
+    expect(DOCK).toContain(':focus-visible')
+    expect(DOCK).toContain('outline: 3px solid #0f6f63')
+    expect(DOCK).toContain('prefers-reduced-motion: reduce')
   })
 
-  it('has no badge at zero', () => {
-    expect(LEAVE).toContain('v-if="item.badge > 0"')
-    expect(LEAVE).not.toMatch(/dock-badge[^>]*>\s*\d/)
+  it('runs the entrance only on the first mount of the session', () => {
+    // The flag is read once at setup and drives a single root class; the stagger
+    // hangs off that class, so a second mount cannot replay it.
+    expect(DOCK).toContain("import { takeDockEntrance } from '../lib/dock-entrance.js'")
+    expect(DOCK).toContain('const entering = ref(takeDockEntrance())')
+    expect(DOCK).toContain(":class=\"{ 'is-entering': entering }\"")
+    expect(DOCK).toContain('.dock.is-entering .dock-item')
+    expect(selectorBlock(DOCK, '.dock-item')).not.toContain('animation')
+    expect(ENTRANCE).toContain('let played = false')
   })
-})
 
-describe('leave dock items', () => {
-  it('keeps every label and its order, with approvals appended last', () => {
-    for (const label of LEAVE_LABELS) expect(LEAVE).toContain(label)
-
-    const positions = LEAVE_LABELS.map((label) => LEAVE.indexOf(label))
-    expect(positions).toEqual([...positions].sort((a, b) => a - b))
-    expect(LEAVE.indexOf('const approvals = approvalsMenuItem(')).toBeGreaterThan(
-      LEAVE.indexOf("label: 'เปลี่ยน PIN'")
-    )
-    // The approvals entry, its icon and its badge come from the shared helper.
-    expect(APPROVAL_ITEMS).toContain("APPROVALS_ICON = 'fact_check'")
+  it('renders the pending badge from the item data only', () => {
+    expect(DOCK).toContain('v-if="item.badge > 0"')
+    expect(DOCK).toContain('{{ item.badge }}')
+    expect(DOCK).not.toMatch(/dock-badge[^>]*>\s*\d/)
   })
-})
 
-describe('HR dock items', () => {
-  it('keeps all eleven items and routes, including the leave calendar', () => {
-    expect((HR.match(/label: '/g) ?? []).length).toBe(11)
-    for (const route of HR_ROUTES) expect(HR, route).toContain(`to: '${route}'`)
-    expect(HR).toContain("label: 'ปฏิทินการลา'")
-    expect(HR).toContain("icon: 'calendar_month'")
+  it('sits in a scrolling rail on narrow screens', () => {
+    expect(DOCK).toContain('overflow-x: auto')
+    expect(DOCK).toContain('scroll-snap-type')
+    expect(DOCK).toContain('prefers-reduced-motion')
+  })
+
+  it('is fed by the shared item lists and the layout approvals logic', () => {
+    expect(NAV_CONFIG).toContain('export function leaveNavItems()')
+    expect(NAV_CONFIG).toContain('export function hrNavItems()')
+    expect(LAYOUT).toContain('leaveNavItems()')
+    expect(LAYOUT).toContain('hrNavItems()')
+    expect(LAYOUT).toContain("import { approvalsMenuItem } from '../lib/leave-nav-items.js'")
   })
 })

@@ -1,7 +1,6 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import AppLayout from '../components/AppLayout.vue'
 
 const route = useRoute()
 const employee = ref(null)
@@ -60,7 +59,6 @@ onMounted(load)
 </script>
 
 <template>
-  <AppLayout nav="hr">
 
     <main class="content">
       <div class="head">
@@ -127,7 +125,6 @@ onMounted(load)
         </v-alert>
       </section>
     </main>
-  </AppLayout>
 </template>
 
 <style scoped>

@@ -1,10 +1,8 @@
 <script setup>
-import AppLayout from '../components/AppLayout.vue'
 import EmployeeDirectoryManager from '../components/EmployeeDirectoryManager.vue'
 </script>
 
 <template>
-  <AppLayout nav="hr">
 
     <main class="content">
       <div class="head">
@@ -20,7 +18,6 @@ import EmployeeDirectoryManager from '../components/EmployeeDirectoryManager.vue
 
       <EmployeeDirectoryManager base="/api/hr/directory" />
     </main>
-  </AppLayout>
 </template>
 
 <style scoped>

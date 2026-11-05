@@ -1,6 +1,5 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
-import AppLayout from '../components/AppLayout.vue'
 import EmployeePicker from '../components/EmployeePicker.vue'
 import { formatThaiDate } from '../lib/thai-date.js'
 import { postJson } from '../api.js'
@@ -153,7 +152,6 @@ onMounted(load)
 </script>
 
 <template>
-  <AppLayout nav="hr">
 
     <main class="content">
       <div class="head">
@@ -306,7 +304,6 @@ onMounted(load)
         </button>
       </section>
     </main>
-  </AppLayout>
 </template>
 
 <style scoped>

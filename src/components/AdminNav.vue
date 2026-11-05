@@ -1,5 +1,5 @@
 <script setup>
-// Same shell as HrNav.vue and LeaveNav.vue. Only /admin exists today, so the
+// Same shell as AppDock.vue. Only /admin exists today, so the
 // other two items are disabled labels: no to/href may point at a missing page.
 const disabledItems = [
   { label: 'จัดการผู้ใช้', icon: 'manage_accounts' },

@@ -1,6 +1,6 @@
 <script setup>
 // The calendar itself. It is layout-free on purpose: LeaveCalendarPage puts it
-// inside LeaveLayout (employee/approver) or the HR shell.
+// inside the shared app layout (employee/approver or the HR shell).
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import FullCalendar from '@fullcalendar/vue3'
 import dayGridPlugin from '@fullcalendar/daygrid'

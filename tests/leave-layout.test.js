@@ -1,72 +1,61 @@
-// Every page that shows the leave menu must put that menu inside the shared
-// outer layout. Otherwise the page brings its own padding and the bar lands at a
-// different x/y, which is exactly the jump this guards against.
-import { readdirSync, readFileSync, statSync } from 'node:fs'
-import { relative, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+// The employee/approver system no longer wraps each page: one layout route mounts
+// the dock and swaps only the routed page, so the dock element cannot remount and
+// flicker when the user moves between leave pages.
+import { readFileSync } from 'node:fs'
 
 import { describe, expect, it } from 'vitest'
 
-const SRC = fileURLToPath(new URL('../src', import.meta.url))
-const LAYOUT = join(SRC, 'components', 'LeaveLayout.vue')
-const APP_LAYOUT = join(SRC, 'components', 'AppLayout.vue')
-const LAYOUT_SOURCE = readFileSync(LAYOUT, 'utf8')
-
-/** Pages that show the leave menu, whichever shared layout they name. */
-const MENU_PAGES = [
-  'ChangePinPage.vue',
-  'LeaveApprovalsPage.vue',
-  'LeaveCalendarPage.vue',
-  'LeaveHomePage.vue',
-  'LeaveRequestPage.vue',
-  'ProfilePage.vue',
-]
-
-/** Pages that still name LeaveLayout; LeaveCalendarPage picks its menu instead. */
-const LEAVE_LAYOUT_PAGES = [
-  'ChangePinPage.vue',
-  'LeaveApprovalsPage.vue',
-  'LeaveHomePage.vue',
-  'LeaveRequestPage.vue',
-  'ProfilePage.vue',
-]
-
-function vueFiles(dir) {
-  return readdirSync(dir).flatMap((entry) => {
-    const full = join(dir, entry)
-    if (statSync(full).isDirectory()) return vueFiles(full)
-    return entry.endsWith('.vue') ? [full] : []
-  })
-}
-
-const ALL_VUE = vueFiles(SRC)
-const PAGES = ALL_VUE.filter((file) => file.startsWith(join(SRC, 'pages')))
-const source = (file) => readFileSync(file, 'utf8')
-const pageName = (file) => relative(join(SRC, 'pages'), file).split('\\').join('/')
-
-/** Anything outside the two layouts that still pulls the menu in on its own. */
-const DIRECT_NAV = ALL_VUE.filter(
-  (file) => file !== LAYOUT && file !== APP_LAYOUT && /<LeaveNav|import LeaveNav\b/.test(source(file))
+const ROUTER = readFileSync(new URL('../src/router.js', import.meta.url), 'utf8')
+const APP_LAYOUT = readFileSync(
+  new URL('../src/components/AppLayout.vue', import.meta.url),
+  'utf8'
 )
 
-describe('shared leave layout', () => {
-  it('delegates positioning to the shared app layout', () => {
-    expect(LAYOUT_SOURCE).toContain('<AppLayout nav="leave">')
-    expect(LAYOUT_SOURCE).toContain('<slot />')
-    expect(LAYOUT_SOURCE).not.toContain('<LeaveNav')
+const LEAVE_PAGES = [
+  'ChangePinPage.vue',
+  'LeaveApprovalsPage.vue',
+  'LeaveHomePage.vue',
+  'LeaveRequestPage.vue',
+  'ProfilePage.vue',
+]
+
+const page = (name) => readFileSync(new URL(`../src/pages/${name}`, import.meta.url), 'utf8')
+
+describe('persistent leave layout', () => {
+  it('is a route parent, so the dock mounts once for all leave pages', () => {
+    const parent = ROUTER.indexOf("props: { nav: 'leave' }")
+    expect(parent).toBeGreaterThan(-1)
+    expect(ROUTER.slice(parent - 200, parent)).toContain('component: AppLayout')
   })
 
-  it('leaves the leave menu import to AppLayout alone', () => {
-    const offenders = DIRECT_NAV.map((file) => relative(SRC, file).split('\\').join('/'))
-    expect(offenders).toEqual([])
-  })
-
-  it('is used by every page that shows the leave menu', () => {
-    const using = PAGES.filter((file) => /<LeaveLayout/.test(source(file))).map(pageName).sort()
-    expect(using).toEqual(LEAVE_LAYOUT_PAGES.sort())
-
-    for (const name of MENU_PAGES) {
-      expect(/<LeaveLayout|<AppLayout/.test(source(join(SRC, 'pages', name))), name).toBe(true)
+  it('keeps the five leave pages plus the calendar and change-PIN inside it', () => {
+    const block = ROUTER.slice(
+      ROUTER.indexOf("props: { nav: 'leave' }"),
+      ROUTER.indexOf("props: { nav: 'hr' }")
+    )
+    for (const path of ['/change-pin', '/leave', '/leave/new', '/leave/approvals', '/leave/calendar', '/profile']) {
+      expect(block, path).toContain(`path: '${path}'`)
     }
+  })
+
+  it('leaves every leave page content only', () => {
+    for (const name of LEAVE_PAGES) {
+      const source = page(name)
+      expect(source, name).not.toContain('LeaveLayout')
+      expect(source, name).not.toContain('AppLayout')
+      expect(source, name).not.toContain('AppDock')
+    }
+  })
+
+  it('does not bring the menu in anywhere but the layout', () => {
+    expect(APP_LAYOUT).toContain("import AppDock from './AppDock.vue'")
+    for (const name of LEAVE_PAGES) {
+      expect(page(name), name).not.toMatch(/import LeaveNav|import HrNav/)
+    }
+  })
+
+  it('swaps the page with RouterView so the dock node survives navigation', () => {
+    expect(APP_LAYOUT).toContain('<RouterView />')
+    expect(APP_LAYOUT).not.toContain('<slot')
   })
 })

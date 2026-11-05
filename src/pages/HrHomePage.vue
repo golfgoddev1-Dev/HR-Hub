@@ -1,5 +1,4 @@
 <script setup>
-import AppLayout from '../components/AppLayout.vue'
 
 // No summary API exists for HR yet, so this page is links only: every card goes
 // to a page that already works (employees list, import, directory management).
@@ -26,7 +25,6 @@ const cards = [
 </script>
 
 <template>
-  <AppLayout nav="hr">
     <div class="page-loader-bar" aria-hidden="true"></div>
 
     <main class="content">
@@ -58,7 +56,6 @@ const cards = [
         </RouterLink>
       </div>
     </main>
-  </AppLayout>
 </template>
 
 <style scoped>

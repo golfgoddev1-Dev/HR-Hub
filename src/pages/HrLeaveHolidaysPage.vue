@@ -1,6 +1,5 @@
 <script setup>
 import { onMounted, ref } from 'vue'
-import AppLayout from '../components/AppLayout.vue'
 import { formatThaiDateLong } from '../lib/thai-date.js'
 import { postJson } from '../api.js'
 
@@ -88,7 +87,6 @@ onMounted(load)
 </script>
 
 <template>
-  <AppLayout nav="hr">
 
     <main class="content">
       <div class="head">
@@ -145,7 +143,6 @@ onMounted(load)
         </div>
       </section>
     </main>
-  </AppLayout>
 </template>
 
 <style scoped>

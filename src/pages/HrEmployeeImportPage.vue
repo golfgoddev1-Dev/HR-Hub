@@ -1,6 +1,5 @@
 <script setup>
 import { computed, ref } from 'vue'
-import AppLayout from '../components/AppLayout.vue'
 
 const MAX_FILE_BYTES = 2 * 1024 * 1024
 const ZIP_SIGNATURE = [0x50, 0x4b, 0x03, 0x04]
@@ -135,7 +134,6 @@ const choiceLabel = (value) => (value === 'file' ? 'ใช้ค่าจาก�
 </script>
 
 <template>
-  <AppLayout nav="hr">
 
     <main class="content">
       <div class="page-head">
@@ -353,7 +351,6 @@ const choiceLabel = (value) => (value === 'file' ? 'ใช้ค่าจาก�
         </div>
       </section>
     </main>
-  </AppLayout>
 </template>
 
 <style scoped>

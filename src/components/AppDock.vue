@@ -1,26 +1,28 @@
 <script setup>
+// The shared floating dock for the employee/approver and HR systems. It only
+// renders props: items, brand text and the optional HR chip come from the
+// layout, so both systems use one component and one animation timeline.
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { takeDockEntrance } from '../lib/dock-entrance.js'
 
-const navItems = [
-  { label: 'หน้าหลัก', to: '/hr', icon: 'home' },
-  { label: 'รายชื่อพนักงาน', to: '/hr/employees', icon: 'groups' },
-  { label: 'นำเข้าพนักงาน', to: '/hr/employees/import', icon: 'upload_file' },
-  { label: 'จัดการข้อมูลพนักงาน', to: '/hr/employees/manage', icon: 'edit' },
-  { label: 'จัดการรหัสผ่านพนักงาน', to: '/hr/employees/password', icon: 'password' },
-  { label: 'ใบลาทั้งหมด', to: '/hr/leave', icon: 'event_note' },
-  { label: 'ปฏิทินการลา', to: '/leave/calendar', icon: 'calendar_month' },
-  { label: 'คีย์ใบลาย้อนหลัง', to: '/hr/leave/backdated', icon: 'edit_calendar' },
-  { label: 'วันหยุด', to: '/hr/leave/holidays', icon: 'event_busy' },
-  { label: 'ผู้อนุมัติ', to: '/hr/leave/approvers', icon: 'how_to_reg' },
-  { label: 'ตั้งค่าใบลา', to: '/hr/leave/settings', icon: 'settings' },
-]
+const props = defineProps({
+  brandIcon: { type: String, required: true },
+  brandTitle: { type: String, required: true },
+  brandSubtitle: { type: String, default: '' },
+  items: { type: Array, required: true },
+  showBrandBadge: { type: Boolean, default: false },
+})
 
 const route = useRoute()
 const rail = ref(null)
 const leaving = ref(false)
 const hasOverflow = ref(false)
 const dot = ref({ x: 0, visible: false })
+
+// True only for the first dock mount in this page load; a later mount skips the
+// entrance so navigation never replays the slide-down or the item stagger.
+const entering = ref(takeDockEntrance())
 
 // Width of the glowing dot under the active item; the rest comes from measuring.
 const DOT_WIDTH = 26
@@ -73,9 +75,11 @@ function revealActive() {
   })
 }
 
-onMounted(async () => {
-  await nextTick()
-  measure()
+onMounted(() => {
+  nextTick(() => {
+    measure()
+    revealActive()
+  })
   window.addEventListener('resize', measure)
   if (typeof ResizeObserver !== 'undefined' && rail.value) {
     observer = new ResizeObserver(() => measure())
@@ -90,6 +94,7 @@ onBeforeUnmount(() => {
   observer = null
 })
 
+// The dock stays mounted across pages, so the indicator moves with the route.
 watch(
   () => route.path,
   () =>
@@ -97,6 +102,11 @@ watch(
       measure()
       revealActive()
     })
+)
+
+watch(
+  () => props.items.length,
+  () => nextTick(measure)
 )
 
 async function logout() {
@@ -112,34 +122,37 @@ async function logout() {
 </script>
 
 <template>
-  <header class="dock">
+  <header class="dock" :class="{ 'is-entering': entering }" data-dock>
     <div class="dock-inner">
       <div class="dock-brand">
         <div class="dock-brand-tile">
-          <span class="material-symbols-outlined">groups</span>
+          <span class="material-symbols-outlined">{{ brandIcon }}</span>
         </div>
-        <span class="dock-title">ระบบบริการงานบุคคลและสวัสดิการพนักงาน</span>
-        <span class="dock-chip">HR</span>
+        <span class="dock-title">{{ brandTitle }}</span>
+        <span v-if="brandSubtitle" class="dock-subtitle">{{ brandSubtitle }}</span>
+        <span v-if="showBrandBadge" class="dock-chip">HR</span>
       </div>
 
       <nav
         ref="rail"
         class="dock-rail"
         :class="{ 'is-scrollable': hasOverflow }"
-        aria-label="เมนูผู้ดูแลระบบบุคคล"
+        :aria-label="brandTitle"
       >
         <span class="dock-indicator" :style="indicatorStyle" aria-hidden="true"></span>
 
         <RouterLink
-          v-for="(item, index) in navItems"
+          v-for="(item, index) in items"
           :key="item.to"
           :to="item.to"
           class="dock-item"
           active-class="dock-item-active"
+          :aria-label="item.ariaLabel"
           :style="{ '--i': index }"
         >
           <span class="dock-tile">
             <span class="material-symbols-outlined">{{ item.icon }}</span>
+            <span v-if="item.badge > 0" class="dock-badge">{{ item.badge }}</span>
           </span>
           <span class="dock-label">{{ item.label }}</span>
         </RouterLink>
@@ -150,7 +163,7 @@ async function logout() {
           type="button"
           class="dock-item dock-logout"
           :class="{ 'is-leaving': leaving }"
-          :style="{ '--i': navItems.length }"
+          :style="{ '--i': items.length }"
           :disabled="leaving"
           :aria-busy="leaving ? 'true' : 'false'"
           @click="logout"
@@ -197,6 +210,10 @@ async function logout() {
     0 18px 40px -24px rgba(16, 80, 78, 0.45),
     0 2px 8px rgba(16, 80, 78, 0.06),
     inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+/* The entrance runs only while the one-shot flag is true. */
+.dock.is-entering {
   animation: dock-enter 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
 
@@ -207,7 +224,7 @@ async function logout() {
   min-width: 0;
 }
 
-/* ---------- Brand: existing icon and Thai name ---------- */
+/* ---------- Brand: icon, Thai name and the optional HR chip ---------- */
 .dock-brand {
   display: flex;
   align-items: center;
@@ -249,6 +266,14 @@ async function logout() {
   line-height: 1.25;
   letter-spacing: -0.01em;
   color: #12343b;
+}
+
+.dock-subtitle {
+  max-width: 120px;
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1.3;
+  color: #5c7176;
 }
 
 .dock-chip {
@@ -332,6 +357,10 @@ async function logout() {
     transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1),
     background-color 0.2s ease,
     color 0.2s ease;
+}
+
+/* Stagger belongs to the one-shot entrance, so it cannot replay on navigation. */
+.dock.is-entering .dock-item {
   animation: dock-item-in 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
   animation-delay: calc(var(--i, 0) * 40ms + 120ms);
 }
@@ -426,6 +455,28 @@ async function logout() {
   pointer-events: none;
 }
 
+/* ---------- Badge: real pending count, absent at zero ---------- */
+.dock-badge {
+  position: absolute;
+  top: -5px;
+  right: -7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  box-sizing: border-box;
+  border: 2px solid #ffffff;
+  border-radius: 999px;
+  background: #e11d48;
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: 0 2px 6px rgba(225, 29, 72, 0.45);
+}
+
 .dock-divider {
   flex: 0 0 auto;
   width: 1px;
@@ -506,6 +557,7 @@ async function logout() {
   }
 
   .dock-title,
+  .dock-subtitle,
   .dock-chip {
     display: none;
   }
@@ -524,7 +576,8 @@ async function logout() {
 
 @media (prefers-reduced-motion: reduce) {
   .dock,
-  .dock-item,
+  .dock.is-entering,
+  .dock.is-entering .dock-item,
   .dock-indicator,
   .dock-brand-tile {
     animation: none !important;
@@ -539,7 +592,7 @@ async function logout() {
     transform: none !important;
   }
 
-  .dock-item {
+  .dock.is-entering .dock-item {
     animation-delay: 0s !important;
   }
 

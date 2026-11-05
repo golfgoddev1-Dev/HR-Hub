@@ -26,7 +26,7 @@ const B1_SUBTITLE =
 
 const ROUTER = readFileSync(new URL('../src/router.js', import.meta.url), 'utf8')
 const ROUTE_ACCESS = readFileSync(new URL('../src/lib/route-access.js', import.meta.url), 'utf8')
-const LEAVE_NAV = readFileSync(new URL('../src/components/LeaveNav.vue', import.meta.url), 'utf8')
+const NAV_CONFIG = readFileSync(new URL('../src/lib/nav-config.js', import.meta.url), 'utf8')
 const PROFILE_PAGE = readFileSync(
   new URL('../src/pages/ProfilePage.vue', import.meta.url),
   'utf8'
@@ -248,13 +248,13 @@ describe('page wiring', () => {
     expect(ROUTER).toContain("path: '/profile'")
     expect(ROUTER).toContain('ProfilePage')
     expect(ROUTE_ACCESS).toContain("'/profile'")
-    expect(LEAVE_NAV).toContain("to: '/profile'")
-    expect(LEAVE_NAV).toContain('ข้อมูลส่วนตัว')
+    expect(NAV_CONFIG).toContain("to: '/profile'")
+    expect(NAV_CONFIG).toContain('ข้อมูลส่วนตัว')
   })
 
-  it('renders the leave menu and keeps the form on screen only', () => {
-    expect(PROFILE_PAGE).toContain("import LeaveLayout from '../components/LeaveLayout.vue'")
-    expect(PROFILE_PAGE).toContain('<LeaveLayout>')
+  it('is content only, with the leave dock supplied by the layout route', () => {
+    expect(PROFILE_PAGE).not.toContain('LeaveLayout')
+    expect(PROFILE_PAGE).not.toContain('<AppDock')
     expect(PROFILE_PAGE).toContain('hasProfileChanges')
     expect(PROFILE_PAGE).toContain('onBeforeRouteLeave')
     expect(PROFILE_PAGE).not.toContain('localStorage')

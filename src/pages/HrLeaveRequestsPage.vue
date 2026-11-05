@@ -1,6 +1,5 @@
 <script setup>
 import { onMounted, ref } from 'vue'
-import AppLayout from '../components/AppLayout.vue'
 import { formatThaiDate, formatThaiDateRange } from '../lib/thai-date.js'
 import {
   CERTIFICATE_OPEN_LABEL,
@@ -180,7 +179,6 @@ onMounted(async () => {
 </script>
 
 <template>
-  <AppLayout nav="hr">
 
     <main class="content">
       <div class="head">
@@ -374,7 +372,6 @@ onMounted(async () => {
         </template>
       </section>
     </main>
-  </AppLayout>
 </template>
 
 <style scoped>

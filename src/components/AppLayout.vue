@@ -1,12 +1,14 @@
 <script setup>
-// The single outer shell for every page that shows a top navigation bar. The
-// bar used to be positioned by each page's own wrapper (or by the nav's own
-// margin), so it landed at a different x/y per route. Positioning lives here
-// alone: a centred 1120px box with one padding, then the nav, then the page.
-import { computed } from 'vue'
+// The shell for both persistent layout routes. It owns the dock (so the dock
+// mounts once per system and survives page changes) and the approvals lookup
+// (so pages no longer fetch it), then renders the matched page below.
+import { computed, onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import AdminNav from './AdminNav.vue'
-import HrNav from './HrNav.vue'
-import LeaveNav from './LeaveNav.vue'
+import AppDock from './AppDock.vue'
+import { getSession } from '../api.js'
+import { approvalsMenuItem } from '../lib/leave-nav-items.js'
+import { hrNavItems, leaveNavItems } from '../lib/nav-config.js'
 
 const props = defineProps({
   nav: {
@@ -16,16 +18,69 @@ const props = defineProps({
   },
 })
 
-const NAVS = { leave: LeaveNav, hr: HrNav, admin: AdminNav }
+const route = useRoute()
+const session = ref(null)
+const isApprover = ref(false)
+const pendingCount = ref(0)
 
-const navComponent = computed(() => NAVS[props.nav] ?? LeaveNav)
+// /leave/calendar is reachable by HR and then shows the HR dock. The route says
+// so through meta.hrDock, so the page itself never chooses a shell.
+const dockNav = computed(() => {
+  if (route.meta.hrDock === true && session.value?.role === 'hr') return 'hr'
+  return props.nav
+})
+
+const isHrDock = computed(() => dockNav.value === 'hr')
+
+const items = computed(() => {
+  if (props.nav === 'admin') return []
+  if (isHrDock.value) return hrNavItems()
+
+  const list = leaveNavItems()
+  const approvals = approvalsMenuItem({
+    isApprover: isApprover.value,
+    pendingCount: pendingCount.value,
+  })
+  if (approvals) list.push(approvals)
+  return list
+})
+
+const brand = computed(() =>
+  isHrDock.value
+    ? { icon: 'groups', title: 'ระบบบริการงานบุคคลและสวัสดิการพนักงาน', subtitle: '', badge: true }
+    : { icon: 'beach_access', title: 'ระบบใบลา', subtitle: '', badge: false }
+)
+
+// One session read and one approvals read for the whole system, not per page.
+onMounted(async () => {
+  const current = await getSession()
+  session.value = current
+  isApprover.value = current?.isApprover === true
+  if (!isApprover.value || props.nav !== 'leave') return
+
+  try {
+    const response = await fetch('/api/leave/approvals', { credentials: 'same-origin' })
+    const data = await response.json().catch(() => ({}))
+    pendingCount.value = Array.isArray(data.results) ? data.results.length : 0
+  } catch {
+    pendingCount.value = 0
+  }
+})
 </script>
 
 <template>
   <div class="app-layout">
     <div class="app-layout-inner">
-      <component :is="navComponent" />
-      <slot />
+      <AdminNav v-if="nav === 'admin'" />
+      <AppDock
+        v-else
+        :brand-icon="brand.icon"
+        :brand-title="brand.title"
+        :brand-subtitle="brand.subtitle"
+        :items="items"
+        :show-brand-badge="brand.badge"
+      />
+      <RouterView />
     </div>
   </div>
 </template>
@@ -37,7 +92,7 @@ const navComponent = computed(() => NAVS[props.nav] ?? LeaveNav)
   overflow-x: hidden;
 }
 
-/* Same 1120px box, centring and single padding for every route: the nav is the
+/* Same 1120px box, centring and single padding for every route: the dock is the
    first child, so its x/y/width no longer depends on the page around it. */
 .app-layout-inner {
   max-width: 1120px;

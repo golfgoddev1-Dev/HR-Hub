@@ -15,7 +15,8 @@ import {
   badgeCount,
 } from '../src/lib/leave-nav-items.js'
 
-const LEAVE_NAV = readFileSync(new URL('../src/components/LeaveNav.vue', import.meta.url), 'utf8')
+const APP_LAYOUT = readFileSync(new URL('../src/components/AppLayout.vue', import.meta.url), 'utf8')
+const NAV_CONFIG = readFileSync(new URL('../src/lib/nav-config.js', import.meta.url), 'utf8')
 
 describe('approvals menu entry', () => {
   it('is absent for an employee who is not an approver', () => {
@@ -65,12 +66,23 @@ describe('approvals menu entry', () => {
   })
 })
 
-describe('LeaveNav wiring', () => {
-  it('asks the session for isApprover and builds the entry from it', () => {
-    expect(LEAVE_NAV).toContain("import { getSession } from '../api.js'")
-    expect(LEAVE_NAV).toContain('approvalsMenuItem')
-    expect(LEAVE_NAV).toContain('isApprover')
-    expect(LEAVE_NAV).toContain("to: '/change-pin'")
-    expect(LEAVE_NAV).toContain("label: 'เปลี่ยน PIN'")
+describe('AppLayout wiring', () => {
+  it('asks the session for isApprover once and builds the entry from it', () => {
+    expect(APP_LAYOUT).toContain("import { getSession } from '../api.js'")
+    expect(APP_LAYOUT).toContain('approvalsMenuItem')
+    expect(APP_LAYOUT).toContain('isApprover')
+    expect(APP_LAYOUT).toContain('/api/leave/approvals')
+  })
+
+  it('appends the entry after the five base items', () => {
+    const base = APP_LAYOUT.indexOf('leaveNavItems()')
+    const approval = APP_LAYOUT.indexOf('approvalsMenuItem({')
+    expect(base).toBeGreaterThan(-1)
+    expect(approval).toBeGreaterThan(base)
+  })
+
+  it('keeps the five base items, including change PIN, in the shared config', () => {
+    expect(NAV_CONFIG).toContain("to: '/change-pin'")
+    expect(NAV_CONFIG).toContain("label: 'เปลี่ยน PIN'")
   })
 })

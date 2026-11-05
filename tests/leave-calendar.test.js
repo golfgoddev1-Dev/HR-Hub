@@ -20,6 +20,7 @@ import {
   toExclusiveEnd,
   toInclusiveEnd,
 } from '../src/lib/leave-calendar.js'
+import { hrNavItems, leaveNavItems } from '../src/lib/nav-config.js'
 import { canOpenPath } from '../src/lib/route-access.js'
 import { formatThaiYear } from '../src/lib/thai-date.js'
 
@@ -29,8 +30,6 @@ const VIEW = readFileSync(
   'utf8'
 )
 const ROUTER = readFileSync(new URL('../src/router.js', import.meta.url), 'utf8')
-const LEAVE_NAV = readFileSync(new URL('../src/components/LeaveNav.vue', import.meta.url), 'utf8')
-const HR_NAV = readFileSync(new URL('../src/components/HrNav.vue', import.meta.url), 'utf8')
 
 describe('inclusive end date to FullCalendar exclusive end', () => {
   it('adds one day for an ordinary date', () => {
@@ -129,17 +128,22 @@ describe('access and wiring', () => {
   })
 
   it('appears in the employee/approver menu and the HR menu', () => {
-    for (const nav of [LEAVE_NAV, HR_NAV]) {
-      expect(nav).toContain("label: 'ปฏิทินการลา'")
-      expect(nav).toContain("to: '/leave/calendar'")
-      expect(nav).toContain('calendar_month')
+    for (const menu of [leaveNavItems(), hrNavItems()]) {
+      const item = menu.find((entry) => entry.to === '/leave/calendar')
+      expect(item).toBeDefined()
+      expect(item.label).toBe('ปฏิทินการลา')
+      expect(item.icon).toBe('calendar_month')
     }
   })
 
-  it('uses the shared app layout with the menu for the signed-in role', () => {
-    expect(PAGE).toContain("import AppLayout from '../components/AppLayout.vue'")
-    expect(PAGE).toContain('<AppLayout :nav="nav">')
-    expect(PAGE).toContain("isHr.value ? 'hr' : 'leave'")
+  it('is content only: the layout route supplies the dock for the signed-in role', () => {
+    // The page no longer chooses a shell. The leave layout route reads meta.hrDock
+    // and shows the HR items when the visitor is HR, so behaviour is unchanged.
+    expect(PAGE).not.toContain('AppLayout')
+    expect(PAGE).not.toContain('AppDock')
+    expect(PAGE).toContain('<LeaveCalendarView')
+    expect(PAGE).toContain('isHr')
+    expect(ROUTER).toContain('hrDock: true')
     expect(VIEW).toContain("from '@fullcalendar/vue3'")
     expect(VIEW).toContain('/api/leave/calendar?')
     expect(VIEW).toContain('/api/leave/holidays?from=')

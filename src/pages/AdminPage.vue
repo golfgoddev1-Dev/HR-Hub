@@ -1,7 +1,6 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
-import AppLayout from '../components/AppLayout.vue'
 import { getSession } from '../api.js'
 import {
   ADMIN_NO_VALUE,
@@ -47,7 +46,6 @@ onMounted(async () => {
 </script>
 
 <template>
-  <AppLayout nav="admin">
     <div class="page-loader-bar" aria-hidden="true"></div>
 
     <main class="content">
@@ -128,7 +126,6 @@ onMounted(async () => {
         </div>
       </section>
     </main>
-  </AppLayout>
 </template>
 
 <style scoped>

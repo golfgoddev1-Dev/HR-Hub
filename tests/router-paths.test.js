@@ -6,7 +6,8 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 const ROUTER = readFileSync(new URL('../src/router.js', import.meta.url), 'utf8')
-const HR_NAV = readFileSync(new URL('../src/components/HrNav.vue', import.meta.url), 'utf8')
+// Both menus come from one shared config module now.
+const NAV_CONFIG = readFileSync(new URL('../src/lib/nav-config.js', import.meta.url), 'utf8')
 const ADMIN_PAGE = readFileSync(new URL('../src/pages/AdminPage.vue', import.meta.url), 'utf8')
 const ADMIN_NAV = readFileSync(new URL('../src/components/AdminNav.vue', import.meta.url), 'utf8')
 // The role allow-lists now live in their own module, which the guard imports.
@@ -18,7 +19,6 @@ const HR_PASSWORD_PAGE = readFileSync(
   new URL('../src/pages/HrPasswordPage.vue', import.meta.url),
   'utf8'
 )
-const LEAVE_NAV = readFileSync(new URL('../src/components/LeaveNav.vue', import.meta.url), 'utf8')
 const CHANGE_PIN_PAGE = readFileSync(new URL('../src/pages/ChangePinPage.vue', import.meta.url), 'utf8')
 const SET_PIN_PAGE = readFileSync(new URL('../src/pages/SetPinPage.vue', import.meta.url), 'utf8')
 const LOGIN_PAGE = readFileSync(new URL('../src/pages/LoginPage.vue', import.meta.url), 'utf8')
@@ -36,7 +36,7 @@ function allowListFor(role) {
 describe('HR allow-list', () => {
   it('includes the employee management page that the menu links to', () => {
     expect(allowListFor('hr')).toContain('/hr/employees/manage')
-    expect(HR_NAV).toContain("to: '/hr/employees/manage'")
+    expect(NAV_CONFIG).toContain("to: '/hr/employees/manage'")
   })
 
   it('includes every leave tool the HR menu links to', () => {
@@ -68,7 +68,7 @@ describe('system_admin landing page', () => {
 
   it('shows the overview heading, the stat bar and the admin menu', () => {
     expect(ADMIN_PAGE).toContain('ภาพรวมผู้ดูแล')
-    expect(ADMIN_PAGE).toContain('<AppLayout nav="admin">')
+    expect(ADMIN_PAGE).not.toContain('AppLayout')
     expect(ADMIN_PAGE).toContain('ADMIN_STATS')
     expect(ADMIN_PAGE).toContain('ADMIN_SHORTCUTS')
     // A card without a number must show a dash, never a substitute value.
@@ -105,8 +105,9 @@ describe('system_admin landing page', () => {
 
   it('is rendered by the admin page only, so no other role sees it', () => {
     // AppLayout owns the menu component; pages only pick it through the prop.
+    expect(ROUTER).toContain("props: { nav: 'admin' }")
     const layout = readFileSync(new URL('../src/components/AppLayout.vue', import.meta.url), 'utf8')
-    expect(layout).toContain('admin: AdminNav')
+    expect(layout).toContain('<AdminNav')
 
     const importers = readdirSync(PAGES_DIR)
       .filter((name) => name.endsWith('.vue'))
@@ -145,13 +146,15 @@ describe('employee change-PIN menu', () => {
   })
 
   it('links it from the employee menu', () => {
-    expect(LEAVE_NAV).toContain("to: '/change-pin'")
-    expect(LEAVE_NAV).toContain("label: 'เปลี่ยน PIN'")
+    expect(NAV_CONFIG).toContain("to: '/change-pin'")
+    expect(NAV_CONFIG).toContain("label: 'เปลี่ยน PIN'")
   })
 
-  it('renders the employee menu on the change-PIN page', () => {
-    expect(CHANGE_PIN_PAGE).toContain("import LeaveLayout from '../components/LeaveLayout.vue'")
-    expect(CHANGE_PIN_PAGE).toContain('<LeaveLayout>')
+  it('shows the employee menu on the change-PIN page through the layout route', () => {
+    // Content only: the leave layout route mounts the dock around this page.
+    expect(CHANGE_PIN_PAGE).not.toContain('LeaveLayout')
+    expect(CHANGE_PIN_PAGE).not.toContain('<AppDock')
+    expect(CHANGE_PIN_PAGE).toContain('<main class="content">')
   })
 
   it('is not offered to any other role', () => {
@@ -178,14 +181,14 @@ describe('set-PIN success flow', () => {
 describe('HR password page', () => {
   it('is reachable for HR and linked from the HR menu', () => {
     expect(allowListFor('hr')).toContain('/hr/employees/password')
-    expect(HR_NAV).toContain("to: '/hr/employees/password'")
-    expect(HR_NAV).toContain('จัดการรหัสผ่านพนักงาน')
+    expect(NAV_CONFIG).toContain("to: '/hr/employees/password'")
+    expect(NAV_CONFIG).toContain('จัดการรหัสผ่านพนักงาน')
     expect(ROUTER).toContain("path: '/hr/employees/password'")
     expect(ROUTER).toContain('HrPasswordPage')
   })
 
   it('keeps the one-time values on screen only and warns they are shown once', () => {
-    expect(HR_PASSWORD_PAGE).toContain('<AppLayout nav="hr">')
+    expect(HR_PASSWORD_PAGE).not.toContain('AppLayout')
     expect(HR_PASSWORD_PAGE).toContain('แสดงเพียงครั้งเดียว')
     expect(HR_PASSWORD_PAGE).toContain('onBeforeUnmount')
     expect(HR_PASSWORD_PAGE).not.toContain('localStorage')
