@@ -22,6 +22,7 @@ const TYPE_ID = "77777777-7777-4777-8777-777777777777";
 const R1 = "88000000-0000-4000-8000-000000000001";
 const R2 = "88000000-0000-4000-8000-000000000002";
 const R3 = "88000000-0000-4000-8000-000000000003";
+const R4 = "88000000-0000-4000-8000-000000000004";
 
 const TOKENS = {
   employee: "e".repeat(43),
@@ -155,7 +156,17 @@ async function buildState() {
         is_active: true,
       },
     ],
-    department_approvers: [],
+    // APPROVER_ID is the department approver for DEPT_A; OTHER_APPROVER_ID is
+    // only a named approver, so their visibility comes from the name grant.
+    department_approvers: [
+      {
+        id: "da-1",
+        employee_id: APPROVER_ID,
+        department_id: DEPT_A,
+        priority: 1,
+        is_active: true,
+      },
+    ],
     leave_types: [{ id: TYPE_ID, name: "ลาป่วย", is_active: true }],
     leave_requests: [
       {
@@ -200,6 +211,22 @@ async function buildState() {
         reason: "ลากิจ",
         decided_at: null,
         created_at: "2026-11-03T03:00:00.000Z",
+      },
+      // A different employee in the same department: the department approver
+      // sees it, the named approver for EMPLOYEE_ID must not.
+      {
+        id: R4,
+        request_code: "LV-0004",
+        employee_id: APPROVER_ID,
+        approver_id: OTHER_APPROVER_ID,
+        leave_type_id: TYPE_ID,
+        status: "approved",
+        start_date: "2026-11-13",
+        end_date: "2026-11-13",
+        days: 1,
+        reason: "พักร้อน",
+        decided_at: "2026-11-07T03:00:00.000Z",
+        created_at: "2026-11-04T03:00:00.000Z",
       },
     ],
     holidays: [],
@@ -262,44 +289,51 @@ function call(path, token) {
 
 const CALENDAR = "/api/leave/calendar?from=2026-11-01&to=2026-11-30";
 
-test("the approver gets the review fields only on their own request", async (t) => {
+test("a department approver sees every department request and its review fields", async (t) => {
   const fake = await createBackend();
   t.after(() => fake.restore());
 
   const body = await (await call(CALENDAR, TOKENS.approver)).json();
   assert.equal(body.ok, true);
+  assert.equal(body.scope, "responsibilities");
 
-  const own = body.events.find((event) => event.id === R1);
-  const other = body.events.find((event) => event.id === R2);
+  const r1 = body.events.find((event) => event.id === R1);
+  const r2 = body.events.find((event) => event.id === R2);
+  const r4 = body.events.find((event) => event.id === R4);
 
-  assert.equal(own.detail.reason, "ปวดหัว");
-  assert.equal(own.detail.requestCode, "LV-0001");
-  assert.equal(own.detail.employeeCode, "EMP-00001");
-  assert.equal(Object.prototype.hasOwnProperty.call(other, "detail"), false);
-  assert.equal(JSON.stringify(body).includes("ธุระส่วนตัว"), false);
+  assert.equal(r1.detail.reason, "ปวดหัว");
+  assert.equal(r1.detail.requestCode, "LV-0001");
+  assert.equal(r1.detail.employeeCode, "EMP-00001");
+  assert.equal(r2.detail.reason, "ธุระส่วนตัว");
+  assert.equal(r4.detail.reason, "พักร้อน");
 
   // Approved people only, one person on each day.
-  assert.deepEqual(body.dayCounts, { "2026-11-10": 1, "2026-11-11": 1 });
+  assert.deepEqual(body.dayCounts, {
+    "2026-11-10": 1,
+    "2026-11-11": 1,
+    "2026-11-13": 1,
+  });
 });
 
-test("the requester and a different approver never get another approver's reason", async (t) => {
+test("the requester gets no review fields, and a named approver only sees the named employee", async (t) => {
   const fake = await createBackend();
   t.after(() => fake.restore());
 
-  // The requester is not an approver of their own request.
+  // The requester sees the department's rows but none of their reasons.
   const requesterBody = await (await call(CALENDAR, TOKENS.employee)).json();
   for (const event of requesterBody.events) {
     assert.equal(Object.prototype.hasOwnProperty.call(event, "detail"), false);
   }
   assert.equal(JSON.stringify(requesterBody).includes("ปวดหัว"), false);
 
-  // The other approver may read R2 (it is theirs), but never R1's reason.
+  // OTHER_APPROVER_ID is named for EMPLOYEE_ID only: they see that person's
+  // requests, never a different employee in the same department.
   const otherBody = await (await call(CALENDAR, TOKENS.other)).json();
-  const r1 = otherBody.events.find((event) => event.id === R1);
-  const r2 = otherBody.events.find((event) => event.id === R2);
-  assert.equal(Object.prototype.hasOwnProperty.call(r1, "detail"), false);
-  assert.equal(JSON.stringify(otherBody).includes("ปวดหัว"), false);
-  assert.equal(r2.detail.reason, "ธุระส่วนตัว");
+  assert.equal(otherBody.events.some((event) => event.id === R4), false);
+  for (const id of [R1, R2, R3]) {
+    const event = otherBody.events.find((row) => row.id === id);
+    assert.equal(typeof event?.detail?.reason, "string", id);
+  }
 });
 
 test("HR gets the review fields for every request", async (t) => {
@@ -312,7 +346,7 @@ test("HR gets the review fields for every request", async (t) => {
     .map((event) => event.detail?.reason)
     .sort();
 
-  assert.deepEqual(reasons, ["ธุระส่วนตัว", "ปวดหัว"]);
+  assert.deepEqual(reasons, ["ธุระส่วนตัว", "ปวดหัว", "พักร้อน"]);
 });
 
 test("the detail endpoint serves the approval fields to the approver", async (t) => {
@@ -331,17 +365,15 @@ test("the detail endpoint serves the approval fields to the approver", async (t)
   assert.equal(body.request.decidedAt, "2026-11-05T03:00:00.000Z");
 });
 
-test("the detail endpoint refuses every out-of-scope caller", async (t) => {
+test("the detail endpoint still refuses the requester and signed-out callers", async (t) => {
   const fake = await createBackend();
   t.after(() => fake.restore());
 
-  for (const token of [TOKENS.employee, TOKENS.other]) {
-    const response = await call(`/api/leave/requests/${R1}`, token);
-    const body = await response.json();
-    assert.equal(response.status, 403, token);
-    assert.equal(body.message, "ไม่มีสิทธิ์เข้าถึงส่วนนี้");
-    assert.equal(JSON.stringify(body).includes("ปวดหัว"), false);
-  }
+  const response = await call(`/api/leave/requests/${R1}`, TOKENS.employee);
+  const body = await response.json();
+  assert.equal(response.status, 403);
+  assert.equal(body.message, "ไม่มีสิทธิ์เข้าถึงส่วนนี้");
+  assert.equal(JSON.stringify(body).includes("ปวดหัว"), false);
 
   // Signed out is 401, not a scope bypass.
   assert.equal((await call(`/api/leave/requests/${R1}`, null)).status, 401);

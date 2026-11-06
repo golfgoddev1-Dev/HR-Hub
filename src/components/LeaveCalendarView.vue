@@ -6,7 +6,7 @@ import FullCalendar from '@fullcalendar/vue3'
 import dayGridPlugin from '@fullcalendar/daygrid'
 import thLocale from '@fullcalendar/core/locales/th'
 
-import { formatThaiDate, formatThaiDateRange } from '../lib/thai-date.js'
+import { formatThaiDateRange } from '../lib/thai-date.js'
 import {
   NARROW_VIEW_WIDTH,
   addIsoDays,
@@ -34,6 +34,13 @@ import {
   groupDayRows,
   toDetailRequest,
 } from '../lib/leave-day.js'
+import {
+  MOBILE_CALENDAR_BREAKPOINT,
+  SHORT_THAI_WEEKDAYS,
+  dayAriaLabel,
+  dayIndicator,
+  dayStatusCounts,
+} from '../lib/leave-calendar-mobile.js'
 import LeaveRequestDetail from './LeaveRequestDetail.vue'
 import { getCached } from '../lib/data-cache.js'
 import {
@@ -90,7 +97,18 @@ function localStore() {
 
 const view = ref(initialLeaveView({ width: width.value, storage: localStore() }))
 const isNarrow = computed(() => width.value < NARROW_VIEW_WIDTH)
-const isPhone = computed(() => width.value <= VIEW_BREAKPOINT)
+const isPhone = computed(() => width.value < MOBILE_CALENDAR_BREAKPOINT)
+
+const holidayDates = computed(
+  () =>
+    new Set(
+      holidays.value
+        .map((holiday) =>
+          typeof holiday?.date === 'string' ? holiday.date.slice(0, 10) : ''
+        )
+        .filter(Boolean)
+    )
+)
 
 const listGroups = computed(() =>
   buildLeaveList({ events: leaveEvents.value, holidays: holidays.value })
@@ -110,21 +128,21 @@ const options = computed(() => ({
   locale: thLocale,
   firstDay: 0,
   height: 'auto',
-  // Phones keep the month grid but collapse the events into dots, so a 360px
-  // screen fits without horizontal scrolling. v6 has no 'dot' eventDisplay, so
-  // the dot is the event element itself, emptied of text here.
-  dayMaxEvents: isPhone.value ? 2 : true,
-  eventContent: isPhone.value ? renderDotEvent : undefined,
+  // The whole cell is the tap target; the day number must not navigate.
+  navLinks: false,
+  // Phones render one custom indicator per cell and no event elements at all:
+  // no dots, no titles and no "+N" link can overflow a 360px cell.
+  events: isPhone.value ? [] : events.value,
+  dayMaxEvents: isPhone.value ? false : true,
+  dayCellContent: isPhone.value ? renderPhoneDayCell : undefined,
+  dayHeaderContent: isPhone.value ? renderPhoneWeekday : undefined,
   noEventsText: 'ไม่มีรายการลาในช่วงนี้',
-  headerToolbar: isPhone.value
-    ? { left: 'prev,next', center: 'title', right: 'today' }
-    : { left: 'prev,next today', center: 'title' },
+  headerToolbar: isPhone.value ? false : { left: 'prev,next today', center: 'title' },
   buttonText: {
     today: 'วันนี้',
     prev: 'ก่อนหน้า',
     next: 'ถัดไป',
   },
-  events: events.value,
   eventClick: (info) => {
     if (info.event.extendedProps?.kind === 'holiday') return
     openPanel(info.event)
@@ -193,14 +211,14 @@ async function load(range) {
       ...leaveEvents.value.map(toCalendarEvent),
       ...holidays.value.map(toHolidayEvent),
     ]
-    nextTick(syncDayBadges)
+    refreshGrid()
   } catch (error) {
     errorMessage.value = errorTextOf(error, LOAD_ERROR)
     events.value = []
     leaveEvents.value = []
     holidays.value = []
     dayCounts.value = {}
-    nextTick(syncDayBadges)
+    refreshGrid()
   } finally {
     loading.value = false
   }
@@ -236,11 +254,18 @@ function openDayPanel(date, cell) {
   const key = String(date ?? '').slice(0, 10)
   if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return
 
+  const rows = buildDayRows({ events: leaveEvents.value, date: key })
+  const approved = Number(dayCounts.value[key] ?? 0)
   dayPanel.value = {
     date: key,
-    rows: buildDayRows({ events: leaveEvents.value, date: key }),
+    rows,
+    approved: Number.isFinite(approved) && approved > 0 ? approved : rows.length,
+    pending: dayStatusCounts(leaveEvents.value, key).pending,
+    // The phone cell shows only a grey bar; the name belongs here.
+    holiday: holidayNameOn(key),
   }
   expandedRowId.value = ''
+  selectDayCell(cell)
   lastDayCell = cell ?? (typeof document === 'undefined' ? null : document.activeElement)
   nextTick(() => dayPanelClose.value?.focus())
 }
@@ -250,6 +275,7 @@ function closeDayPanel() {
   if (!dayPanel.value) return
   dayPanel.value = null
   expandedRowId.value = ''
+  clearSelectedDay()
   const target = lastDayCell
   lastDayCell = null
   nextTick(() => {
@@ -290,33 +316,70 @@ function toggleRow(row) {
   expandedRowId.value = expandedRowId.value === row.id ? '' : row.id
 }
 
-/** Paints the approved-people badge on every visible day cell. */
-function syncDayBadges() {
-  if (typeof document === 'undefined') return
+/** One controlled phone cell: date number, one status pill, holiday bar. */
+function renderPhoneDayCell(arg) {
+  if (typeof document === 'undefined') return undefined
 
-  for (const cell of document.querySelectorAll('.fc-daygrid-day[data-date]')) {
-    const date = cell.getAttribute('data-date') ?? ''
-    const count = Number(dayCounts.value[date] ?? 0)
-    const existing = cell.querySelector('.day-count')
+  const date = isoDayOf(arg.date)
+  // The approved count is the Worker's dayCounts, so the pill and the panel
+  // show exactly what the server counted. Pending is a separate client count
+  // over the visible events already in memory.
+  const approved = Number(dayCounts.value[date] ?? 0)
+  const pending = dayStatusCounts(leaveEvents.value, date).pending
+  const indicator = dayIndicator({
+    approved,
+    pending,
+    holiday: holidayDates.value.has(date),
+  })
 
-    if (!Number.isFinite(count) || count <= 0) {
-      existing?.remove()
-      cell.removeAttribute('data-leave-count')
-      continue
-    }
+  const wrap = document.createElement('span')
+  wrap.className = 'day-cell'
 
-    const badge = existing ?? document.createElement('span')
-    if (!existing) {
-      badge.className = 'day-count'
-      badge.setAttribute('aria-hidden', 'true')
-      cell.querySelector('.fc-daygrid-day-frame')?.appendChild(badge)
-    }
-    badge.textContent = String(count)
-    cell.setAttribute('data-leave-count', String(count))
+  const number = document.createElement('span')
+  number.className = 'day-cell-number'
+  number.textContent = date.slice(8, 10).replace(/^0/, '')
+  wrap.appendChild(number)
 
-    const label = `ดูรายละเอียดวันที่ ${formatThaiDate(date)} มีผู้ลา ${count} คน`
-    cell.setAttribute('aria-label', label)
+  if (indicator.pill) {
+    const pill = document.createElement('span')
+    pill.className = `day-pill day-pill--${indicator.pill.tone}`
+    pill.textContent = indicator.pill.text
+    wrap.appendChild(pill)
   }
+  if (indicator.holiday) {
+    const bar = document.createElement('span')
+    bar.className = 'day-holiday-bar'
+    bar.setAttribute('aria-hidden', 'true')
+    wrap.appendChild(bar)
+  }
+
+  return { domNodes: [wrap] }
+}
+
+/** Short Thai weekday labels (อา จ อ พ พฤ ศ ส) on phones. */
+function renderPhoneWeekday(arg) {
+  if (typeof document === 'undefined') return undefined
+  const name = SHORT_THAI_WEEKDAYS[arg.date.getDay()] ?? ''
+  return { domNodes: [document.createTextNode(name)] }
+}
+
+/** The cells read the month's refs directly, so redraw after the data lands. */
+function refreshGrid() {
+  nextTick(() => calendarRef.value?.getApi()?.render())
+}
+
+let selectedDayCell = null
+
+/** The cell whose panel is open gets a subtle fill and a 2px outline. */
+function selectDayCell(cell) {
+  clearSelectedDay()
+  selectedDayCell = cell ?? null
+  selectedDayCell?.classList.add('is-selected-day')
+}
+
+function clearSelectedDay() {
+  selectedDayCell?.classList.remove('is-selected-day')
+  selectedDayCell = null
 }
 
 /** Events are real buttons: tabindex plus Enter/Space, with a focus ring. */
@@ -340,16 +403,20 @@ function decorateEvent(info) {
   })
 }
 
+/** The holiday name for a YYYY-MM-DD day, or null when it is a working day. */
+function holidayNameOn(date) {
+  const found = holidays.value.find(
+    (holiday) => typeof holiday?.date === 'string' && holiday.date.slice(0, 10) === date
+  )
+  if (!found) return null
+  return typeof found.name === 'string' ? found.name : ''
+}
+
 function isoDayOf(date) {
   if (!(date instanceof Date) || Number.isNaN(date.getTime())) return ''
   const month = String(date.getMonth() + 1).padStart(2, '0')
   const day = String(date.getDate()).padStart(2, '0')
   return `${date.getFullYear()}-${month}-${day}`
-}
-
-/** The phone grid's dot carries no text: the aria-label still names it. */
-function renderDotEvent() {
-  return { domNodes: [] }
 }
 
 function prefersReducedMotion() {
@@ -369,7 +436,6 @@ function selectView(next) {
     // The grid was hidden, so it has to measure itself again.
     nextTick(() => {
       calendarRef.value?.getApi()?.updateSize()
-      syncDayBadges()
     })
   }
 }
@@ -387,15 +453,15 @@ function decorateDayCell(info) {
   if (!date) return
 
   const el = info.el
-  const count = Number(dayCounts.value[date] ?? 0)
   const open = () => openDayPanel(date, el)
   el.setAttribute('tabindex', '0')
   el.setAttribute('role', 'button')
   el.setAttribute(
     'aria-label',
-    count > 0
-      ? `ดูรายละเอียดวันที่ ${formatThaiDate(date)} มีผู้ลา ${count} คน`
-      : `ดูรายละเอียดวันที่ ${formatThaiDate(date)}`
+    dayAriaLabel(date, {
+      approved: Number(dayCounts.value[date] ?? 0),
+      pending: dayStatusCounts(leaveEvents.value, date).pending,
+    })
   )
 
   el.addEventListener('click', open)
@@ -448,7 +514,7 @@ onBeforeUnmount(() => {
           {{
             props.isHr
               ? 'ใบลาที่อนุมัติแล้วและรออนุมัติของทุกแผนก'
-              : 'ใบลาที่อนุมัติแล้วและรออนุมัติของพนักงานในแผนกคุณ'
+              : 'ใบลาที่อนุมัติแล้วและรออนุมัติที่คุณมีสิทธิ์เห็น'
           }}
           · เลือกรายการเพื่อดูรายละเอียด
         </p>
@@ -497,6 +563,31 @@ onBeforeUnmount(() => {
       class="calendar-card"
       :aria-busy="loading ? 'true' : 'false'"
     >
+      <div v-if="isPhone" class="cal-toolbar" role="toolbar" aria-label="ปฏิทินการลา">
+        <div class="cal-toolbar-nav">
+          <button
+            type="button"
+            class="cal-toolbar-button"
+            aria-label="เดือนก่อนหน้า"
+            @click="moveRange('prev')"
+          >
+            <span class="material-symbols-outlined" aria-hidden="true">chevron_left</span>
+          </button>
+          <button
+            type="button"
+            class="cal-toolbar-button"
+            aria-label="เดือนถัดไป"
+            @click="moveRange('next')"
+          >
+            <span class="material-symbols-outlined" aria-hidden="true">chevron_right</span>
+          </button>
+        </div>
+        <h2 class="cal-toolbar-title">{{ title }}</h2>
+        <button type="button" class="cal-toolbar-today" @click="moveRange('today')">
+          วันนี้
+        </button>
+      </div>
+
       <p v-if="loading" class="loading-note">กำลังโหลด…</p>
       <FullCalendar ref="calendarRef" :options="options" />
       <p class="legend">
@@ -570,7 +661,13 @@ onBeforeUnmount(() => {
             <h2 id="day-panel-title" class="day-panel-title">
               {{ formatThaiDayHeading(dayPanel.date) }}
             </h2>
-            <p class="day-panel-count">{{ dayCountLabel(dayPanel.rows.length) }}</p>
+            <p class="day-panel-count">{{ dayCountLabel(dayPanel.approved) }}</p>
+            <p v-if="dayPanel.pending > 0" class="day-panel-pending">
+              รออนุมัติ {{ dayPanel.pending }} คน
+            </p>
+            <p v-if="dayPanel.holiday !== null" class="day-panel-holiday">
+              วันหยุด{{ dayPanel.holiday ? ` · ${dayPanel.holiday}` : '' }}
+            </p>
           </div>
           <button
             ref="dayPanelClose"
@@ -823,8 +920,8 @@ onBeforeUnmount(() => {
 }
 
 .swatch-holiday {
-  background: #e7f2f0;
-  border: 1px dashed #9ec9c4;
+  background: #9aa8a5;
+  border: 1px solid #9aa8a5;
 }
 
 /* List view */
@@ -1082,10 +1179,9 @@ onBeforeUnmount(() => {
   color: #7c2d12;
 }
 
-/* Phones: keep the month grid but make it fit 360px without scrolling. */
 @media (max-width: 720px) {
   .calendar-card {
-    padding: 8px;
+    padding: 0;
   }
 
   .view-switch {
@@ -1097,85 +1193,229 @@ onBeforeUnmount(() => {
     flex: 1 1 0;
     min-width: 0;
   }
+}
 
-  /* Two rows on phones: the month title, then the buttons sharing one row, so
-     nothing is squeezed at 360px. */
-  :deep(.fc .fc-toolbar) {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
+/* Phones: a one-row toolbar, short weekdays, fixed-height cells and exactly
+   one pill per day. No event elements or "+N" link exist to overflow. */
+@media (max-width: 767px) {
+  .content {
+    padding: 4px 16px 32px;
   }
 
-  :deep(.fc .fc-toolbar-chunk) {
-    display: flex;
-    justify-content: center;
-    gap: 6px;
+  .head {
+    margin-bottom: 10px;
   }
 
-  :deep(.fc .fc-toolbar-chunk:nth-child(2)) {
-    grid-row: 1;
-    grid-column: 1 / -1;
+  .head .title {
+    display: none;
   }
 
-  :deep(.fc .fc-toolbar-title) {
-    font-size: 16px;
-  }
-
-  :deep(.fc .fc-button) {
-    padding: 0.35em 0.55em;
+  .head .sub {
     font-size: 12px;
   }
 
-  :deep(.fc .fc-col-header-cell-cushion) {
-    padding: 4px 2px;
-    font-size: 11px;
-  }
-
-  :deep(.fc .fc-daygrid-day-number) {
-    padding: 3px 5px;
-    font-size: 12px;
-  }
-
-  :deep(.fc .fc-daygrid-day-frame) {
-    min-height: 46px;
-  }
-
-  :deep(.fc .fc-daygrid-day-events) {
-    margin-top: 2px;
-  }
-
-  :deep(.fc .fc-daygrid-event-harness) {
-    margin-top: 2px;
-  }
-
-  /* Each event is a 10px dot keeping its status colour from the grid. */
-  :deep(.fc .fc-daygrid-event) {
-    width: 10px;
-    height: 10px;
-    margin: 3px auto 0;
+  .calendar-card {
     padding: 0;
-    border-radius: 999px;
+    border-radius: 16px;
     overflow: hidden;
   }
 
-  :deep(.fc .fc-daygrid-event:focus-visible) {
-    outline: 3px solid #10504e;
-    outline-offset: 2px;
-    box-shadow: none;
+  .cal-toolbar {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+    border-bottom: 1px solid #e2e9e7;
   }
 
-  :deep(.fc .fc-daygrid-more-link) {
+  .cal-toolbar-nav {
+    display: flex;
+    gap: 4px;
+  }
+
+  .cal-toolbar-button,
+  .cal-toolbar-today {
+    min-height: 44px;
+    border: 1px solid #d8e3e1;
+    border-radius: 10px;
+    background: #ffffff;
+    color: #10504e;
+    font-family: inherit;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .cal-toolbar-button {
+    min-width: 44px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .cal-toolbar-button .material-symbols-outlined {
+    font-size: 22px;
+  }
+
+  .cal-toolbar-today {
+    padding: 0 14px;
+    font-size: 13px;
+  }
+
+  .cal-toolbar-title {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 700;
+    color: #12343b;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .cal-toolbar-button:focus-visible,
+  .cal-toolbar-today:focus-visible {
+    outline: 3px solid #10504e;
+    outline-offset: 2px;
+  }
+
+  :deep(.fc) {
+    --fc-today-bg-color: transparent;
+  }
+
+  :deep(.fc .fc-col-header-cell-cushion) {
+    display: block;
+    width: 100%;
+    padding: 6px 0;
     font-size: 11px;
+    font-weight: 600;
+    color: #5c7176;
+    text-align: center;
+    text-decoration: none;
   }
 
   :deep(.fc .fc-daygrid-day) {
+    height: 56px;
     cursor: pointer;
+  }
+
+  :deep(.fc .fc-daygrid-day-frame) {
+    min-height: 56px;
+  }
+
+  :deep(.fc .fc-daygrid-day-top) {
+    display: block;
+  }
+
+  :deep(.fc .fc-daygrid-day-number) {
+    display: block;
+    width: 100%;
+    padding: 4px 0 0;
+    font-size: 12px;
+    text-decoration: none;
+  }
+
+  :deep(.fc .fc-daygrid-day-events) {
+    display: none;
   }
 
   :deep(.fc .fc-daygrid-day:focus-visible) {
     outline: 3px solid #10504e;
     outline-offset: -3px;
     box-shadow: none;
+  }
+
+  :deep(.fc .fc-daygrid-day.is-selected-day) {
+    background: #f0f7f6;
+    box-shadow: inset 0 0 0 2px #10504e;
+  }
+
+  :deep(.day-cell) {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    min-height: 34px;
+    line-height: 1;
+  }
+
+  :deep(.day-cell-number) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    font-size: 12px;
+    font-weight: 600;
+    color: #12343b;
+  }
+
+  :deep(.fc-day-today .day-cell-number) {
+    background: #10504e;
+    color: #ffffff;
+  }
+
+  :deep(.day-pill) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 14px;
+    padding: 0 4px;
+    box-sizing: border-box;
+    border-radius: 999px;
+    font-size: 9.5px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  :deep(.day-pill--approved) {
+    background: #10504e;
+    color: #ffffff;
+  }
+
+  :deep(.day-pill--pending) {
+    background: #fef3c7;
+    border: 1px solid #f59e0b;
+    color: #7c2d12;
+  }
+
+  :deep(.day-holiday-bar) {
+    display: block;
+    width: 14px;
+    height: 3px;
+    border-radius: 2px;
+    background: #9aa8a5;
+  }
+
+  :deep(.fc .fc-day-other .day-cell-number) {
+    color: #9aa8a5;
+  }
+
+  :deep(.fc .fc-day-other .day-pill),
+  :deep(.fc .fc-day-other .day-holiday-bar) {
+    display: none;
+  }
+
+  .legend {
+    display: flex;
+    flex-wrap: nowrap;
+    justify-content: space-between;
+    gap: 8px;
+    margin: 10px 12px 12px;
+    font-size: 11px;
+  }
+
+  .legend-item {
+    gap: 5px;
+  }
+
+  .swatch {
+    width: 10px;
+    height: 10px;
+    border-radius: 3px;
   }
 }
 
@@ -1256,6 +1496,20 @@ onBeforeUnmount(() => {
   margin: 4px 0 0;
   font-size: 13px;
   color: #48615e;
+}
+
+.day-panel-pending {
+  margin: 2px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #b45309;
+}
+
+.day-panel-holiday {
+  margin: 2px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #5c7176;
 }
 
 .day-panel-close {
@@ -1352,32 +1606,6 @@ onBeforeUnmount(() => {
 
 .day-person-detail {
   margin-bottom: 4px;
-}
-
-/* Approved people on the day, as a small badge the cell cannot overflow. */
-.day-count {
-  position: absolute;
-  left: 3px;
-  top: 2px;
-  z-index: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
-  box-sizing: border-box;
-  border-radius: 999px;
-  background: #10504e;
-  color: #ffffff;
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 1;
-  pointer-events: none;
-}
-
-:deep(.fc-daygrid-day-frame) {
-  position: relative;
 }
 
 @media (max-width: 767px) {

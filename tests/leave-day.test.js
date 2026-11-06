@@ -219,11 +219,12 @@ describe('the panel markup and behaviour', () => {
     expect(VIEW).toContain("if (event.key !== 'Tab') return")
   })
 
-  it('paints the people count as a badge that cannot widen the cell', () => {
-    expect(VIEW).toContain("badge.className = 'day-count'")
-    expect(VIEW).toContain('pointer-events: none')
-    expect(VIEW).toContain('min-width: 16px')
-    expect(VIEW).toContain("cell.setAttribute('data-leave-count'")
+  it('renders one phone pill instead of a floating badge or event dots', () => {
+    expect(VIEW).toContain('day-pill day-pill--')
+    expect(VIEW).toContain('day-holiday-bar')
+    expect(VIEW).not.toContain('day-count')
+    expect(VIEW).not.toContain('syncDayBadges')
+    expect(VIEW).not.toContain('renderDotEvent')
   })
 
   it('keeps 44px targets and a visible focus ring', () => {

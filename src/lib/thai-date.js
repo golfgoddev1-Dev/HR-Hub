@@ -52,6 +52,16 @@ export function formatThaiDate(value) {
   return `${dayMonth} ${year + BUDDHIST_YEAR_OFFSET}`
 }
 
+/** 2026-11-05 → "5 พฤศจิกายน 2569" (no weekday, for the phone cell label). */
+export function formatThaiDateNumericLong(value) {
+  const date = toDate(value)
+  if (!date) return NO_DATE
+
+  const dayMonth = formatInTimeZone(date, THAI_TIME_ZONE, 'd MMMM', { locale: THAI_LOCALE })
+  const year = Number(formatInTimeZone(date, THAI_TIME_ZONE, 'yyyy'))
+  return `${dayMonth} ${year + BUDDHIST_YEAR_OFFSET}`
+}
+
 /** 2026-11-05 → "วันพฤหัสบดีที่ 5 พฤศจิกายน 2569". */
 export function formatThaiDateLong(value) {
   const date = toDate(value)

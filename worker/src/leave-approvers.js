@@ -180,6 +180,56 @@ export async function findApproverId(db, employee) {
 }
 
 /**
+ * The active grants of an approver, as sets used by the read-scope rule:
+ * `employeeIds` are the people they are named approver for, `departmentIds`
+ * are the departments they approve. Inactive rows are ignored, so a
+ * deactivated grant is no longer a responsibility.
+ *
+ * Read once per request by the route; never derived from a client field.
+ */
+export async function readApproverGrants(db, employeeId) {
+  if (typeof employeeId !== "string" || employeeId.length === 0) {
+    return { isApprover: false, employeeIds: new Set(), departmentIds: new Set() };
+  }
+
+  const [personal, department] = await Promise.all([
+    db.select(EMPLOYEE_APPROVERS_TABLE, {
+      columns: "employee_id",
+      filters: [
+        ["approver_id", "eq", employeeId],
+        ["is_active", "eq", true],
+      ],
+      limit: 5000,
+    }),
+    db.select(DEPARTMENT_APPROVERS_TABLE, {
+      columns: "department_id",
+      filters: [
+        ["employee_id", "eq", employeeId],
+        ["is_active", "eq", true],
+      ],
+      limit: 5000,
+    }),
+  ]);
+
+  const employeeIds = new Set(
+    (Array.isArray(personal) ? personal : [])
+      .map((row) => row.employee_id)
+      .filter(Boolean)
+  );
+  const departmentIds = new Set(
+    (Array.isArray(department) ? department : [])
+      .map((row) => row.department_id)
+      .filter(Boolean)
+  );
+
+  return {
+    isApprover: employeeIds.size > 0 || departmentIds.size > 0,
+    employeeIds,
+    departmentIds,
+  };
+}
+
+/**
  * True when this employee is an active approver in either scope: listed as the
  * approver of someone (employee scope), or listed for a department (department
  * scope). Deactivation keeps the row but switches `is_active` off, so a

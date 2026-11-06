@@ -50,6 +50,12 @@ import { NOTIFICATION_KINDS } from "../push/payload.js";
 import { CALENDAR_MAX_RANGE_DAYS, CALENDAR_MESSAGES, chunksOf, displayName } from "../leave-calendar.js";
 import { canViewLeaveRequest } from "../leave-scope.js";
 import {
+  loadViewerScope,
+  loadRequesterDepartments,
+  filterVisibleRequests,
+  viewerCanSee,
+} from "../leave-visibility.js";
+import {
   HISTORY_MAX_SCAN_ROWS,
   HISTORY_SEARCH_LIMIT,
   historyFilters,
@@ -737,20 +743,7 @@ leave.get("/requests/:id", async (c) => {
     });
     if (!row) return c.json({ ok: false, message: MESSAGE.requestNotFound }, 404);
 
-    const isApprover =
-      session.role === "hr" ? false : await isActiveApprover(db, employee.id);
-    if (
-      !canViewLeaveRequest({
-        role: session.role,
-        employeeId: employee.id,
-        isApprover,
-        request: row,
-      })
-    ) {
-      return c.json({ ok: false, message: MESSAGE.forbidden }, 403);
-    }
-
-    const [typeRow, requester] = await Promise.all([
+    const [typeRow, requester, scope] = await Promise.all([
       row.leave_type_id
         ? db.select(LEAVE_TYPES_TABLE, {
             columns: "id,name",
@@ -763,7 +756,24 @@ leave.get("/requests/:id", async (c) => {
         filters: [["id", "eq", row.employee_id]],
         single: true,
       }),
+      loadViewerScope(db, {
+        role: session.role,
+        employeeId: employee.id,
+        departmentId: employee.department_id ?? null,
+      }),
     ]);
+
+    if (
+      !canViewLeaveRequest({
+        role: session.role,
+        employeeId: employee.id,
+        grants: scope.grants,
+        request: row,
+        requesterDepartmentId: requester?.department_id ?? null,
+      })
+    ) {
+      return c.json({ ok: false, message: MESSAGE.forbidden }, 403);
+    }
 
     const department = requester?.department_id
       ? await db.select(DEPARTMENTS_TABLE, {
@@ -879,19 +889,22 @@ leave.get("/approvals/count", async (c) => {
       ["status", "eq", "pending"],
     ];
 
-    // The count is exact; the newest change in this approver's queue is the
-    // timestamp half of the tag, so a swap of requests also moves it.
-    const [count, newest] = await Promise.all([
-      db.count(LEAVE_REQUESTS_TABLE, { filters }),
-      db.select(LEAVE_REQUESTS_TABLE, {
-        columns: "updated_at,created_at",
-        filters,
-        order: "updated_at.desc.nullslast",
-        limit: 1,
-      }),
-    ]);
-
-    const latest = Array.isArray(newest) && newest[0] ? newest[0] : null;
+    const scope = await loadViewerScope(db, {
+      role: c.get("leaveSession").role,
+      employeeId: employee.id,
+      departmentId: employee.department_id ?? null,
+    });
+    // A request assigned before a responsibility changed must not inflate the
+    // badge: filter with the same rule as the queue, then count. The read is
+    // not capped, so the badge stays exact even for a very large queue.
+    const rows = await db.select(LEAVE_REQUESTS_TABLE, {
+      columns: "id,employee_id,updated_at,created_at",
+      filters,
+      order: "updated_at.desc.nullslast",
+    });
+    const visible = await filterVisibleRequests(db, scope, rows);
+    const count = visible.length;
+    const latest = visible[0] ?? null;
     const changedAt = latest?.updated_at ?? latest?.created_at ?? "";
     const etag = `W/"${count}-${Date.parse(changedAt) || 0}"`;
 
@@ -925,6 +938,12 @@ leave.get("/approvals", async (c) => {
     if (!(await isActiveApprover(db, employee.id))) {
       return c.json({ ok: false, message: MESSAGE.forbidden }, 403);
     }
+
+    const scope = await loadViewerScope(db, {
+      role: c.get("leaveSession").role,
+      employeeId: employee.id,
+      departmentId: employee.department_id ?? null,
+    });
 
     const rows = await db.select(LEAVE_REQUESTS_TABLE, {
       columns:
@@ -960,21 +979,29 @@ leave.get("/approvals", async (c) => {
     const requesterById = new Map(requesters.map((row) => [row.id, row]));
     const types = typeMapOf(typeRows);
 
-    const results = rows.map((row) => {
-      const requester = requesterById.get(row.employee_id) ?? null;
-      return {
-        ...publicRequest(row, types),
-        requester: {
-          id: row.employee_id ?? null,
-          employeeCode: requester?.employee_code ?? null,
-          namePrefix: requester?.name_prefix ?? null,
-          fullName: requester?.full_name ?? null,
-          departmentName: requester?.department_id
-            ? departmentNames.get(requester.department_id) ?? null
-            : null,
-        },
-      };
-    });
+    const results = rows
+      .filter((row) =>
+        viewerCanSee(
+          scope,
+          row,
+          requesterById.get(row.employee_id)?.department_id ?? null
+        )
+      )
+      .map((row) => {
+        const requester = requesterById.get(row.employee_id) ?? null;
+        return {
+          ...publicRequest(row, types),
+          requester: {
+            id: row.employee_id ?? null,
+            employeeCode: requester?.employee_code ?? null,
+            namePrefix: requester?.name_prefix ?? null,
+            fullName: requester?.full_name ?? null,
+            departmentName: requester?.department_id
+              ? departmentNames.get(requester.department_id) ?? null
+              : null,
+          },
+        };
+      });
 
     return c.json({ ok: true, limit: LIST_LIMIT, count: results.length, results }, 200);
   } catch (error) {
@@ -1014,6 +1041,14 @@ leave.get("/approvals/history", async (c) => {
       return c.json({ ok: false, message: MESSAGE.forbidden }, 403);
     }
 
+    const scope = isHr
+      ? null
+      : await loadViewerScope(db, {
+          role: session.role,
+          employeeId: employee.id,
+          departmentId: employee.department_id ?? null,
+        });
+
     const filters = historyFilters({
       employeeId: isHr ? null : employee.id,
       from: parsed.from,
@@ -1025,46 +1060,102 @@ leave.get("/approvals/history", async (c) => {
     let rows = [];
     let hasMore = false;
 
-    if (parsed.search) {
-      // The name lives in employees, so resolve ids first, then read the
-      // decided requests for them in id chunks. Bounded by HISTORY_MAX_SCAN_ROWS.
-      const matches = await db.select(EMPLOYEES_TABLE, {
-        columns: "id",
-        filters: [
-          ["is_active", "eq", true],
-          ["full_name", "ilike", `%${parsed.search}%`],
-        ],
-        limit: HISTORY_SEARCH_LIMIT,
-      });
-      const ids = (Array.isArray(matches) ? matches : [])
-        .map((row) => row.id)
-        .filter(Boolean);
-
-      const collected = [];
-      for (const chunk of chunksOf(ids, 100)) {
-        const part = await db.select(LEAVE_REQUESTS_TABLE, {
-          columns: "id,employee_id,leave_type_id,start_date,end_date,days,status,decided_at",
-          filters: [...filters, ["employee_id", "in", chunk]],
-          order: "decided_at.desc",
-          limit: HISTORY_MAX_SCAN_ROWS,
+    if (isHr) {
+      if (parsed.search) {
+        // The name lives in employees, so resolve ids first, then read the
+        // decided requests for them in id chunks. Bounded by HISTORY_MAX_SCAN_ROWS.
+        const matches = await db.select(EMPLOYEES_TABLE, {
+          columns: "id",
+          filters: [
+            ["is_active", "eq", true],
+            ["full_name", "ilike", `%${parsed.search}%`],
+          ],
+          limit: HISTORY_SEARCH_LIMIT,
         });
-        collected.push(...part);
-        if (collected.length >= HISTORY_MAX_SCAN_ROWS) break;
+        const ids = (Array.isArray(matches) ? matches : [])
+          .map((row) => row.id)
+          .filter(Boolean);
+
+        const collected = [];
+        for (const chunk of chunksOf(ids, 100)) {
+          const part = await db.select(LEAVE_REQUESTS_TABLE, {
+            columns: "id,employee_id,leave_type_id,start_date,end_date,days,status,decided_at",
+            filters: [...filters, ["employee_id", "in", chunk]],
+            order: "decided_at.desc",
+            limit: HISTORY_MAX_SCAN_ROWS,
+          });
+          collected.push(...part);
+          if (collected.length >= HISTORY_MAX_SCAN_ROWS) break;
+        }
+
+        const sorted = sortHistoryRows(collected).slice(0, HISTORY_MAX_SCAN_ROWS);
+        rows = sorted.slice(offset, offset + parsed.pageSize);
+        hasMore = sorted.length > offset + parsed.pageSize;
+      } else {
+        rows = await db.select(LEAVE_REQUESTS_TABLE, {
+          columns: "id,employee_id,leave_type_id,start_date,end_date,days,status,decided_at",
+          filters,
+          order: "decided_at.desc",
+          limit: parsed.pageSize + 1,
+          extra: [`offset=${offset}`],
+        });
+        hasMore = rows.length > parsed.pageSize;
+        rows = rows.slice(0, parsed.pageSize);
+      }
+    } else {
+      // Decisions the caller made, then the responsibility rule, before the
+      // page is cut: an out-of-scope decision is neither shown nor counted.
+      const collected = [];
+      if (parsed.search) {
+        const matches = await db.select(EMPLOYEES_TABLE, {
+          columns: "id",
+          filters: [
+            ["is_active", "eq", true],
+            ["full_name", "ilike", `%${parsed.search}%`],
+          ],
+          limit: HISTORY_SEARCH_LIMIT,
+        });
+        const ids = (Array.isArray(matches) ? matches : [])
+          .map((row) => row.id)
+          .filter(Boolean);
+        for (const chunk of chunksOf(ids, 100)) {
+          const part = await db.select(LEAVE_REQUESTS_TABLE, {
+            columns: "id,employee_id,leave_type_id,start_date,end_date,days,status,decided_at",
+            filters: [...filters, ["employee_id", "in", chunk]],
+            order: "decided_at.desc",
+            limit: HISTORY_MAX_SCAN_ROWS,
+          });
+          collected.push(...part);
+          if (collected.length >= HISTORY_MAX_SCAN_ROWS) break;
+        }
+      } else {
+        collected.push(
+          ...(await db.select(LEAVE_REQUESTS_TABLE, {
+            columns: "id,employee_id,leave_type_id,start_date,end_date,days,status,decided_at",
+            filters,
+            order: "decided_at.desc",
+            limit: HISTORY_MAX_SCAN_ROWS,
+          }))
+        );
       }
 
-      const sorted = sortHistoryRows(collected).slice(0, HISTORY_MAX_SCAN_ROWS);
-      rows = sorted.slice(offset, offset + parsed.pageSize);
-      hasMore = sorted.length > offset + parsed.pageSize;
-    } else {
-      rows = await db.select(LEAVE_REQUESTS_TABLE, {
-        columns: "id,employee_id,leave_type_id,start_date,end_date,days,status,decided_at",
-        filters,
-        order: "decided_at.desc",
-        limit: parsed.pageSize + 1,
-        extra: [`offset=${offset}`],
-      });
-      hasMore = rows.length > parsed.pageSize;
-      rows = rows.slice(0, parsed.pageSize);
+      const seen = new Set();
+      const unique = [];
+      for (const row of sortHistoryRows(collected).slice(0, HISTORY_MAX_SCAN_ROWS)) {
+        if (!row?.id || seen.has(row.id)) continue;
+        seen.add(row.id);
+        unique.push(row);
+      }
+
+      const departments = await loadRequesterDepartments(
+        db,
+        unique.map((row) => row.employee_id)
+      );
+      const visible = unique.filter((row) =>
+        viewerCanSee(scope, row, departments.get(row.employee_id) ?? null)
+      );
+      rows = visible.slice(offset, offset + parsed.pageSize);
+      hasMore = visible.length > offset + parsed.pageSize;
     }
 
     const employeeIds = [...new Set(rows.map((row) => row.employee_id).filter(Boolean))];

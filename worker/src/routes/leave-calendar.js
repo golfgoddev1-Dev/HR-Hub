@@ -1,13 +1,17 @@
 // GET /api/leave/calendar — read-only month/week feed for the leave calendar.
 //
 // Scope is decided here, never by the client:
-// - employee and approver (both login role "employee") see their own department
-//   only; a departmentId they send is ignored;
+// - a plain employee sees their own department only;
+// - an active approver sees only the people they are responsible for: their
+//   granted departments plus the employees they are named approver for (and
+//   themselves). Their own department is not an implicit grant;
+// - a departmentId from either of them is ignored, and only visible rows are
+//   returned, so a foreign filter cannot widen the feed;
 // - HR ("hr") sees every department and may narrow it with departmentId.
 //
-// Only pending and approved requests leave this route, and only the seven
-// display fields in publicCalendarEvent(): no reason, attachment, approver or
-// national id is ever read.
+// Only pending and approved requests leave this route, and only the display
+// fields in publicCalendarEvent(). Review fields (including the reason) are
+// attached only when the shared detail rule allows them.
 
 import { Hono } from "hono";
 
@@ -22,8 +26,12 @@ import {
   publicCalendarDetail,
   publicCalendarEvent,
 } from "../leave-calendar.js";
-import { isActiveApprover } from "../leave-approvers.js";
 import { canViewLeaveRequest } from "../leave-scope.js";
+import {
+  loadViewerScope,
+  loadVisibleEmployeeIds,
+  viewerCanSee,
+} from "../leave-visibility.js";
 import { requireRole } from "../require-role.js";
 
 const leaveCalendar = new Hono();
@@ -90,13 +98,29 @@ leaveCalendar.get("/", async (c) => {
       return c.json({ ok: false, message: CALENDAR_MESSAGES.departmentInvalid }, 400);
     }
 
-    // The same active-approver flag the approvals queue checks. Only a request
-    // this person may decide gets the review fields in its event.
-    const isApprover = isHr ? false : await isActiveApprover(db, employee.id);
+    const scope = await loadViewerScope(db, {
+      role: auth.session.role,
+      employeeId: employee.id,
+      departmentId: employee.department_id ?? null,
+    });
+    const scopedByResponsibility = isHr === false && scope.grants?.isApprover === true;
 
-    // The employee/approver scope is the caller's own department; only HR may
-    // choose one, and no filter at all means every department.
+    // HR may choose a department; nobody else can widen their scope with the
+    // query parameter. An approver sees exactly their grants, a plain employee
+    // keeps their own department's calendar.
     const scopeDepartmentId = isHr ? range.departmentId : employee.department_id ?? null;
+    const responseScope = isHr
+      ? scopeDepartmentId
+        ? "department"
+        : "all"
+      : scopedByResponsibility
+        ? "responsibilities"
+        : "department";
+    const responseDepartmentId = isHr
+      ? scopeDepartmentId
+      : scopedByResponsibility
+        ? null
+        : scopeDepartmentId;
 
     const empty = () =>
       c.json(
@@ -104,8 +128,8 @@ leaveCalendar.get("/", async (c) => {
           ok: true,
           from: range.from,
           to: range.to,
-          scope: isHr ? (scopeDepartmentId ? "department" : "all") : "department",
-          departmentId: scopeDepartmentId,
+          scope: responseScope,
+          departmentId: responseDepartmentId,
           count: 0,
           dayCounts: {},
           events: [],
@@ -113,17 +137,21 @@ leaveCalendar.get("/", async (c) => {
         200
       );
 
-    if (!isHr && !scopeDepartmentId) return empty();
-
     let scopedEmployeeIds = null;
-    if (scopeDepartmentId) {
-      const colleagues = await db.select(EMPLOYEES_TABLE, {
-        columns: "id",
-        filters: [["department_id", "eq", scopeDepartmentId]],
-        limit: 5000,
-      });
-      scopedEmployeeIds = colleagues.map((row) => row.id).filter(Boolean);
-      if (scopedEmployeeIds.length === 0) return empty();
+    if (isHr) {
+      if (scopeDepartmentId) {
+        const colleagues = await db.select(EMPLOYEES_TABLE, {
+          columns: "id",
+          filters: [["department_id", "eq", scopeDepartmentId]],
+          limit: 5000,
+        });
+        scopedEmployeeIds = colleagues.map((row) => row.id).filter(Boolean);
+        if (scopedEmployeeIds.length === 0) return empty();
+      }
+    } else {
+      const visibleIds = await loadVisibleEmployeeIds(db, scope);
+      if (visibleIds.size === 0) return empty();
+      scopedEmployeeIds = [...visibleIds];
     }
 
     const baseFilters = [
@@ -158,12 +186,8 @@ leaveCalendar.get("/", async (c) => {
 
     // Defensive: the query already filters, but a status added later must not
     // leak through this read without a decision.
-    const visible = rows
-      .filter((row) => CALENDAR_STATUSES.includes(row.status))
-      .slice(0, ROW_LIMIT);
-
-    const requesterIds = [...new Set(visible.map((row) => row.employee_id).filter(Boolean))];
-    const typeIds = [...new Set(visible.map((row) => row.leave_type_id).filter(Boolean))];
+    const requesterIds = [...new Set(rows.map((row) => row.employee_id).filter(Boolean))];
+    const typeIds = [...new Set(rows.map((row) => row.leave_type_id).filter(Boolean))];
 
     const requesters = requesterIds.length
       ? await db.select(EMPLOYEES_TABLE, {
@@ -190,6 +214,20 @@ leaveCalendar.get("/", async (c) => {
     const departmentNameById = new Map(departments.map((row) => [row.id, row.name ?? null]));
     const typeNameById = new Map(types.map((row) => [row.id, row.name ?? ""]));
 
+    // The row rule runs again after the read: the query limits the employee
+    // ids, and this guarantees an event, a daily count or a reason can only
+    // describe someone the viewer is responsible for.
+    const visible = rows
+      .filter((row) => CALENDAR_STATUSES.includes(row.status))
+      .filter((row) =>
+        viewerCanSee(
+          scope,
+          row,
+          requesterById.get(row.employee_id)?.department_id ?? null
+        )
+      )
+      .slice(0, ROW_LIMIT);
+
     const events = visible
       .map((row) => {
         const requester = requesterById.get(row.employee_id) ?? null;
@@ -208,8 +246,9 @@ leaveCalendar.get("/", async (c) => {
           detail: canViewLeaveRequest({
             role: auth.session.role,
             employeeId: employee.id,
-            isApprover,
+            grants: scope.grants,
             request: row,
+            requesterDepartmentId: requester?.department_id ?? null,
           })
             ? publicCalendarDetail({
                 requestCode: row.request_code,
@@ -237,8 +276,8 @@ leaveCalendar.get("/", async (c) => {
         ok: true,
         from: range.from,
         to: range.to,
-        scope: isHr ? (scopeDepartmentId ? "department" : "all") : "department",
-        departmentId: scopeDepartmentId,
+        scope: responseScope,
+        departmentId: responseDepartmentId,
         count: events.length,
         // Approved people per Bangkok calendar day, counted from the same rows
         // the grid was built from. The day panel's count and list use this.

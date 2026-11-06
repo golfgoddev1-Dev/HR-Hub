@@ -145,6 +145,17 @@ async function buildState() {
         is_active: true,
       },
     ],
+    // APPROVER_ID is an active department approver for DEPT_A, which is what
+    // the calendar now uses as the approver's scope.
+    department_approvers: [
+      {
+        id: "da-1",
+        employee_id: APPROVER_ID,
+        department_id: DEPT_A,
+        priority: 1,
+        is_active: true,
+      },
+    ],
     leave_types: [{ id: TYPE_ID, name: "ลากิจ", is_active: true }],
     leave_requests: [
       {
@@ -276,7 +287,7 @@ test("rejected and cancelled requests never reach the calendar", async (t) => {
   assert.equal(text.includes("cancelled"), false);
 });
 
-test("an approver is scoped exactly like an employee", async (t) => {
+test("an approver is scoped by their department responsibility", async (t) => {
   const fake = await createBackend();
   t.after(() => fake.restore());
 
@@ -284,10 +295,17 @@ test("an approver is scoped exactly like an employee", async (t) => {
   const body = await response.json();
 
   assert.equal(response.status, 200);
-  assert.equal(body.scope, "department");
-  assert.equal(body.departmentId, DEPT_A);
+  assert.equal(body.scope, "responsibilities");
+  assert.equal(body.departmentId, null);
   assert.equal(body.count, 2);
   assert.equal(body.events.some((event) => event.departmentName === "ฝ่ายขาย"), false);
+
+  // A foreign department filter is ignored, never obeyed.
+  const foreign = await (
+    await call(calendarPath(`${NOVEMBER}&departmentId=${DEPT_B}`), TOKENS.approver)
+  ).json();
+  assert.equal(foreign.count, 2);
+  assert.equal(foreign.events.some((event) => event.departmentName === "ฝ่ายขาย"), false);
 });
 
 test("an employee's departmentId is ignored instead of obeyed", async (t) => {

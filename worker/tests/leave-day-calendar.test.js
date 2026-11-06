@@ -9,7 +9,7 @@ import {
   buildDayCounts,
   publicCalendarEvent,
 } from "../src/leave-calendar.js";
-import { canViewLeaveRequest } from "../src/leave-scope.js";
+import { canSeeLeaveRequest, canViewLeaveRequest } from "../src/leave-scope.js";
 
 const EMPLOYEE_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const EMPLOYEE_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -112,24 +112,21 @@ test("the calendar event hides review fields unless a detail is supplied", () =>
   assert.equal(withDetail.detail.reason, "ปวดหัว");
 });
 
-test("the one read-scope rule: HR, or that request's active approver", () => {
-  const request = { approver_id: "approver-1" };
+test("the detail rule: HR, a named grant, or a department grant", () => {
+  const request = { employee_id: EMPLOYEE_A };
+  const grants = {
+    isApprover: true,
+    employeeIds: new Set([EMPLOYEE_B]),
+    departmentIds: new Set(["dept-finance"]),
+  };
 
   assert.equal(
     canViewLeaveRequest({
       role: "employee",
       employeeId: "approver-1",
-      isApprover: true,
+      grants,
       request,
-    }),
-    true
-  );
-  assert.equal(
-    canViewLeaveRequest({
-      role: "employee",
-      employeeId: "someone-else",
-      isApprover: true,
-      request,
+      requesterDepartmentId: "dept-sales",
     }),
     false
   );
@@ -137,19 +134,105 @@ test("the one read-scope rule: HR, or that request's active approver", () => {
     canViewLeaveRequest({
       role: "employee",
       employeeId: "approver-1",
-      isApprover: false,
+      grants,
       request,
+      requesterDepartmentId: "dept-finance",
     }),
-    false
+    true
+  );
+  assert.equal(
+    canViewLeaveRequest({
+      role: "employee",
+      employeeId: "approver-1",
+      grants,
+      request: { employee_id: EMPLOYEE_B },
+      requesterDepartmentId: "dept-sales",
+    }),
+    true
   );
   assert.equal(
     canViewLeaveRequest({
       role: "hr",
       employeeId: "hr-1",
-      isApprover: false,
       request,
+      requesterDepartmentId: "dept-sales",
     }),
     true
   );
+  assert.equal(
+    canViewLeaveRequest({ role: "employee", employeeId: "plain", request, requesterDepartmentId: "dept-finance" }),
+    false
+  );
   assert.equal(canViewLeaveRequest({ role: "hr", employeeId: "hr-1" }), false);
+});
+
+test("an approver's own department is not an implicit grant", () => {
+  const grants = {
+    isApprover: true,
+    employeeIds: new Set(),
+    departmentIds: new Set(["dept-finance"]),
+  };
+  const request = { employee_id: EMPLOYEE_B };
+
+  assert.equal(
+    canSeeLeaveRequest({
+      role: "employee",
+      employeeId: "approver-1",
+      departmentId: "dept-accounting",
+      grants,
+      request,
+      requesterDepartmentId: "dept-accounting",
+    }),
+    false
+  );
+  assert.equal(
+    canSeeLeaveRequest({
+      role: "employee",
+      employeeId: "approver-1",
+      departmentId: "dept-accounting",
+      grants,
+      request,
+      requesterDepartmentId: "dept-finance",
+    }),
+    true
+  );
+});
+
+test("a plain employee keeps department visibility and sees their own row", () => {
+  const request = { employee_id: EMPLOYEE_B };
+  const grants = { isApprover: false, employeeIds: new Set(), departmentIds: new Set() };
+
+  assert.equal(
+    canSeeLeaveRequest({
+      role: "employee",
+      employeeId: "plain",
+      departmentId: "dept-accounting",
+      grants,
+      request,
+      requesterDepartmentId: "dept-accounting",
+    }),
+    true
+  );
+  assert.equal(
+    canSeeLeaveRequest({
+      role: "employee",
+      employeeId: "plain",
+      departmentId: "dept-accounting",
+      grants,
+      request,
+      requesterDepartmentId: "dept-finance",
+    }),
+    false
+  );
+  assert.equal(
+    canSeeLeaveRequest({
+      role: "employee",
+      employeeId: EMPLOYEE_A,
+      departmentId: "dept-accounting",
+      grants,
+      request: { employee_id: EMPLOYEE_A },
+      requesterDepartmentId: "dept-finance",
+    }),
+    true
+  );
 });

@@ -172,7 +172,17 @@ async function buildState() {
         is_active: true,
       },
     ],
-    department_approvers: [],
+    // The decisions below are all for people in DEPT_A, which APPROVER_ID
+    // approves as a department approver.
+    department_approvers: [
+      {
+        id: "da-1",
+        employee_id: APPROVER_ID,
+        department_id: DEPT_A,
+        priority: 1,
+        is_active: true,
+      },
+    ],
     leave_types: [{ id: TYPE_ID, name: "ลากิจ", is_active: true }],
     leave_requests: [
       ...own,
