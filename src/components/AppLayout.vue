@@ -42,6 +42,10 @@ const sections = computed(() =>
   })
 )
 
+// The dock shows the phone tab bar for the two roles it serves; the admin menu
+// is a separate component.
+const dockRole = computed(() => (sessionRole.value === 'hr' ? 'hr' : 'employee'))
+
 // The new-device banner belongs to the landing page of the role only.
 const isHome = computed(() => route.path === homePathByRole[sessionRole.value])
 
@@ -84,6 +88,7 @@ onMounted(async () => {
         :brand-subtitle="brand.subtitle"
         :sections="sections"
         :show-brand-badge="brand.badge"
+        :role="dockRole"
       />
       <NotificationBanner v-if="isHome" />
       <RouterView />
@@ -105,5 +110,14 @@ onMounted(async () => {
   margin: 0 auto;
   padding: 16px 20px 0;
   box-sizing: border-box;
+}
+
+/* Phones: the dock becomes a fixed bottom bar, so the page reserves its height
+   (plus the device safe area) and no content hides underneath it. */
+@media (max-width: 720px) {
+  .app-layout-inner {
+    padding: 12px 14px 0;
+    padding-bottom: calc(64px + env(safe-area-inset-bottom) + 16px);
+  }
 }
 </style>

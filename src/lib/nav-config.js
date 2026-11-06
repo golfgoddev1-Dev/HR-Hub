@@ -61,6 +61,21 @@ export function adminNavItems() {
   ]
 }
 
+// The four primary items the phone tab bar shows for each role. The paths are
+// an explicit choice; the labels, icons and order come from the same sections
+// the desktop menu renders, so the two presentations can never drift apart.
+export const DOCK_PRIMARY_PATHS = Object.freeze({
+  employee: ['/leave', '/leave/new', '/leave/calendar', '/profile'],
+  hr: ['/hr', '/hr/employees', '/hr/leave', '/hr/leave/holidays'],
+})
+
+/** The primary tab items for a role, copied from that role's own sections. */
+export function dockPrimaryItems(role, sections = []) {
+  const paths = DOCK_PRIMARY_PATHS[role] ?? DOCK_PRIMARY_PATHS.employee
+  const items = sections.flatMap((section) => section.items)
+  return paths.map((path) => items.find((item) => item.to === path)).filter(Boolean)
+}
+
 /**
  * The menu as ordered, labelled sections, the same in every shell: my work
  * first (the same five items for every active employee, so nothing moves when a

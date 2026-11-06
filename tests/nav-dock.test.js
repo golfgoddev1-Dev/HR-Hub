@@ -34,7 +34,8 @@ describe('AppDock', () => {
     expect(DOCK).toContain('offsetLeft')
     expect(DOCK).toContain('offsetWidth')
     expect(DOCK).toContain(':style="indicatorStyle"')
-    expect(DOCK).toContain('translateX(${dot.value.x}px)')
+    // The groups wrap, so the dot follows the column and the row.
+    expect(DOCK).toContain('translate(${dot.value.x}px, ${dot.value.y}px)')
     // No fixed pixel offset in the indicator template literal: the x must come
     // from the measurement (the 3px press nudge is styling, not the indicator).
     expect(DOCK).not.toMatch(/`translateX\(\s*-?\d+px/)
@@ -104,9 +105,12 @@ describe('AppDock', () => {
     expect(DOCK).not.toMatch(/dock-badge[^>]*>\s*\d/)
   })
 
-  it('sits in a scrolling rail on narrow screens', () => {
-    expect(DOCK).toContain('overflow-x: auto')
-    expect(DOCK).toContain('scroll-snap-type')
+  it('wraps the wide menu and swaps to a tab bar on phones', () => {
+    // No sideways rail anywhere: the menu groups wrap and the phone shell is a
+    // separate bottom bar.
+    expect(DOCK).not.toContain('overflow-x')
+    expect(DOCK).not.toContain('scroll-snap-type')
+    expect(DOCK).toContain('<nav class="dock-tabs" aria-label="เมนูหลัก">')
     expect(DOCK).toContain('prefers-reduced-motion')
   })
 
