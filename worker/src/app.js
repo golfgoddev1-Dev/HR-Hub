@@ -32,9 +32,16 @@ app.use("*", addServerTiming);
 // the browser HTTP cache, a shared proxy or the back/forward cache. Routes may
 // still set a stricter or more specific value; this guarantee applies when they
 // forget, and it overrides the old reusable lookup values.
+// The approvals count is the one caller-specific read a browser may keep briefly:
+// it sends its own "private, no-cache" so a matching ETag can answer 304. Every
+// other response, and every route that forgot, still gets "no-store" here.
+const CONDITIONAL_CACHE_CONTROL = "private, no-cache";
+
 app.use("*", async (c, next) => {
   await next();
-  c.header("Cache-Control", "no-store");
+  if (c.res.headers.get("Cache-Control") !== CONDITIONAL_CACHE_CONTROL) {
+    c.header("Cache-Control", "no-store");
+  }
 });
 
 app.route("/api/auth", auth);

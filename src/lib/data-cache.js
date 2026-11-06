@@ -7,6 +7,7 @@
 // one session key that does persist is the notification switch's last-known
 // value per account; clearAll() drops it here, so another account never sees it.
 import { clearNotificationState } from './notification-toggle.js'
+import { clearApprovalCount } from './approval-count.js'
 
 const entries = new Map()
 const inflight = new Map()
@@ -16,6 +17,17 @@ let generation = 0
 // it for stale-while-revalidate: paint this now, refresh in the background.
 export function peekCached(key) {
   return entries.get(key) ?? null
+}
+
+// Replaces a cached value in place, for a write whose result is already known
+// here (a decision removes its own row). Nothing happens when the key is not
+// cached, and the patched value restarts its ttl.
+export function patchCached(key, updater) {
+  const entry = entries.get(key)
+  if (!entry) return null
+  const value = updater(entry.value)
+  entries.set(key, { value, at: Date.now() })
+  return value
 }
 
 // Returns the cached value when it is younger than ttlMs; otherwise runs the
@@ -76,4 +88,6 @@ export function clearAll() {
   // Logout and login both pass through here, so the previous account's switch
   // state never paints for the next one.
   clearNotificationState()
+  // The pending-approval badge belongs to an account too.
+  clearApprovalCount()
 }

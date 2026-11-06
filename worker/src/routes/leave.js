@@ -762,6 +762,59 @@ leave.get("/requests/:id/attachment", async (c) => {
   }
 });
 
+// --- GET /api/leave/approvals/count ------------------------------------------
+// The dock badge refreshes with one tiny read: the caller's own pending count
+// and an ETag. An unchanged queue answers 304 with no body, so the 2-minute
+// check costs a header round-trip and nothing else.
+
+leave.get("/approvals/count", async (c) => {
+  const denied = await guard(c);
+  if (denied) return denied.response;
+
+  try {
+    const db = c.get("leaveDb");
+    const employee = c.get("leaveEmployee");
+
+    // Same guard as the queue: only an active approver has a count.
+    if (!(await isActiveApprover(db, employee.id))) {
+      return c.json({ ok: false, message: MESSAGE.forbidden }, 403);
+    }
+
+    const filters = [
+      ["approver_id", "eq", employee.id],
+      ["status", "eq", "pending"],
+    ];
+
+    // The count is exact; the newest change in this approver's queue is the
+    // timestamp half of the tag, so a swap of requests also moves it.
+    const [count, newest] = await Promise.all([
+      db.count(LEAVE_REQUESTS_TABLE, { filters }),
+      db.select(LEAVE_REQUESTS_TABLE, {
+        columns: "updated_at,created_at",
+        filters,
+        order: "updated_at.desc.nullslast",
+        limit: 1,
+      }),
+    ]);
+
+    const latest = Array.isArray(newest) && newest[0] ? newest[0] : null;
+    const changedAt = latest?.updated_at ?? latest?.created_at ?? "";
+    const etag = `W/"${count}-${Date.parse(changedAt) || 0}"`;
+
+    c.header("Cache-Control", "private, no-cache");
+    c.header("ETag", etag);
+
+    if (c.req.header("If-None-Match") === etag) {
+      return c.body(null, 304);
+    }
+
+    return c.json({ ok: true, count }, 200);
+  } catch (error) {
+    logError("leave approvals count failed", error);
+    return c.json({ ok: false, message: MESSAGE.saveError }, 500);
+  }
+});
+
 // --- GET /api/leave/approvals ------------------------------------------------
 
 leave.get("/approvals", async (c) => {

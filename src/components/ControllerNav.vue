@@ -1,17 +1,31 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { getSession, postLogout } from '../api.js'
 import { completeLogout } from '../lib/logout.js'
 import { navSections } from '../lib/nav-config.js'
 import { APPROVALS_TTL_MS, DATA_KEYS, loaders, loadShared } from '../lib/shared-data.js'
+import {
+  approvalCount,
+  retainApprovalCountSync,
+  setApprovalCount,
+} from '../lib/approval-count.js'
 
 const route = useRoute()
 const logoutBusy = ref(false)
+const isApprover = ref(false)
+let releaseApprovals = () => {}
 
 // The controller keeps its own sidebar, but the items and the "งานของฉัน" /
-// "งานหัวหน้า" groups come from the same config the dock uses.
-const sections = ref(navSections({ role: 'meeting_controller' }))
+// "งานหัวหน้า" groups come from the same config the dock uses. The badge reads
+// the shared count, so a decision repaints the sidebar without a reload.
+const sections = computed(() =>
+  navSections({
+    role: 'meeting_controller',
+    isApprover: isApprover.value,
+    pendingCount: approvalCount.value,
+  })
+)
 
 function isActive(item) {
   if (item.disabled === true) return false
@@ -21,25 +35,24 @@ function isActive(item) {
 onMounted(async () => {
   const session = await getSession()
   if (session?.isApprover !== true) return
+  isApprover.value = true
 
-  let pendingCount = 0
+  // The controller shell has no dock, so this is the only owner of the check.
+  releaseApprovals = retainApprovalCountSync()
+
   try {
     await loadShared(DATA_KEYS.approvals, loaders.approvals, {
       ttlMs: APPROVALS_TTL_MS,
       onData: (data) => {
-        pendingCount = Array.isArray(data.results) ? data.results.length : 0
+        setApprovalCount(Array.isArray(data.results) ? data.results.length : 0)
       },
     })
   } catch {
-    pendingCount = 0
+    setApprovalCount(0)
   }
-
-  sections.value = navSections({
-    role: 'meeting_controller',
-    isApprover: true,
-    pendingCount,
-  })
 })
+
+onBeforeUnmount(() => releaseApprovals())
 
 async function logout() {
   if (logoutBusy.value) return

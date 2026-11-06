@@ -2,7 +2,7 @@
 // The dock/admin shell drawn by RoleShell. It owns the dock (so the dock mounts
 // once per system and survives page changes) and the approvals lookup (so pages
 // no longer fetch it), then renders the matched page below.
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import AdminNav from './AdminNav.vue'
 import AppDock from './AppDock.vue'
@@ -11,6 +11,11 @@ import { getSession } from '../api.js'
 import { navSections } from '../lib/nav-config.js'
 import { homePathByRole } from '../lib/route-access.js'
 import { APPROVALS_TTL_MS, DATA_KEYS, loaders, loadShared } from '../lib/shared-data.js'
+import {
+  approvalCount,
+  retainApprovalCountSync,
+  setApprovalCount,
+} from '../lib/approval-count.js'
 
 const props = defineProps({
   nav: {
@@ -23,7 +28,10 @@ const props = defineProps({
 const route = useRoute()
 const session = ref(null)
 const isApprover = ref(false)
-const pendingCount = ref(0)
+// One number for the dock, the controller sidebar and the leave summary: the
+// approvals page lowers it here and the shared check refreshes it.
+const pendingCount = approvalCount
+let releaseApprovals = () => {}
 
 // RoleShell passes the nav for the signed-in role, so the menu is the same on
 // every page that role can open: an HR user on /leave still sees both
@@ -64,17 +72,22 @@ onMounted(async () => {
   isApprover.value = current?.isApprover === true
   if (!isApprover.value) return
 
+  // One shared visibility/focus check and one shared timer for the page.
+  releaseApprovals = retainApprovalCountSync()
+
   try {
     await loadShared(DATA_KEYS.approvals, loaders.approvals, {
       ttlMs: APPROVALS_TTL_MS,
       onData: (data) => {
-        pendingCount.value = Array.isArray(data.results) ? data.results.length : 0
+        setApprovalCount(Array.isArray(data.results) ? data.results.length : 0)
       },
     })
   } catch {
-    pendingCount.value = 0
+    setApprovalCount(0)
   }
 })
+
+onBeforeUnmount(() => releaseApprovals())
 </script>
 
 <template>

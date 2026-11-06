@@ -6,10 +6,17 @@ import {
   getCached,
   invalidate,
   invalidatePrefix,
+  patchCached,
   peekCached,
   refreshCached,
 } from './data-cache.js'
 import { fetchNotificationStatus } from './push.js'
+import {
+  approvalCount,
+  decrementApprovalCount,
+  publishApprovalCount,
+  setApprovalCount,
+} from './approval-count.js'
 
 export const SESSION_TTL_MS = 5 * 60_000
 export const SHARED_TTL_MS = 30 * 60_000
@@ -146,6 +153,32 @@ export function invalidateLeaveRequests() {
   invalidatePrefix('leave:requests')
   invalidatePrefix('leave:hr:requests')
   invalidatePrefix(DATA_KEYS.approvals)
+  invalidatePrefix(DATA_KEYS.adminOverview)
+}
+
+/**
+ * A successful approve/reject, applied locally: the row leaves the cached queue
+ * when it is there, the shared count drops by one (never below zero) and the
+ * other tabs hear the new number. Nothing is refetched for the count.
+ */
+export function applyApprovalDecision(requestId) {
+  const cached = peekCached(DATA_KEYS.approvals)
+  if (cached && Array.isArray(cached.value?.results)) {
+    patchCached(DATA_KEYS.approvals, (value) => {
+      const results = value.results.filter((row) => row?.id !== requestId)
+      return { ...value, results, count: results.length }
+    })
+  }
+
+  const next = setApprovalCount(decrementApprovalCount(approvalCount.value))
+  publishApprovalCount(next)
+  return next
+}
+
+/** A decision patches its own queue in place, so the queue is not invalidated. */
+export function invalidateDecidedLeave() {
+  invalidatePrefix('leave:requests')
+  invalidatePrefix('leave:hr:requests')
   invalidatePrefix(DATA_KEYS.adminOverview)
 }
 

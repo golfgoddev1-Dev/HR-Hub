@@ -13,6 +13,7 @@ import {
   loadShared,
 } from '../lib/shared-data.js'
 import { CERTIFICATE_OPEN_LABEL, certificateStatus } from '../leave-certificate.js'
+import { approvalCount, setApprovalCount } from '../lib/approval-count.js'
 
 const LOAD_ERROR = 'โหลดรายการใบลาไม่สำเร็จ กรุณาลองใหม่'
 const EMPTY = 'ยังไม่มีรายการใบลา'
@@ -34,7 +35,8 @@ const STATUS_CLASSES = {
 const loading = ref(true)
 const errorMessage = ref('')
 const results = ref([])
-const pendingApprovals = ref(0)
+// The same number the dock badge shows, so a decision repaints both.
+const pendingApprovals = approvalCount
 const retentionDays = ref(0)
 
 const route = useRoute()
@@ -85,11 +87,11 @@ async function loadPendingApprovals() {
     await loadShared(DATA_KEYS.approvals, loaders.approvals, {
       ttlMs: APPROVALS_TTL_MS,
       onData: (data) => {
-        pendingApprovals.value = Array.isArray(data.results) ? data.results.length : 0
+        setApprovalCount(Array.isArray(data.results) ? data.results.length : 0)
       },
     })
   } catch {
-    pendingApprovals.value = 0
+    setApprovalCount(0)
   }
 }
 

@@ -7,8 +7,9 @@ import { peekCached } from '../lib/data-cache.js'
 import {
   APPROVALS_TTL_MS,
   DATA_KEYS,
+  applyApprovalDecision,
   errorTextOf,
-  invalidateLeaveRequests,
+  invalidateDecidedLeave,
   loaders,
   loadShared,
 } from '../lib/shared-data.js'
@@ -95,8 +96,10 @@ async function decide(item, action) {
     }
     results.value = results.value.filter((row) => row.id !== item.id)
     delete notes[item.id]
-    // The dock count, the queue and the HR list all changed with this decision.
-    invalidateLeaveRequests()
+    // The badge drops here at once and in every other tab of this browser, and
+    // the cached queue loses this row: no refetch is needed for the count.
+    applyApprovalDecision(item.id)
+    invalidateDecidedLeave()
   } catch {
     actionError.value = ACTION_ERROR
   } finally {
