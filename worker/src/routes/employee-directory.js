@@ -245,7 +245,13 @@ export function createEmployeeDirectoryRoutes({ role, adminTable }) {
     try {
       const db = c.get("directoryDb");
       const [departments, positions] = await Promise.all([
-        db.select(DEPARTMENTS_TABLE, { columns: "id,name", order: "name.asc" }),
+        // The same rule the profile dropdown uses: only active departments are
+        // offered as a choice, so a deactivated row cannot be picked.
+        db.select(DEPARTMENTS_TABLE, {
+          columns: "id,name",
+          filters: [["is_active", "eq", true]],
+          order: "name.asc",
+        }),
         db.select(POSITIONS_TABLE, { columns: "id,name", order: "name.asc" }),
       ]);
 

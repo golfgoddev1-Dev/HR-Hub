@@ -61,6 +61,7 @@ export const DATA_KEYS = {
   leaveShifts: 'leave:shifts',
   leaveHolidays: 'leave:holidays',
   hrCatalog: 'leave:hr:catalog',
+  hrDepartments: 'leave:hr:departments',
   hrSettings: 'leave:hr:settings',
   hrApprovers: 'leave:hr:approvers',
   hrHolidays: 'leave:hr:holidays',
@@ -98,6 +99,9 @@ export const loaders = {
   leaveShifts: () => requestJson('/api/leave/shifts'),
   leaveHolidays: (from, to) => () => requestJson(holidayUrl(from, to)),
   hrCatalog: () => requestJson('/api/leave/hr/catalog'),
+  // The HR directory catalog is the one department list with a role gate; the
+  // loader takes the mount base, never a path that already ends in /catalog.
+  hrDepartments: () => requestJson('/api/hr/directory/catalog'),
   hrSettings: () => requestJson('/api/leave/hr/settings'),
   hrHolidays: (year) => () =>
     requestJson(year ? `/api/leave/hr/holidays?year=${encodeURIComponent(year)}` : '/api/leave/hr/holidays'),
@@ -137,6 +141,38 @@ export async function loadShared(key, loader, { ttlMs = SHARED_TTL_MS, onData } 
   const data = await getCached(key, loader, { ttlMs })
   if (onData) onData(data)
   return { data, cached: false }
+}
+
+/**
+ * The active departments an HR picker offers. One shared value, so the approvers
+ * page, the HR request filter and the calendar all read the same list. A failed
+ * read is never cached (getCached stores no rejection) and an empty answer is
+ * dropped, so a transient failure cannot paint an empty picker for the ttl.
+ */
+export async function loadHrDepartments() {
+  let data
+  try {
+    data = await getCached(DATA_KEYS.hrDepartments, loaders.hrDepartments, {
+      ttlMs: SHARED_TTL_MS,
+    })
+  } catch (error) {
+    invalidate(DATA_KEYS.hrDepartments)
+    throw error
+  }
+
+  const departments = (Array.isArray(data?.departments) ? data.departments : [])
+    .filter(
+      (row) =>
+        row &&
+        typeof row.id === 'string' &&
+        typeof row.name === 'string' &&
+        row.isActive !== false
+    )
+    .map((row) => ({ id: row.id, name: row.name }))
+
+  // A successful empty answer is not worth keeping: ask again next visit.
+  if (departments.length === 0) invalidate(DATA_KEYS.hrDepartments)
+  return departments
 }
 
 // --- invalidation after mutations ------------------------------------------

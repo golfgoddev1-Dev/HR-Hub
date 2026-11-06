@@ -150,8 +150,8 @@ async function createFake(options = {}) {
       },
     ],
     departments: [
-      { id: DEPT_A, name: "ฝ่ายบุคคล" },
-      { id: DEPT_B, name: "ฝ่ายขาย" },
+      { id: DEPT_A, name: "ฝ่ายบุคคล", is_active: true },
+      { id: DEPT_B, name: "ฝ่ายขาย", is_active: true },
     ],
     positions: [
       { id: POS_A, name: "เจ้าหน้าที่" },

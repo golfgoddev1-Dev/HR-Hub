@@ -24,6 +24,7 @@ import {
   SHARED_TTL_MS,
   dataKey,
   errorTextOf,
+  loadHrDepartments,
   loaders,
   requestJson,
 } from '../lib/shared-data.js'
@@ -198,12 +199,7 @@ async function loadDepartments() {
   if (!props.isHr) return
   departmentError.value = ''
   try {
-    const data = await getCached(
-      dataKey.directoryCatalog('/api/hr/directory/catalog'),
-      loaders.directoryCatalog('/api/hr/directory/catalog'),
-      { ttlMs: SHARED_TTL_MS }
-    )
-    departments.value = Array.isArray(data.departments) ? data.departments : []
+    departments.value = await loadHrDepartments()
   } catch {
     departmentError.value = EMPTY_DEPARTMENTS
   }

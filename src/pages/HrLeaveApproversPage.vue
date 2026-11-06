@@ -10,24 +10,27 @@ import {
   approverToggleNotice,
   approverTogglePath,
 } from '../lib/leave-approvers-view.js'
-import { getCached, peekCached } from '../lib/data-cache.js'
+import { peekCached } from '../lib/data-cache.js'
 import {
   APPROVALS_TTL_MS,
-  SHARED_TTL_MS,
   dataKey,
   errorTextOf,
   invalidateApprovals,
   invalidateApproverConfig,
+  loadHrDepartments,
   loaders,
   loadShared,
 } from '../lib/shared-data.js'
 
 const LOAD_ERROR = 'โหลดรายการผู้อนุมัติไม่สำเร็จ กรุณาลองใหม่'
 const SAVE_ERROR = 'บันทึกไม่สำเร็จ กรุณาลองใหม่'
+const DEPARTMENTS_ERROR = 'โหลดรายชื่อแผนกไม่สำเร็จ กรุณาลองใหม่'
 
 const scope = ref('department')
 const rows = ref([])
 const departments = ref([])
+const departmentsLoading = ref(false)
+const departmentsError = ref('')
 const departmentFilter = ref(null)
 const loading = ref(true)
 const errorMessage = ref('')
@@ -57,16 +60,18 @@ function employeeName(item) {
   return prefix && !item.fullName.startsWith(prefix) ? `${prefix} ${item.fullName}` : item.fullName
 }
 
-async function loadOptions() {
+// Departments come from the one shared HR loader (active rows only). A failed
+// read clears the list and shows a retry instead of an empty "ไม่พบแผนก" picker.
+async function loadDepartments() {
+  departmentsError.value = ''
+  departmentsLoading.value = true
   try {
-    const data = await getCached(
-      dataKey.directoryCatalog('/api/hr/directory/catalog'),
-      loaders.directoryCatalog('/api/hr/directory/catalog'),
-      { ttlMs: SHARED_TTL_MS }
-    )
-    departments.value = Array.isArray(data.departments) ? data.departments : []
-  } catch {
+    departments.value = await loadHrDepartments()
+  } catch (error) {
     departments.value = []
+    departmentsError.value = errorTextOf(error, DEPARTMENTS_ERROR)
+  } finally {
+    departmentsLoading.value = false
   }
 }
 
@@ -170,7 +175,7 @@ async function toggle(item) {
 }
 
 onMounted(async () => {
-  await loadOptions()
+  await loadDepartments()
   await load()
 })
 </script>
@@ -212,7 +217,12 @@ onMounted(async () => {
 
         <div v-if="!isEmployeeScope" class="field">
           <label class="label">แผนก</label>
+          <p v-if="departmentsError" class="hint error departments-error">
+            {{ departmentsError }}
+            <button type="button" class="retry-btn" @click="loadDepartments">ลองใหม่</button>
+          </p>
           <v-select
+            v-else
             v-model="departmentId"
             :items="departments"
             item-title="name"
@@ -221,7 +231,7 @@ onMounted(async () => {
             density="comfortable"
             hide-details
             placeholder="เลือกแผนก"
-            no-data-text="ไม่พบแผนก"
+            :no-data-text="departmentsLoading ? 'กำลังโหลด…' : 'ไม่พบแผนก'"
           />
         </div>
 
@@ -422,6 +432,23 @@ onMounted(async () => {
 }
 
 .primary-btn:disabled { background: #d7e0de; color: #7b8b8e; cursor: not-allowed; }
+
+.departments-error { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+.retry-btn {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid #e2b6b6;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #a01b1b;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.retry-btn:focus-visible { outline: 3px solid #0f6f63; outline-offset: 2px; }
 
 .hint { font-size: 13px; color: #5c7176; margin: 6px 0; }
 .hint.success { color: #1c6b3f; }

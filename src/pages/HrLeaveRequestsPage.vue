@@ -13,6 +13,7 @@ import {
   SHARED_TTL_MS,
   dataKey,
   errorTextOf,
+  loadHrDepartments,
   loaders,
   loadShared,
 } from '../lib/shared-data.js'
@@ -121,15 +122,11 @@ async function load(targetPage = page.value) {
 
 async function loadOptions() {
   try {
-    const [catalog, leave] = await Promise.all([
-      getCached(
-        dataKey.directoryCatalog('/api/hr/directory/catalog'),
-        loaders.directoryCatalog('/api/hr/directory/catalog'),
-        { ttlMs: SHARED_TTL_MS }
-      ),
+    const [departmentList, leave] = await Promise.all([
+      loadHrDepartments(),
       getCached(DATA_KEYS.hrCatalog, loaders.hrCatalog, { ttlMs: SHARED_TTL_MS }),
     ])
-    departments.value = Array.isArray(catalog.departments) ? catalog.departments : []
+    departments.value = departmentList
     types.value = Array.isArray(leave.types) ? leave.types : []
     retentionDays.value = Number(leave.certificateRetentionDays) || 0
   } catch {
