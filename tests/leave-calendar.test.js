@@ -7,7 +7,6 @@ import { describe, expect, it } from 'vitest'
 
 import {
   APPROVED_COLOR,
-  LIST_VIEW,
   MONTH_VIEW,
   PENDING_LABEL,
   addIsoDays,
@@ -85,9 +84,11 @@ describe('title and views', () => {
     expect(calendarTitle('2027-01-01')).toContain('2570')
   })
 
-  it('uses a list under 640px and a month grid above it', () => {
-    expect(initialCalendarView(360)).toBe(LIST_VIEW)
-    expect(initialCalendarView(639)).toBe(LIST_VIEW)
+  it('keeps the month grid at every width', () => {
+    // The phone default (list) is chosen by leave-calendar-view.js at 720px;
+    // the grid itself is always the month grid, so a phone can still show it.
+    expect(initialCalendarView(360)).toBe(MONTH_VIEW)
+    expect(initialCalendarView(639)).toBe(MONTH_VIEW)
     expect(initialCalendarView(640)).toBe(MONTH_VIEW)
     expect(initialCalendarView(1440)).toBe(MONTH_VIEW)
     expect(initialCalendarView('wide')).toBe(MONTH_VIEW)

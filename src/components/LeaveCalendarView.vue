@@ -4,12 +4,12 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import FullCalendar from '@fullcalendar/vue3'
 import dayGridPlugin from '@fullcalendar/daygrid'
-import listPlugin from '@fullcalendar/list'
 import thLocale from '@fullcalendar/core/locales/th'
 
-import { formatThaiDateRange } from '../lib/thai-date.js'
+import { formatThaiDate, formatThaiDateRange } from '../lib/thai-date.js'
 import {
   NARROW_VIEW_WIDTH,
+  addIsoDays,
   calendarTitle,
   eventColors,
   eventTitle,
@@ -18,6 +18,14 @@ import {
   statusLabel,
   toExclusiveEnd,
 } from '../lib/leave-calendar.js'
+import {
+  VIEW_BREAKPOINT,
+  VIEW_CALENDAR,
+  VIEW_LIST,
+  buildLeaveList,
+  initialLeaveView,
+  storeLeaveView,
+} from '../lib/leave-calendar-view.js'
 import { getCached } from '../lib/data-cache.js'
 import {
   DATA_KEYS,
@@ -41,6 +49,10 @@ const loading = ref(false)
 const errorMessage = ref('')
 const departmentError = ref('')
 const events = ref([])
+// The raw responses: one array feeds the grid and the grouped list, so the two
+// views can never disagree about what is visible.
+const leaveEvents = ref([])
+const holidays = ref([])
 const title = ref('ปฏิทินการลา')
 const selected = ref(null)
 const panelClose = ref(null)
@@ -48,35 +60,59 @@ const departmentId = ref(null)
 const departments = ref([])
 const width = ref(typeof window === 'undefined' ? 1024 : window.innerWidth)
 const loadedRange = ref({ from: '', to: '' })
+// The month the grid is showing (without its leading/trailing filler days).
+const monthRange = ref({ from: '', to: '' })
 
+/** localStorage, or null when the browser refuses to hand it over. */
+function localStore() {
+  try {
+    return typeof window === 'undefined' ? null : window.localStorage
+  } catch {
+    return null
+  }
+}
+
+const view = ref(initialLeaveView({ width: width.value, storage: localStore() }))
 const isNarrow = computed(() => width.value < NARROW_VIEW_WIDTH)
+const isPhone = computed(() => width.value <= VIEW_BREAKPOINT)
+
+const listGroups = computed(() =>
+  buildLeaveList({ events: leaveEvents.value, holidays: holidays.value })
+)
+
+const rangeLabel = computed(() => {
+  const { from, to } = monthRange.value
+  if (!from || !to) return ''
+  return formatThaiDateRange(from, to)
+})
 
 const options = computed(() => ({
-  plugins: [dayGridPlugin, listPlugin],
+  plugins: [dayGridPlugin],
   initialView: initialCalendarView(width.value),
   locale: thLocale,
   firstDay: 0,
   height: 'auto',
-  dayMaxEvents: true,
+  // Phones keep the month grid but collapse the events into dots, so a 360px
+  // screen fits without horizontal scrolling. v6 has no 'dot' eventDisplay, so
+  // the dot is the event element itself, emptied of text here.
+  dayMaxEvents: isPhone.value ? 2 : true,
+  eventContent: isPhone.value ? renderDotEvent : undefined,
   noEventsText: 'ไม่มีรายการลาในช่วงนี้',
-  headerToolbar: isNarrow.value
+  headerToolbar: isPhone.value
     ? { left: 'prev,next', center: 'title', right: 'today' }
-    : { left: 'prev,next today', center: 'title', right: 'dayGridMonth,listWeek' },
+    : { left: 'prev,next today', center: 'title' },
   buttonText: {
     today: 'วันนี้',
-    month: 'เดือน',
-    week: 'สัปดาห์',
-    list: 'รายการ',
     prev: 'ก่อนหน้า',
     next: 'ถัดไป',
   },
   events: events.value,
-  eventDisplay: 'block',
   eventClick: (info) => {
     if (info.event.extendedProps?.kind === 'holiday') return
     openPanel(info.event)
   },
   eventDidMount: decorateEvent,
+  dayCellDidMount: decorateDayCell,
   datesSet: onDatesSet,
 }))
 
@@ -128,15 +164,18 @@ async function load(range) {
       ).catch(() => ({ holidays: [] })),
     ])
 
-    const holidays = Array.isArray(holidayData?.holidays) ? holidayData.holidays : []
+    leaveEvents.value = Array.isArray(calendarData.events) ? calendarData.events : []
+    holidays.value = Array.isArray(holidayData?.holidays) ? holidayData.holidays : []
 
     events.value = [
-      ...calendarData.events.map(toCalendarEvent),
-      ...holidays.map(toHolidayEvent),
+      ...leaveEvents.value.map(toCalendarEvent),
+      ...holidays.value.map(toHolidayEvent),
     ]
   } catch (error) {
     errorMessage.value = errorTextOf(error, LOAD_ERROR)
     events.value = []
+    leaveEvents.value = []
+    holidays.value = []
   } finally {
     loading.value = false
   }
@@ -145,9 +184,14 @@ async function load(range) {
 function onDatesSet(info) {
   const range = rangeFromView(info.startStr, info.endStr)
   const current = info.view?.currentStart ?? info.start
-  title.value = calendarTitle(
-    current instanceof Date ? current.toISOString().slice(0, 10) : info.startStr
-  )
+  const monthStart = current instanceof Date ? isoDayOf(current) : info.startStr
+  title.value = calendarTitle(monthStart)
+
+  const monthEnd = info.view?.currentEnd
+  if (monthEnd instanceof Date) {
+    monthRange.value = { from: monthStart, to: addIsoDays(isoDayOf(monthEnd), -1) }
+  }
+
   if (!range) return
   if (loadedRange.value.from === range.from && loadedRange.value.to === range.to) return
   load(range)
@@ -183,14 +227,84 @@ function decorateEvent(info) {
   })
 }
 
+function isoDayOf(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return ''
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${date.getFullYear()}-${month}-${day}`
+}
+
+/** The phone grid's dot carries no text: the aria-label still names it. */
+function renderDotEvent() {
+  return { domNodes: [] }
+}
+
+function prefersReducedMotion() {
+  try {
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  } catch {
+    return false
+  }
+}
+
+/** Switching view only changes what is shown: the range and its data stay. */
+function selectView(next) {
+  if (next !== VIEW_CALENDAR && next !== VIEW_LIST) return
+  view.value = next
+  storeLeaveView(next, localStore())
+  if (next === VIEW_CALENDAR) {
+    // The grid was hidden, so it has to measure itself again.
+    nextTick(() => calendarRef.value?.getApi()?.updateSize())
+  }
+}
+
+/** A day tap opens the list at that day without moving the selected month. */
+function openDay(date) {
+  const day = String(date ?? '').slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return
+  selectView(VIEW_LIST)
+  nextTick(() => {
+    const target = document.getElementById(`leave-day-${day}`)
+    if (!target) return
+    target.scrollIntoView({
+      block: 'start',
+      behavior: prefersReducedMotion() ? 'auto' : 'smooth',
+    })
+  })
+}
+
+/** One calendar instance owns the range, so the list navigates the same month. */
+function moveRange(action) {
+  const api = calendarRef.value?.getApi()
+  if (!api) return
+  api[action]()
+}
+
+/** On phones a day cell opens that day in the list; desktop cells stay inert. */
+function decorateDayCell(info) {
+  if (!isPhone.value) return
+  const date = isoDayOf(info.date)
+  if (!date) return
+
+  const el = info.el
+  const open = () => openDay(date)
+  el.setAttribute('tabindex', '0')
+  el.setAttribute('role', 'button')
+  el.setAttribute('aria-label', `ดูรายการวันที่ ${formatThaiDate(date)}`)
+
+  el.addEventListener('click', open)
+  el.addEventListener('keydown', (keyEvent) => {
+    if (keyEvent.key !== 'Enter' && keyEvent.key !== ' ') return
+    keyEvent.preventDefault()
+    open()
+  })
+}
+
 function reloadRange() {
   const api = calendarRef.value?.getApi()
-  const view = api?.view
-  if (!view) return
-  const range = rangeFromView(
-    view.activeStart.toISOString().slice(0, 10),
-    view.activeEnd.toISOString().slice(0, 10)
-  )
+  const current = api?.view
+  if (!current) return
+  const range = rangeFromView(isoDayOf(current.activeStart), isoDayOf(current.activeEnd))
   loadedRange.value = { from: '', to: '' }
   load(range)
 }
@@ -206,12 +320,7 @@ async function loadDepartments() {
 }
 
 function onResize() {
-  const wasNarrow = width.value < NARROW_VIEW_WIDTH
   width.value = window.innerWidth
-  const nowNarrow = width.value < NARROW_VIEW_WIDTH
-  if (wasNarrow !== nowNarrow) {
-    calendarRef.value?.getApi()?.changeView(initialCalendarView(width.value))
-  }
 }
 
 onMounted(() => {
@@ -250,13 +359,38 @@ onBeforeUnmount(() => {
       </label>
     </div>
 
+    <div class="view-switch" role="group" aria-label="รูปแบบการแสดงผลปฏิทินการลา">
+      <button
+        type="button"
+        class="view-option"
+        :class="{ 'is-selected': view === VIEW_CALENDAR }"
+        :aria-pressed="view === VIEW_CALENDAR"
+        @click="selectView(VIEW_CALENDAR)"
+      >
+        <span class="view-label">ปฏิทิน</span>
+      </button>
+      <button
+        type="button"
+        class="view-option"
+        :class="{ 'is-selected': view === VIEW_LIST }"
+        :aria-pressed="view === VIEW_LIST"
+        @click="selectView(VIEW_LIST)"
+      >
+        <span class="view-label">รายการ</span>
+      </button>
+    </div>
+
     <p v-if="departmentError" class="warning">{{ departmentError }}</p>
 
     <v-alert v-if="errorMessage" type="error" variant="tonal" class="alert">
       {{ errorMessage }}
     </v-alert>
 
-    <section class="calendar-card" :aria-busy="loading ? 'true' : 'false'">
+    <section
+      v-show="view === VIEW_CALENDAR"
+      class="calendar-card"
+      :aria-busy="loading ? 'true' : 'false'"
+    >
       <p v-if="loading" class="loading-note">กำลังโหลด…</p>
       <FullCalendar ref="calendarRef" :options="options" />
       <p class="legend">
@@ -264,6 +398,54 @@ onBeforeUnmount(() => {
         <span class="legend-item"><span class="swatch swatch-pending" aria-hidden="true"></span>รออนุมัติ</span>
         <span class="legend-item"><span class="swatch swatch-holiday" aria-hidden="true"></span>วันหยุด</span>
       </p>
+    </section>
+
+    <section
+      v-if="view === VIEW_LIST"
+      class="list-card"
+      aria-label="รายการการลา"
+      :aria-busy="loading ? 'true' : 'false'"
+    >
+      <div class="list-nav">
+        <button type="button" class="list-nav-button" @click="moveRange('prev')">ก่อนหน้า</button>
+        <button type="button" class="list-nav-button" @click="moveRange('next')">ถัดไป</button>
+        <button type="button" class="list-nav-button" @click="moveRange('today')">วันนี้</button>
+      </div>
+
+      <p v-if="rangeLabel" class="list-range">{{ rangeLabel }}</p>
+      <p v-if="loading" class="loading-note">กำลังโหลด…</p>
+
+      <p v-if="errorMessage" class="list-empty">{{ errorMessage }}</p>
+      <p v-else-if="!loading && listGroups.length === 0" class="list-empty">
+        ไม่มีรายการการลาในช่วงนี้
+      </p>
+
+      <ul v-else class="day-list">
+        <li v-for="group in listGroups" :key="group.date" :id="'leave-day-' + group.date" class="day-group">
+          <h3 class="day-heading">{{ formatThaiDate(group.date) }}</h3>
+          <ul class="rows">
+            <template v-for="row in group.rows" :key="row.id">
+              <li v-if="row.kind === 'holiday'" class="row row-holiday">
+                <span class="row-name">{{ row.name || 'วันหยุด' }}</span>
+                <span class="status pill-holiday">วันหยุด</span>
+              </li>
+              <li v-else class="row">
+                <span class="row-name">{{ row.employeeName || '—' }}</span>
+                <span
+                  class="status"
+                  :class="row.status === 'pending' ? 'is-pending' : 'is-approved'"
+                >
+                  {{ statusLabel(row.status) }}
+                </span>
+                <span class="row-meta">
+                  <span class="row-type">{{ row.leaveTypeLabel || '—' }}</span>
+                  <span class="row-dates">{{ formatThaiDateRange(row.startDate, row.endDate) }}</span>
+                </span>
+              </li>
+            </template>
+          </ul>
+        </li>
+      </ul>
     </section>
 
     <aside
@@ -363,6 +545,51 @@ onBeforeUnmount(() => {
   outline-offset: 2px;
 }
 
+/* The ปฏิทิน / รายการ switch, directly under the title. */
+.view-switch {
+  display: inline-flex;
+  gap: 4px;
+  margin: 0 0 12px;
+  padding: 4px;
+  background: #f0f5f4;
+  border: 1px solid #e2e9e7;
+  border-radius: 12px;
+}
+
+.view-option {
+  min-height: 44px;
+  min-width: 88px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 16px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: #48615e;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.view-option:hover {
+  background: #ffffff;
+  color: #10504e;
+}
+
+.view-option.is-selected {
+  background: #10504e;
+  border-color: #10504e;
+  color: #ffffff;
+}
+
+.view-option:focus-visible {
+  outline: 3px solid #10504e;
+  outline-offset: 2px;
+}
+
 .warning {
   margin: 0 0 8px;
   color: #b45309;
@@ -373,7 +600,8 @@ onBeforeUnmount(() => {
   margin-bottom: 12px;
 }
 
-.calendar-card {
+.calendar-card,
+.list-card {
   background: #ffffff;
   border: 1px solid #e2e9e7;
   border-radius: 16px;
@@ -420,6 +648,121 @@ onBeforeUnmount(() => {
 
 .swatch-holiday {
   background: #e7f2f0;
+  border: 1px dashed #9ec9c4;
+}
+
+/* List view */
+.list-nav {
+  display: flex;
+  gap: 8px;
+}
+
+.list-nav-button {
+  flex: 1 1 0;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid #d8e3e1;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #10504e;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.list-nav-button:hover {
+  background: #f0f7f6;
+  border-color: #c8dcd9;
+}
+
+.list-nav-button:focus-visible {
+  outline: 3px solid #10504e;
+  outline-offset: 2px;
+}
+
+.list-range {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #5c7176;
+}
+
+.list-empty {
+  margin: 16px 0 4px;
+  text-align: center;
+  font-size: 13px;
+  color: #5c7176;
+}
+
+.day-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 16px;
+}
+
+.day-group {
+  display: grid;
+  gap: 6px;
+  scroll-margin-top: 76px;
+}
+
+.day-heading {
+  margin: 0;
+  padding: 0 2px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #10504e;
+}
+
+.rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 8px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid #e2e9e7;
+  border-radius: 12px;
+  background: #fbfdfc;
+}
+
+.row-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #12343b;
+}
+
+.row-meta {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  font-size: 12px;
+  color: #48615e;
+}
+
+.row-dates {
+  color: #5c7176;
+}
+
+.row-holiday {
+  background: #f2f8f7;
+  border-style: dashed;
+  border-color: #9ec9c4;
+}
+
+.pill-holiday {
+  background: #e7f2f0;
+  color: #10504e;
   border: 1px dashed #9ec9c4;
 }
 
@@ -481,6 +824,7 @@ onBeforeUnmount(() => {
   font-weight: 600;
 }
 
+/* The narrow-grid event: a dot, with the text still in its aria-label. */
 .panel {
   position: fixed;
   top: 96px;
@@ -562,6 +906,103 @@ onBeforeUnmount(() => {
   color: #7c2d12;
 }
 
+/* Phones: keep the month grid but make it fit 360px without scrolling. */
+@media (max-width: 720px) {
+  .calendar-card {
+    padding: 8px;
+  }
+
+  .view-switch {
+    display: flex;
+    width: 100%;
+  }
+
+  .view-option {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  /* Two rows on phones: the month title, then the buttons sharing one row, so
+     nothing is squeezed at 360px. */
+  :deep(.fc .fc-toolbar) {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  :deep(.fc .fc-toolbar-chunk) {
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+  }
+
+  :deep(.fc .fc-toolbar-chunk:nth-child(2)) {
+    grid-row: 1;
+    grid-column: 1 / -1;
+  }
+
+  :deep(.fc .fc-toolbar-title) {
+    font-size: 16px;
+  }
+
+  :deep(.fc .fc-button) {
+    padding: 0.35em 0.55em;
+    font-size: 12px;
+  }
+
+  :deep(.fc .fc-col-header-cell-cushion) {
+    padding: 4px 2px;
+    font-size: 11px;
+  }
+
+  :deep(.fc .fc-daygrid-day-number) {
+    padding: 3px 5px;
+    font-size: 12px;
+  }
+
+  :deep(.fc .fc-daygrid-day-frame) {
+    min-height: 46px;
+  }
+
+  :deep(.fc .fc-daygrid-day-events) {
+    margin-top: 2px;
+  }
+
+  :deep(.fc .fc-daygrid-event-harness) {
+    margin-top: 2px;
+  }
+
+  /* Each event is a 10px dot keeping its status colour from the grid. */
+  :deep(.fc .fc-daygrid-event) {
+    width: 10px;
+    height: 10px;
+    margin: 3px auto 0;
+    padding: 0;
+    border-radius: 999px;
+    overflow: hidden;
+  }
+
+  :deep(.fc .fc-daygrid-event:focus-visible) {
+    outline: 3px solid #10504e;
+    outline-offset: 2px;
+    box-shadow: none;
+  }
+
+  :deep(.fc .fc-daygrid-more-link) {
+    font-size: 11px;
+  }
+
+  :deep(.fc .fc-daygrid-day) {
+    cursor: pointer;
+  }
+
+  :deep(.fc .fc-daygrid-day:focus-visible) {
+    outline: 3px solid #10504e;
+    outline-offset: -3px;
+    box-shadow: none;
+  }
+}
+
 @media (max-width: 640px) {
   .panel {
     top: auto;
@@ -576,6 +1017,17 @@ onBeforeUnmount(() => {
 
   .title {
     font-size: 20px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .view-option,
+  .list-nav-button {
+    transition: none;
+  }
+
+  .day-group {
+    scroll-behavior: auto;
   }
 }
 </style>

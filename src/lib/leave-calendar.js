@@ -11,7 +11,6 @@ import { formatThaiYear } from './thai-date.js'
 export const MAX_RANGE_DAYS = 62
 export const NARROW_VIEW_WIDTH = 640
 export const MONTH_VIEW = 'dayGridMonth'
-export const LIST_VIEW = 'listWeek'
 
 export const APPROVED_COLOR = '#10504e'
 export const PENDING_COLOR = '#b45309'
@@ -78,10 +77,12 @@ export function rangeFromView(startStr, endStr) {
   return { from, to }
 }
 
-/** Month on desktop, a list on narrow screens. */
-export function initialCalendarView(width) {
-  const value = Number(width)
-  return Number.isFinite(value) && value < NARROW_VIEW_WIDTH ? LIST_VIEW : MONTH_VIEW
+/**
+ * The grid is the month grid at every width: the list is the separate
+ * day-grouped view, and the 720px default lives in leave-calendar-view.js.
+ */
+export function initialCalendarView() {
+  return MONTH_VIEW
 }
 
 /** "ปฏิทินการลา พ.ศ. 2569" — Buddhist year from thai-date.js. */
