@@ -23,6 +23,7 @@ const VIEW = readFileSync(
 )
 
 const LEAVE_FIELDS = [
+  'departmentName',
   'employeeName',
   'endDate',
   'id',
@@ -139,13 +140,15 @@ describe('the list grouping', () => {
     expect(leave.kind).toBe('leave')
   })
 
-  it('uses only fields the grid already shows', () => {
+  it('uses only fields the calendar already shows', () => {
     const rows = buildLeaveList({ events, holidays })
       .flatMap((group) => group.rows)
       .filter((row) => row.kind === 'leave')
 
     expect(Object.keys(rows[0]).sort()).toEqual(LEAVE_FIELDS)
-    for (const forbidden of ['note', 'reason', 'nationalId', 'email', 'phone', 'departmentName']) {
+    // departmentName was previously excluded from list rows, but the list now
+    // shows the same department the day panel and detail view already show.
+    for (const forbidden of ['note', 'reason', 'nationalId', 'email', 'phone']) {
       expect(rows[0], forbidden).not.toHaveProperty(forbidden)
     }
   })

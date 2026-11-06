@@ -6,7 +6,7 @@ import FullCalendar from '@fullcalendar/vue3'
 import dayGridPlugin from '@fullcalendar/daygrid'
 import thLocale from '@fullcalendar/core/locales/th'
 
-import { formatThaiDateRange } from '../lib/thai-date.js'
+import { formatThaiDate, formatThaiDateRange } from '../lib/thai-date.js'
 import {
   NARROW_VIEW_WIDTH,
   addIsoDays,
@@ -635,6 +635,7 @@ onBeforeUnmount(() => {
                   {{ statusLabel(row.status) }}
                 </span>
                 <span class="row-meta">
+                  <span class="row-dept">{{ row.departmentName || '—' }}</span>
                   <span class="row-type">{{ row.leaveTypeLabel || '—' }}</span>
                   <span class="row-dates">{{ formatThaiDateRange(row.startDate, row.endDate) }}</span>
                 </span>
@@ -1020,6 +1021,11 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   gap: 2px 8px;
   font-size: 12px;
+  color: #48615e;
+}
+
+.row-dept {
+  font-weight: 600;
   color: #48615e;
 }
 

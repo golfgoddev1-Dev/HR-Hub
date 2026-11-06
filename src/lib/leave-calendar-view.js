@@ -4,7 +4,8 @@
 //
 // The list is built from the responses the grid already loads
 // (/api/leave/calendar events and /api/leave/holidays): no new field, endpoint
-// or personal data. A row carries only the fields the grid shows for that event.
+// or personal data. A row carries only the fields the calendar already shows
+// (the same name, department, type and dates the day panel renders).
 
 export const VIEW_CALENDAR = 'calendar'
 export const VIEW_LIST = 'list'
@@ -81,6 +82,8 @@ export function buildLeaveList({ events = [], holidays = [] } = {}) {
       kind: 'leave',
       id: typeof event.id === 'string' ? event.id : '',
       employeeName: typeof event.employeeName === 'string' ? event.employeeName : '',
+      departmentName:
+        typeof event.departmentName === 'string' ? event.departmentName : '',
       leaveTypeLabel: typeof event.leaveTypeLabel === 'string' ? event.leaveTypeLabel : '',
       status: event.status,
       startDate: event.startDate,
