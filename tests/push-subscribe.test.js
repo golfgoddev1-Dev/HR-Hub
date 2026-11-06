@@ -70,7 +70,7 @@ async function sessionRow() {
 
 /** Fake PostgREST for the session read plus the subscription routes. */
 async function createFake({ existing = null } = {}) {
-  const state = { inserted: [], updated: [], existing }
+  const state = { inserted: [], updated: [], employeeUpdates: [], deleted: [], existing }
   const session = await sessionRow()
 
   const fake = installFetch(({ url, init }) => {
@@ -100,7 +100,17 @@ async function createFake({ existing = null } = {}) {
         state.updated.push({ url, body: JSON.parse(init.body) })
         return jsonResponse([{ id: 'sub-1' }])
       }
+      if (table === 'employees') {
+        state.employeeUpdates.push({ url, body: JSON.parse(init.body) })
+        return emptyResponse(204)
+      }
       return emptyResponse(204)
+    }
+
+    if (method === 'DELETE' && table === 'push_subscriptions') {
+      state.deleted.push({ url })
+      state.existing = null
+      return jsonResponse([{ id: 'sub-1' }])
     }
 
     return emptyResponse(204)
@@ -242,7 +252,7 @@ describe('POST /api/notifications/subscribe', () => {
 })
 
 describe('POST /api/notifications/unsubscribe', () => {
-  it('only switches off the caller\'s own endpoint', async () => {
+  it('clears the account preference and deletes the caller\'s own endpoint', async () => {
     const fake = await createFake()
     try {
       const response = await app.request(
@@ -259,12 +269,14 @@ describe('POST /api/notifications/unsubscribe', () => {
       )
 
       expect(response.status).toBe(200)
-      expect(fake.state.updated).toHaveLength(1)
+      expect(fake.state.employeeUpdates).toHaveLength(1)
+      expect(fake.state.employeeUpdates[0].body).toEqual({ notifications_enabled: false })
+      expect(paramsOf(fake.state.employeeUpdates[0].url).get('id')).toBe(`eq.${EMPLOYEE_ID}`)
+      expect(fake.state.deleted).toHaveLength(1)
 
-      const params = paramsOf(fake.state.updated[0].url)
+      const params = paramsOf(fake.state.deleted[0].url)
       expect(params.get('endpoint')).toBe(`eq.${ENDPOINT}`)
       expect(params.get('employee_id')).toBe(`eq.${EMPLOYEE_ID}`)
-      expect(fake.state.updated[0].body.is_active).toBe(false)
     } finally {
       fake.restore()
     }

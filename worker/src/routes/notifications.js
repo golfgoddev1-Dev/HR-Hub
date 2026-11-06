@@ -17,6 +17,7 @@ export { normalizeEndpoint };
 const notifications = new Hono();
 
 const PUSH_SUBSCRIPTIONS_TABLE = "push_subscriptions";
+const EMPLOYEES_TABLE = "employees";
 
 const ANY_ROLE = ["employee", "hr", "meeting_controller", "system_admin"];
 
@@ -56,6 +57,20 @@ function hasOnlyKeys(value, keys) {
 
 function logError(scope, error) {
   console.error(scope, { name: error?.name, code: error?.code });
+}
+
+/** The account preference is separate from the device subscription row. */
+async function setAccountEnabled(db, employeeId, enabled) {
+  const updated = await db.update(
+    EMPLOYEES_TABLE,
+    { notifications_enabled: enabled },
+    [["id", "eq", employeeId]]
+  );
+  if (updated.error) {
+    throw Object.assign(new Error("notification preference failed"), {
+      code: updated.error.code,
+    });
+  }
 }
 
 async function readStrictJson(c) {
@@ -106,6 +121,58 @@ notifications.get("/vapid-public-key", (c) => {
     return c.json({ ok: false, message: MESSAGE.notConfigured }, 503);
   }
   return c.json({ ok: true, publicKey }, 200);
+});
+
+// --- GET /api/notifications/status ------------------------------------------
+// Reports the account preference and whether THIS browser's endpoint is an
+// active row owned by the caller. The endpoint is validated, never echoed.
+
+notifications.get("/status", async (c) => {
+  const auth = await sessionOf(c);
+  if (auth.status) return c.json({ ok: false, message: auth.message }, auth.status);
+
+  const rawEndpoint = c.req.query("endpoint");
+  let endpoint = null;
+  if (rawEndpoint !== undefined) {
+    endpoint = normalizeEndpoint(rawEndpoint);
+    if (!endpoint) return c.json({ ok: false, message: MESSAGE.endpointInvalid }, 400);
+  }
+
+  try {
+    const db = createDb(c.env);
+    const employeeId = auth.session.employeeId;
+    const employee = await db.select(EMPLOYEES_TABLE, {
+      columns: "id,notifications_enabled",
+      filters: [["id", "eq", employeeId]],
+      single: true,
+    });
+
+    let subscribed = false;
+    if (endpoint) {
+      const row = await db.select(PUSH_SUBSCRIPTIONS_TABLE, {
+        columns: "id",
+        filters: [
+          ["endpoint", "eq", endpoint],
+          ["employee_id", "eq", employeeId],
+          ["is_active", "eq", true],
+        ],
+        single: true,
+      });
+      subscribed = row !== null;
+    }
+
+    return c.json(
+      {
+        ok: true,
+        enabled: employee?.notifications_enabled === true,
+        subscribed,
+      },
+      200
+    );
+  } catch (error) {
+    logError("notification status failed", error);
+    return c.json({ ok: false, message: MESSAGE.saveError }, 500);
+  }
 });
 
 // --- POST /api/notifications/subscribe --------------------------------------
@@ -159,6 +226,7 @@ notifications.post("/subscribe", async (c) => {
         [["id", "eq", row.id]]
       );
       if (updated.error) throw Object.assign(new Error("resubscribe failed"), { code: updated.error.code });
+      await setAccountEnabled(db, employeeId, true);
       return c.json({ ok: true, subscribed: true, reinstated: true }, 200);
     };
 
@@ -190,11 +258,13 @@ notifications.post("/subscribe", async (c) => {
           single: true,
         });
         if (current) return saveExisting(current);
+        await setAccountEnabled(db, employeeId, true);
         return c.json({ ok: true, subscribed: true, reinstated: false }, 200);
       }
       throw Object.assign(new Error("subscribe failed"), { code: inserted.error.code });
     }
 
+    await setAccountEnabled(db, employeeId, true);
     return c.json({ ok: true, subscribed: true, reinstated: false }, 201);
   } catch (error) {
     logError("notification subscribe failed", error);
@@ -218,22 +288,30 @@ notifications.post("/unsubscribe", async (c) => {
 
   try {
     const db = createDb(c.env);
-    const updated = await db.update(
+    const employeeId = auth.session.employeeId;
+    // Clear the account preference first: even if the row delete fails below,
+    // the next login will not silently recreate a subscription the user turned
+    // off. Then delete exactly this caller's endpoint row.
+    await setAccountEnabled(db, employeeId, false);
+
+    const removed = await db.remove(
       PUSH_SUBSCRIPTIONS_TABLE,
-      { is_active: false, last_seen_at: new Date().toISOString() },
       [
         ["endpoint", "eq", endpoint],
-        ["employee_id", "eq", auth.session.employeeId],
+        ["employee_id", "eq", employeeId],
       ],
       { returning: true, columns: "id" }
     );
-    if (updated.error) {
-      throw Object.assign(new Error("unsubscribe failed"), { code: updated.error.code });
+    if (removed.error) {
+      throw Object.assign(new Error("unsubscribe failed"), { code: removed.error.code });
     }
 
     // Idempotent: an endpoint that is already off (or someone else's) answers ok.
     return c.json(
-      { ok: true, unsubscribed: Array.isArray(updated.data) ? updated.data.length > 0 : false },
+      {
+        ok: true,
+        unsubscribed: Array.isArray(removed.data) ? removed.data.length > 0 : false,
+      },
       200
     );
   } catch (error) {

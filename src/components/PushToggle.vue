@@ -1,47 +1,49 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import {
+  autoEnablePush,
+  browserSubscription,
+  fetchNotificationStatus,
+  iosNeedsInstall as detectIosNeedsInstall,
+  notificationSwitchIsOn,
+  pushSupported as detectPushSupport,
+  requestAndSubscribe,
+  unsubscribePush,
+} from '../lib/push.js'
 
 // Push is opt-in: nothing is requested until the user presses the button.
 const supported = ref(false)
 const iosNeedsInstall = ref(false)
-const subscribed = ref(false)
+const browserSubscribed = ref(false)
+const serverSubscribed = ref(false)
 const busy = ref(false)
 const message = ref('')
 const errorMessage = ref('')
 
-function urlBase64ToUint8Array(base64Url) {
-  const padded = base64Url + '='.repeat((4 - (base64Url.length % 4)) % 4)
-  const base64 = padded.replace(/-/g, '+').replace(/_/g, '/')
-  const raw = atob(base64)
-  const bytes = new Uint8Array(raw.length)
-  for (let index = 0; index < raw.length; index += 1) bytes[index] = raw.charCodeAt(index)
-  return bytes
-}
+// On only when this browser has a subscription AND the server has a row for
+// this endpoint, bound to the signed-in employee.
+const subscribed = computed(() =>
+  notificationSwitchIsOn({
+    browserSubscribed: browserSubscribed.value,
+    serverSubscribed: serverSubscribed.value,
+  })
+)
 
 function detect() {
-  const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent)
-  const standalone =
-    navigator.standalone === true ||
-    (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
-  iosNeedsInstall.value = isIos && !standalone
-  supported.value =
-    'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window
-}
-
-async function registration() {
-  const existing = await navigator.serviceWorker.getRegistration('/')
-  if (existing) return existing
-  return navigator.serviceWorker.register('/sw.js')
+  iosNeedsInstall.value = detectIosNeedsInstall()
+  supported.value = detectPushSupport()
 }
 
 async function refresh() {
   if (!supported.value) return
   try {
-    const reg = await navigator.serviceWorker.getRegistration('/')
-    const subscription = reg ? await reg.pushManager.getSubscription() : null
-    subscribed.value = Boolean(subscription)
+    const subscription = await browserSubscription()
+    const status = await fetchNotificationStatus(subscription?.endpoint ?? null)
+    browserSubscribed.value = Boolean(subscription)
+    serverSubscribed.value = status.subscribed
   } catch {
-    subscribed.value = false
+    browserSubscribed.value = false
+    serverSubscribed.value = false
   }
 }
 
@@ -52,47 +54,18 @@ async function enable() {
   errorMessage.value = ''
 
   try {
-    // Only here, after a real click, do we ask the browser for permission.
-    const permission = await Notification.requestPermission()
-    if (permission !== 'granted') {
-      message.value = 'ยังไม่ได้อนุญาตการแจ้งเตือน — เปิดได้ที่การตั้งค่าเบราว์เซอร์'
+    const result = await requestAndSubscribe()
+    if (!result.ok) {
+      message.value =
+        result.reason === 'permission'
+          ? 'ยังไม่ได้อนุญาตการแจ้งเตือน — เปิดได้ที่การตั้งค่าเบราว์เซอร์'
+          : result.reason === 'config'
+            ? 'ยังไม่ได้ตั้งค่าการแจ้งเตือน'
+            : 'เปิดการแจ้งเตือนไม่สำเร็จ กรุณาลองใหม่'
       return
     }
 
-    const keyResponse = await fetch('/api/notifications/vapid-public-key', {
-      credentials: 'same-origin',
-    })
-    const keyData = await keyResponse.json().catch(() => ({}))
-    if (!keyResponse.ok || keyData.ok !== true) {
-      errorMessage.value = typeof keyData.message === 'string' ? keyData.message : 'ยังไม่ได้ตั้งค่าการแจ้งเตือน'
-      return
-    }
-
-    const reg = await registration()
-    const subscription = await reg.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(keyData.publicKey),
-    })
-
-    const json = subscription.toJSON()
-    const response = await fetch('/api/notifications/subscribe', {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        endpoint: json.endpoint,
-        keys: { p256dh: json.keys.p256dh, auth: json.keys.auth },
-        userAgent: navigator.userAgent,
-      }),
-    })
-    const data = await response.json().catch(() => ({}))
-    if (!response.ok || data.ok !== true) {
-      await subscription.unsubscribe().catch(() => {})
-      errorMessage.value = typeof data.message === 'string' ? data.message : 'ลงทะเบียนแจ้งเตือนไม่สำเร็จ'
-      return
-    }
-
-    subscribed.value = true
+    await refresh()
     message.value = 'เปิดการแจ้งเตือนแล้ว'
   } catch {
     errorMessage.value = 'เปิดการแจ้งเตือนไม่สำเร็จ กรุณาลองใหม่'
@@ -108,21 +81,13 @@ async function disable() {
   errorMessage.value = ''
 
   try {
-    const reg = await navigator.serviceWorker.getRegistration('/')
-    const subscription = reg ? await reg.pushManager.getSubscription() : null
-    const endpoint = subscription ? subscription.endpoint : null
-    if (subscription) await subscription.unsubscribe()
-
-    if (endpoint) {
-      await fetch('/api/notifications/unsubscribe', {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ endpoint }),
-      })
+    const result = await unsubscribePush()
+    if (!result.ok) {
+      errorMessage.value = 'ปิดการแจ้งเตือนไม่สำเร็จ กรุณาลองใหม่'
+      return
     }
 
-    subscribed.value = false
+    await refresh()
     message.value = 'ปิดการแจ้งเตือนแล้ว'
   } catch {
     errorMessage.value = 'ปิดการแจ้งเตือนไม่สำเร็จ กรุณาลองใหม่'
@@ -133,6 +98,10 @@ async function disable() {
 
 onMounted(async () => {
   detect()
+  if (!supported.value) return
+  // Re-subscribe only for an account that already opted in, and only when the
+  // browser has already granted permission. This never prompts.
+  await autoEnablePush()
   await refresh()
 })
 </script>

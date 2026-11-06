@@ -22,6 +22,7 @@ import {
   loaders,
   loadShared,
 } from '../lib/shared-data.js'
+import PushToggle from '../components/PushToggle.vue'
 
 const PROFILE_URL = '/api/profile/me'
 
@@ -258,6 +259,9 @@ onBeforeUnmount(() => {
       <v-alert v-if="successMessage" type="success" variant="tonal" class="notice">
         {{ successMessage }}
       </v-alert>
+
+      <!-- The real push switch: browser subscription plus the server row. -->
+      <PushToggle />
 
       <section v-if="!loading && !loadError" class="card pref-card">
         <div class="pref-copy">
