@@ -1,51 +1,29 @@
+import { defineAsyncComponent } from 'vue'
 import { createRouter, createWebHistory } from 'vue-router'
 import { getSession } from './api.js'
 import RoleShell from './components/RoleShell.vue'
-import LoginPage from './pages/LoginPage.vue'
-import PendingPage from './pages/PendingPage.vue'
-import SetPinPage from './pages/SetPinPage.vue'
-import ChangePinPage from './pages/ChangePinPage.vue'
-import ControllerQrPage from './pages/ControllerQrPage.vue'
-import ControllerRosterPage from './pages/ControllerRosterPage.vue'
-import RegisterPage from './pages/RegisterPage.vue'
-import ControllerOverviewPage from './pages/ControllerOverviewPage.vue'
-import ControllerDashboardPage from './pages/ControllerDashboardPage.vue'
-import MeetingBackfillHistoryPage from './pages/MeetingBackfillHistoryPage.vue'
-import MeetingBackfillImportPage from './pages/MeetingBackfillImportPage.vue'
-import RegistrantsPage from './pages/RegistrantsPage.vue'
-import HrHomePage from './pages/HrHomePage.vue'
-import HrEmployeeImportPage from './pages/HrEmployeeImportPage.vue'
-import HrEmployeeDetailPage from './pages/HrEmployeeDetailPage.vue'
-import HrEmployeesPage from './pages/HrEmployeesPage.vue'
-import HrEmployeeDataPage from './pages/HrEmployeeDataPage.vue'
-import HrPasswordPage from './pages/HrPasswordPage.vue'
-import ControllerEmployeeDataPage from './pages/ControllerEmployeeDataPage.vue'
-import HrLeaveRequestsPage from './pages/HrLeaveRequestsPage.vue'
-import HrLeaveBackdatedPage from './pages/HrLeaveBackdatedPage.vue'
-import HrLeaveApproversPage from './pages/HrLeaveApproversPage.vue'
-import HrLeaveHolidaysPage from './pages/HrLeaveHolidaysPage.vue'
-import HrLeaveSettingsPage from './pages/HrLeaveSettingsPage.vue'
-import HrLeavePrintPage from './pages/HrLeavePrintPage.vue'
-import AdminPage from './pages/AdminPage.vue'
-import AdminPermissionsPage from './pages/AdminPermissionsPage.vue'
-import ProfilePage from './pages/ProfilePage.vue'
-import { canPrintLeave } from './leave-print.js'
-import LeaveHomePage from './pages/LeaveHomePage.vue'
-import LeaveRequestPage from './pages/LeaveRequestPage.vue'
-import LeaveApprovalsPage from './pages/LeaveApprovalsPage.vue'
-import LeaveCalendarPage from './pages/LeaveCalendarPage.vue'
+import PageLoading from './components/PageLoading.vue'
 // The allow-lists live in src/lib/route-access.js so pages can ask the same
 // question the guard asks before offering a link.
 import { canOpenPath, homePathByRole } from './lib/route-access.js'
 import { loginTargetForPath } from './lib/notification-routes.js'
+import { canPrintLeave } from './leave-print.js'
+
+// Only the shell is in the first bundle. Every page is its own chunk, so the
+// home of a role paints without downloading the calendar, the spreadsheet
+// parser or the pages of the other roles. The placeholder renders inside
+// RouterView, i.e. in the content area: the navigation is never unmounted and
+// there is no blank screen while a chunk loads.
+const page = (loader) =>
+  defineAsyncComponent({ loader, loadingComponent: PageLoading, delay: 0 })
 
 export const router = createRouter({
   history: createWebHistory(),
   routes: [
-    { path: '/login', component: LoginPage },
-    { path: '/pending', component: PendingPage },
+    { path: '/login', component: page(() => import('./pages/LoginPage.vue')) },
+    { path: '/pending', component: page(() => import('./pages/PendingPage.vue')) },
     { path: '/', redirect: '/login' },
-    { path: '/set-pin', component: SetPinPage },
+    { path: '/set-pin', component: page(() => import('./pages/SetPinPage.vue')) },
 
     // One shell route for every signed-in page. RoleShell picks the navigation
     // from the session role (employee dock, HR dock, admin nav, or the meeting
@@ -57,55 +35,170 @@ export const router = createRouter({
       children: [
         // งานของฉัน: these belong to the active employee record, so they are
         // children here and reachable in every shell.
-        { path: '/change-pin', component: ChangePinPage, meta: { requiresAuth: true } },
-        { path: '/leave', component: LeaveHomePage, meta: { requiresAuth: true } },
-        { path: '/leave/new', component: LeaveRequestPage, meta: { requiresAuth: true } },
-        { path: '/leave/approvals', component: LeaveApprovalsPage, meta: { requiresAuth: true } },
-        { path: '/leave/calendar', component: LeaveCalendarPage, meta: { requiresAuth: true } },
-        { path: '/profile', component: ProfilePage, meta: { requiresAuth: true } },
+        {
+          path: '/change-pin',
+          component: page(() => import('./pages/ChangePinPage.vue')),
+          meta: { requiresAuth: true },
+        },
+        {
+          path: '/leave',
+          component: page(() => import('./pages/LeaveHomePage.vue')),
+          meta: { requiresAuth: true },
+        },
+        {
+          path: '/leave/new',
+          component: page(() => import('./pages/LeaveRequestPage.vue')),
+          meta: { requiresAuth: true },
+        },
+        {
+          path: '/leave/approvals',
+          component: page(() => import('./pages/LeaveApprovalsPage.vue')),
+          meta: { requiresAuth: true },
+        },
+        {
+          path: '/leave/calendar',
+          component: page(() => import('./pages/LeaveCalendarPage.vue')),
+          meta: { requiresAuth: true },
+        },
+        {
+          path: '/profile',
+          component: page(() => import('./pages/ProfilePage.vue')),
+          meta: { requiresAuth: true },
+        },
 
         // HR system: the same HR dock stays mounted between these pages and the
         // leave pages above.
-        { path: '/hr', component: HrHomePage, meta: { requiresAuth: true } },
-        { path: '/hr/employees', component: HrEmployeesPage, meta: { requiresAuth: true } },
-        { path: '/hr/employees/manage', component: HrEmployeeDataPage, meta: { requiresAuth: true } },
-        { path: '/hr/employees/password', component: HrPasswordPage, meta: { requiresAuth: true } },
-        { path: '/hr/employees/import', component: HrEmployeeImportPage, meta: { requiresAuth: true } },
-        { path: '/hr/employees/:id', component: HrEmployeeDetailPage, meta: { requiresAuth: true } },
-        { path: '/hr/leave', component: HrLeaveRequestsPage, meta: { requiresAuth: true } },
-        { path: '/hr/leave/backdated', component: HrLeaveBackdatedPage, meta: { requiresAuth: true } },
-        { path: '/hr/leave/approvers', component: HrLeaveApproversPage, meta: { requiresAuth: true } },
-        { path: '/hr/leave/holidays', component: HrLeaveHolidaysPage, meta: { requiresAuth: true } },
-        { path: '/hr/leave/settings', component: HrLeaveSettingsPage, meta: { requiresAuth: true } },
+        {
+          path: '/hr',
+          component: page(() => import('./pages/HrHomePage.vue')),
+          meta: { requiresAuth: true },
+        },
+        {
+          path: '/hr/employees',
+          component: page(() => import('./pages/HrEmployeesPage.vue')),
+          meta: { requiresAuth: true },
+        },
+        {
+          path: '/hr/employees/manage',
+          component: page(() => import('./pages/HrEmployeeDataPage.vue')),
+          meta: { requiresAuth: true },
+        },
+        {
+          path: '/hr/employees/password',
+          component: page(() => import('./pages/HrPasswordPage.vue')),
+          meta: { requiresAuth: true },
+        },
+        {
+          path: '/hr/employees/import',
+          component: page(() => import('./pages/HrEmployeeImportPage.vue')),
+          meta: { requiresAuth: true },
+        },
+        {
+          path: '/hr/employees/:id',
+          component: page(() => import('./pages/HrEmployeeDetailPage.vue')),
+          meta: { requiresAuth: true },
+        },
+        {
+          path: '/hr/leave',
+          component: page(() => import('./pages/HrLeaveRequestsPage.vue')),
+          meta: { requiresAuth: true },
+        },
+        {
+          path: '/hr/leave/backdated',
+          component: page(() => import('./pages/HrLeaveBackdatedPage.vue')),
+          meta: { requiresAuth: true },
+        },
+        {
+          path: '/hr/leave/approvers',
+          component: page(() => import('./pages/HrLeaveApproversPage.vue')),
+          meta: { requiresAuth: true },
+        },
+        {
+          path: '/hr/leave/holidays',
+          component: page(() => import('./pages/HrLeaveHolidaysPage.vue')),
+          meta: { requiresAuth: true },
+        },
+        {
+          path: '/hr/leave/settings',
+          component: page(() => import('./pages/HrLeaveSettingsPage.vue')),
+          meta: { requiresAuth: true },
+        },
 
         // Meeting controller: the controller sidebar is the shell for all of
         // these and for the leave pages above.
-        { path: '/meeting/controller', component: ControllerOverviewPage, meta: { requiresAuth: true } },
-        { path: '/meeting/controller/qr', component: ControllerQrPage, meta: { requiresAuth: true } },
-        { path: '/meeting/controller/roster', component: ControllerRosterPage, meta: { requiresAuth: true } },
-        { path: '/meeting/controller/dashboard', component: ControllerDashboardPage, meta: { requiresAuth: true } },
-        { path: '/meeting/controller/registrants', component: RegistrantsPage, meta: { requiresAuth: true } },
-        { path: '/meeting/controller/employees', component: ControllerEmployeeDataPage, meta: { requiresAuth: true } },
-        { path: '/meeting/controller/backfill', component: MeetingBackfillHistoryPage, meta: { requiresAuth: true } },
-        { path: '/meeting/controller/backfill/import', component: MeetingBackfillImportPage, meta: { requiresAuth: true } },
-        { path: '/meeting/register', component: RegisterPage },
+        {
+          path: '/meeting/controller',
+          component: page(() => import('./pages/ControllerOverviewPage.vue')),
+          meta: { requiresAuth: true },
+        },
+        {
+          path: '/meeting/controller/qr',
+          component: page(() => import('./pages/ControllerQrPage.vue')),
+          meta: { requiresAuth: true },
+        },
+        {
+          path: '/meeting/controller/roster',
+          component: page(() => import('./pages/ControllerRosterPage.vue')),
+          meta: { requiresAuth: true },
+        },
+        {
+          path: '/meeting/controller/dashboard',
+          component: page(() => import('./pages/ControllerDashboardPage.vue')),
+          meta: { requiresAuth: true },
+        },
+        {
+          path: '/meeting/controller/registrants',
+          component: page(() => import('./pages/RegistrantsPage.vue')),
+          meta: { requiresAuth: true },
+        },
+        {
+          path: '/meeting/controller/employees',
+          component: page(() => import('./pages/ControllerEmployeeDataPage.vue')),
+          meta: { requiresAuth: true },
+        },
+        {
+          path: '/meeting/controller/backfill',
+          component: page(() => import('./pages/MeetingBackfillHistoryPage.vue')),
+          meta: { requiresAuth: true },
+        },
+        {
+          path: '/meeting/controller/backfill/import',
+          component: page(() => import('./pages/MeetingBackfillImportPage.vue')),
+          meta: { requiresAuth: true },
+        },
+        {
+          path: '/meeting/register',
+          component: page(() => import('./pages/RegisterPage.vue')),
+        },
 
         // system_admin keeps AdminNav, drawn by the same RoleShell.
-        { path: '/admin', component: AdminPage, meta: { requiresAuth: true } },
+        {
+          path: '/admin',
+          component: page(() => import('./pages/AdminPage.vue')),
+          meta: { requiresAuth: true },
+        },
         // The permission screen names its one role, so any other role is sent to
         // its own home instead of reaching a page whose API would answer 403.
         {
           path: '/admin/permissions',
-          component: AdminPermissionsPage,
+          component: page(() => import('./pages/AdminPermissionsPage.vue')),
           meta: { requiresAuth: true, role: 'system_admin' },
         },
       ],
     },
 
     // The printed leave form is a document, not an app page: no shell.
-    { path: '/leave/hr/requests/:id/print', component: HrLeavePrintPage, meta: { requiresAuth: true } },
+    {
+      path: '/leave/hr/requests/:id/print',
+      component: page(() => import('./pages/HrLeavePrintPage.vue')),
+      meta: { requiresAuth: true },
+    },
 
-    { path: '/:pathMatch(.*)*', component: PendingPage, meta: { requiresAuth: true, catchAll: true } },
+    {
+      path: '/:pathMatch(.*)*',
+      component: page(() => import('./pages/PendingPage.vue')),
+      meta: { requiresAuth: true, catchAll: true },
+    },
   ],
 })
 

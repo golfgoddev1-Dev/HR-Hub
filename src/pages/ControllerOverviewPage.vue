@@ -270,7 +270,6 @@ loadOverview()
 </template>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap');
 
 .page-main {
   flex: 1;

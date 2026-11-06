@@ -114,7 +114,6 @@ async function logout() {
 </template>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap');
 
 /* The nav no longer sizes itself: it fills the sidebar/drawer box that
    ControllerLayout owns, and scrolls on its own when the list is taller

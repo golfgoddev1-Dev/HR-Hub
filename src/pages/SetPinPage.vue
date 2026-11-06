@@ -322,8 +322,6 @@ async function submitSetPin() {
 </template>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap');
 
 .material-symbols-outlined {
   font-family: 'Material Symbols Outlined';

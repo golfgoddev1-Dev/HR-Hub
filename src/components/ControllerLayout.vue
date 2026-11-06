@@ -77,7 +77,6 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700&display=swap');
 
 /* One shared frame for every Meeting Controller page. The two fixed bars and
    the single content max-width keep the menu and the content at the same

@@ -131,8 +131,11 @@ describe('system_admin landing page', () => {
 
 describe('employee leave landing', () => {
   it('routes /leave to the real leave page, not the placeholder', () => {
-    expect(ROUTER).toMatch(/import LeaveHomePage from '\.\/pages\/LeaveHomePage\.vue'/)
-    expect(ROUTER).toMatch(/\{ path: '\/leave', component: LeaveHomePage/)
+    // The page is its own chunk now; the route still points at the same file.
+    expect(ROUTER).toContain("import('./pages/LeaveHomePage.vue')")
+    expect(ROUTER).toMatch(
+      /path: '\/leave',\s+component: page\(\(\) => import\('\.\/pages\/LeaveHomePage\.vue'\)\)/
+    )
   })
 
   it('lets the employee role stay on /leave', () => {
@@ -151,7 +154,9 @@ describe('employee leave landing', () => {
 describe('employee change-PIN menu', () => {
   it('allows the employee role to reach /change-pin', () => {
     expect(allowListFor('employee')).toContain('/change-pin')
-    expect(ROUTER).toMatch(/path: '\/change-pin'.*requiresAuth: true/)
+    // The route spans lines now (async page + meta), so the guard check allows
+    // whitespace between the path and its meta instead of one line.
+    expect(ROUTER).toMatch(/path: '\/change-pin',[\s\S]{0,160}requiresAuth: true/)
   })
 
   it('links it from the employee menu', () => {

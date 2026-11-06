@@ -1,0 +1,3 @@
+# This is an internal HR system: nothing here may be indexed or crawled.
+User-agent: *
+Disallow: /
