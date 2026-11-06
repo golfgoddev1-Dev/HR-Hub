@@ -74,13 +74,17 @@ describe('profile card', () => {
     expect('nationalId' in PROFILE).toBe(false)
   })
 
-  it('offers the signed-out approval notification toggle with the Thai label', () => {
+  it('reads the account-level notification setting and has no second switch', () => {
+    // Missing in the payload reads as off; the only source of truth is the server column.
+    expect(PROFILE.notificationsEnabled).toBe(false)
+    expect(readProfile({ profile: { notificationsEnabled: true } }).notificationsEnabled).toBe(true)
+
+    // The legacy per-logout preference stays in the API but no longer drives any UI.
     expect(PROFILE.notifyPendingOnLogout).toBe(true)
-    expect(PROFILE_PAGE).toContain('รับแจ้งเตือนรายการรออนุมัติแม้ออกจากระบบ')
-    // The switch markup now lives in the shared NotificationSwitch component.
-    expect(PROFILE_PAGE).toContain('<NotificationSwitch')
-    expect(PROFILE_PAGE).toContain('toggleNotifyPending')
-    expect(PROFILE_PAGE).toContain('v-model:active="pushOn"')
+    expect(PROFILE_PAGE).not.toContain('notify_pending_on_logout')
+    expect(PROFILE_PAGE).not.toContain('notifyPendingOnLogout')
+    expect(PROFILE_PAGE).not.toContain('<NotificationSwitch')
+    expect(PROFILE_PAGE).toContain('<PushToggle')
   })
 
   it('always explains what a department change means', () => {

@@ -188,6 +188,7 @@ test("GET /me returns the caller's own record and no national id", async (t) => 
   assert.equal(body.profile.departmentName, "ฝ่ายบุคคล");
   assert.equal(body.profile.departmentActive, true);
   assert.equal(body.profile.positionName, "เจ้าหน้าที่");
+  assert.equal(body.profile.notificationsEnabled, false);
   assert.equal("nationalId" in body.profile, false);
 
   const text = JSON.stringify(body);
@@ -203,6 +204,20 @@ test("GET /me returns the caller's own record and no national id", async (t) => 
   for (const read of employeeReads) {
     assert.equal(new URL(read.url).searchParams.get("id"), `eq.${EMPLOYEE_ID}`);
   }
+});
+
+test("GET /me reports the account notification setting", async (t) => {
+  const on = await createBackend({ employeeOverrides: { notifications_enabled: true } });
+  t.after(() => on.restore());
+
+  const enabled = await call("/api/profile/me", TOKEN);
+  assert.equal((await enabled.json()).profile.notificationsEnabled, true);
+
+  const off = await createBackend({ employeeOverrides: { notifications_enabled: false } });
+  t.after(() => off.restore());
+
+  const disabled = await call("/api/profile/me", TOKEN);
+  assert.equal((await disabled.json()).profile.notificationsEnabled, false);
 });
 
 test("the signed-out approver preference is exposed and can be turned off", async (t) => {

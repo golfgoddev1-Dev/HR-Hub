@@ -43,7 +43,7 @@ describe('push switch state', () => {
   it('is mounted on the profile page as well as the leave page', () => {
     expect(PROFILE_PAGE).toContain("import PushToggle from '../components/PushToggle.vue'")
     expect(PROFILE_PAGE).toContain('<PushToggle')
-    expect(PROFILE_PAGE).toContain('v-model:active="pushOn"')
+    expect(PROFILE_PAGE).toContain(':approver="isApprover"')
   })
 })
 

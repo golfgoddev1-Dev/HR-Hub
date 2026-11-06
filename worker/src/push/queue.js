@@ -254,7 +254,7 @@ async function deleteSubscriptions(db, endpoints, employeeId) {
 
 /**
  * Generic pending-count notices for approvers whose only rows are signed out.
- * A row is eligible only when its employee opted in, is still an active
+ * A row is eligible only when its employee has notifications enabled, is still an active
  * approver, has at least one pending request where they are the approver, and
  * that employee has not had a notice in the last hour. The count is the
  * recipient's own queue; no other employee's request is read or mentioned.
@@ -285,11 +285,11 @@ export async function sendPendingApproverNotices(env, db, now, summary = null) {
   for (const [employeeId, subscriptions] of byEmployee) {
     try {
       const employee = await db.select("employees", {
-        columns: "id,notify_pending_on_logout,pending_notice_at",
+        columns: "id,notifications_enabled,pending_notice_at",
         filters: [["id", "eq", employeeId]],
         single: true,
       });
-      if (!employee || employee.notify_pending_on_logout === false) continue;
+      if (!employee || employee.notifications_enabled !== true) continue;
       if (!pendingNoticeIsDue(employee.pending_notice_at, now)) continue;
       if (!(await isActiveApprover(db, employeeId))) continue;
 

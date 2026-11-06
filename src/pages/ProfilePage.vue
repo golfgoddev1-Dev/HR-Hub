@@ -24,7 +24,6 @@ import {
   loadShared,
 } from '../lib/shared-data.js'
 import PushToggle from '../components/PushToggle.vue'
-import NotificationSwitch from '../components/NotificationSwitch.vue'
 
 const PROFILE_URL = '/api/profile/me'
 
@@ -49,11 +48,7 @@ const successMessage = ref('')
 const saveError = ref('')
 const saving = ref(false)
 const editing = ref(false)
-const notifySaving = ref(false)
-const notifyError = ref('')
-const notifyMessage = ref('')
 const isApprover = ref(false)
-const pushOn = ref(false)
 
 const profile = ref(readProfile({}))
 const departments = ref([])
@@ -70,7 +65,6 @@ const validation = computed(() =>
 const fieldErrors = computed(() => ({ ...validation.value.errors, ...serverErrors.value }))
 const changed = computed(() => hasProfileChanges(profile.value, form))
 const canSave = computed(() => !saving.value && validation.value.ok && changed.value)
-const notifyDisabled = computed(() => !pushOn.value || notifySaving.value)
 
 function mapServerErrors(errors) {
   const mapped = {}
@@ -179,39 +173,6 @@ async function save() {
   }
 }
 
-async function toggleNotifyPending() {
-  if (notifySaving.value || !pushOn.value) return
-  notifySaving.value = true
-  notifyError.value = ''
-  notifyMessage.value = ''
-
-  try {
-    const response = await fetch(PROFILE_URL, {
-      method: 'PATCH',
-      credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        notify_pending_on_logout: !profile.value.notifyPendingOnLogout,
-      }),
-    })
-    const data = await response.json().catch(() => ({}))
-    if (!response.ok || data.ok !== true) {
-      notifyError.value = typeof data.message === 'string' ? data.message : SAVE_ERROR
-      return
-    }
-
-    profile.value = readProfile(data)
-    invalidateProfile()
-    notifyMessage.value = profile.value.notifyPendingOnLogout
-      ? 'เปิดรับแจ้งเตือนรายการรออนุมัติแล้ว'
-      : 'ปิดรับแจ้งเตือนรายการรออนุมัติแล้ว'
-  } catch {
-    notifyError.value = SAVE_ERROR
-  } finally {
-    notifySaving.value = false
-  }
-}
-
 async function loadApprover() {
   const session = await getSession()
   isApprover.value = session?.isApprover === true
@@ -271,36 +232,7 @@ onBeforeUnmount(() => {
         {{ successMessage }}
       </v-alert>
 
-      <section v-if="!loading && !loadError" class="card notify-card">
-        <h2 class="notify-title">การแจ้งเตือน</h2>
-
-        <PushToggle v-model:active="pushOn" embedded />
-
-        <div
-          v-if="isApprover"
-          class="pref-row"
-          :class="{ 'pref-row-disabled': !pushOn }"
-        >
-          <div class="pref-copy">
-            <p class="pref-label">รับแจ้งเตือนรายการรออนุมัติแม้ออกจากระบบ</p>
-            <p class="pref-note">
-              ใช้สำหรับผู้อนุมัติเท่านั้น: ระบบจะส่งเฉพาะจำนวนรายการที่รอคุณอนุมัติ
-              โดยไม่มีชื่อ ประเภทการลา วันที่ หรือเหตุผล
-            </p>
-            <p v-if="!pushOn" class="pref-gate">เปิดแจ้งเตือนใบลาก่อน</p>
-            <p v-if="notifyMessage" class="pref-hint">{{ notifyMessage }}</p>
-            <p v-if="notifyError" class="pref-error" role="alert">{{ notifyError }}</p>
-          </div>
-
-          <NotificationSwitch
-            :checked="profile.notifyPendingOnLogout"
-            :disabled="notifyDisabled"
-            :busy="notifySaving"
-            label="รับแจ้งเตือนรายการรออนุมัติแม้ออกจากระบบ"
-            @toggle="toggleNotifyPending"
-          />
-        </div>
-      </section>
+      <PushToggle v-if="!loading && !loadError" :approver="isApprover" />
 
       <section v-if="!loading && !loadError && !editing" class="card">
         <dl class="rows">
@@ -495,69 +427,6 @@ onBeforeUnmount(() => {
 
 .notice {
   margin: 0 0 14px;
-}
-
-.notify-card {
-  margin-bottom: 16px;
-}
-
-.notify-title {
-  margin: 0 0 14px;
-  font-size: 15px;
-  font-weight: 700;
-  color: #12343b;
-}
-
-.pref-row {
-  display: flex;
-  min-width: 0;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 14px;
-  padding-top: 14px;
-  border-top: 1px solid #e0e8e6;
-}
-
-.pref-copy {
-  flex: 1;
-  min-width: 0;
-}
-
-.pref-label {
-  margin: 0 0 4px;
-  font-size: 13.5px;
-  font-weight: 600;
-  color: #12343b;
-  overflow-wrap: anywhere;
-}
-
-.pref-note,
-.pref-hint {
-  margin: 0;
-  font-size: 12.5px;
-  line-height: 1.6;
-  color: #5c7176;
-  overflow-wrap: anywhere;
-}
-
-.pref-gate {
-  margin: 4px 0 0;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: #a05b06;
-  overflow-wrap: anywhere;
-}
-
-.pref-row-disabled .pref-label,
-.pref-row-disabled .pref-note {
-  color: #8b9c9a;
-}
-
-.pref-error {
-  margin: 4px 0 0;
-  font-size: 12.5px;
-  color: #a01b1b;
 }
 
 .rows {

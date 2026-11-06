@@ -1,13 +1,17 @@
 <script setup>
-import { onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import ControllerNav from './ControllerNav.vue'
 import ControllerTopbar from './ControllerTopbar.vue'
+import NotificationBanner from './NotificationBanner.vue'
+import { homePathByRole } from '../lib/route-access.js'
 
 const NAV_ID = 'controller-nav-panel'
 
 const route = useRoute()
 const drawerOpen = ref(false)
+// The new-device banner belongs to the landing page of the role only.
+const isHome = computed(() => route.path === homePathByRole.meeting_controller)
 let restoredOverflow = ''
 
 function closeDrawer() {
@@ -65,6 +69,7 @@ onBeforeUnmount(() => {
 
     <div class="controller-main">
       <div class="controller-content">
+        <NotificationBanner v-if="isHome" />
         <slot />
       </div>
     </div>

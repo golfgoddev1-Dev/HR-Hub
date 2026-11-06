@@ -46,6 +46,7 @@ export function readProfile(payload) {
       row.departmentActive === false ? false : row.departmentActive === true ? true : null,
     positionName: text(row.positionName),
     isActive: row.isActive === true,
+    notificationsEnabled: row.notificationsEnabled === true,
     notifyPendingOnLogout: row.notifyPendingOnLogout !== false,
   }
 }

@@ -96,6 +96,7 @@ function employee(id, overrides = {}) {
     department_id: null,
     is_active: true,
     notify_pending_on_logout: true,
+    notifications_enabled: true,
     pending_notice_at: null,
     ...overrides,
   };
@@ -290,9 +291,12 @@ test("an approver who opted in keeps the row marked signed out on logout", async
   );
 });
 
-test("an approver who turned the flag off loses the row on logout", async (t) => {
+test("an approver who turned the setting off loses the row on logout", async (t) => {
   const fake = await createBackend({
-    employees: [employee(APPROVER_A, { notify_pending_on_logout: false }), employee(EMPLOYEE_B)],
+    employees: [
+      employee(APPROVER_A, { notifications_enabled: false, notify_pending_on_logout: true }),
+      employee(EMPLOYEE_B),
+    ],
     subscriptions: [subscription({ signed_out: false })],
   });
   t.after(() => fake.restore());
@@ -303,9 +307,14 @@ test("an approver who turned the flag off loses the row on logout", async (t) =>
   assert.equal(response.status, 200);
   assert.notEqual(body.keepPushSubscription, true);
   assert.equal(fake.state.push_subscriptions.length, 0);
+  // The legacy per-logout flag must not decide anything.
+  assert.equal(
+    fake.state.employees.find((row) => row.id === APPROVER_A).notifications_enabled,
+    false
+  );
 });
 
-test("a non-approver loses the row on logout", async (t) => {
+test("a non-approver loses the row on logout and keeps the setting", async (t) => {
   const fake = await createBackend({
     approvers: [],
     subscriptions: [subscription({ signed_out: false })],
@@ -318,6 +327,27 @@ test("a non-approver loses the row on logout", async (t) => {
   assert.equal(response.status, 200);
   assert.notEqual(body.keepPushSubscription, true);
   assert.equal(fake.state.push_subscriptions.length, 0);
+  assert.equal(
+    fake.state.employees.find((row) => row.id === APPROVER_A).notifications_enabled,
+    true
+  );
+});
+
+test("logout never changes the account notification setting", async (t) => {
+  const fake = await createBackend({ subscriptions: [subscription({ signed_out: false })] });
+  t.after(() => fake.restore());
+
+  await logout();
+
+  // Nothing but reads may touch the employee row on logout.
+  assert.equal(
+    fake.calls.some((call) => call.table === "employees" && call.method !== "GET"),
+    false
+  );
+  assert.equal(
+    fake.state.employees.find((row) => row.id === APPROVER_A).notifications_enabled,
+    true
+  );
 });
 
 test("the signed-out payload is only a generic count", () => {
@@ -367,6 +397,47 @@ test("a signed-out approver gets their own pending count and nobody else's", asy
   assert.ok(countRead);
   assert.equal(paramsOf(countRead.url).get("approver_id"), `eq.${APPROVER_A}`);
   assert.equal(paramsOf(countRead.url).get("status"), "eq.pending");
+});
+
+test("a signed-out approver with the setting off receives no notice", async (t) => {
+  const { env, subscription: row } = await pushKeys();
+  const fake = await createBackend({
+    employees: [
+      employee(APPROVER_A, { notifications_enabled: false, notify_pending_on_logout: true }),
+      employee(EMPLOYEE_B),
+    ],
+    subscriptions: [row],
+    requests: [pendingRequest("r1", APPROVER_A)],
+  });
+  t.after(() => fake.restore());
+
+  const summary = await runNotificationQueue(env, NOW);
+
+  assert.equal(summary.pendingNotices, 0);
+  assert.equal(fake.pushCalls.length, 0);
+  assert.equal(
+    fake.state.employees.find((emp) => emp.id === APPROVER_A).pending_notice_at,
+    null
+  );
+});
+
+test("a non-approver with the setting on receives no notice", async (t) => {
+  const { env, subscription: row } = await pushKeys();
+  const fake = await createBackend({
+    approvers: [],
+    subscriptions: [row],
+    requests: [pendingRequest("r1", APPROVER_A)],
+  });
+  t.after(() => fake.restore());
+
+  const summary = await runNotificationQueue(env, NOW);
+
+  assert.equal(summary.pendingNotices, 0);
+  assert.equal(fake.pushCalls.length, 0);
+  assert.equal(
+    fake.state.employees.find((emp) => emp.id === APPROVER_A).pending_notice_at,
+    null
+  );
 });
 
 test("a signed-out approver with zero pending items receives nothing", async (t) => {

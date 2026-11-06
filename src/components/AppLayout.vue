@@ -3,10 +3,13 @@
 // once per system and survives page changes) and the approvals lookup (so pages
 // no longer fetch it), then renders the matched page below.
 import { computed, onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import AdminNav from './AdminNav.vue'
 import AppDock from './AppDock.vue'
+import NotificationBanner from './NotificationBanner.vue'
 import { getSession } from '../api.js'
 import { navSections } from '../lib/nav-config.js'
+import { homePathByRole } from '../lib/route-access.js'
 import { APPROVALS_TTL_MS, DATA_KEYS, loaders, loadShared } from '../lib/shared-data.js'
 
 const props = defineProps({
@@ -17,6 +20,7 @@ const props = defineProps({
   },
 })
 
+const route = useRoute()
 const session = ref(null)
 const isApprover = ref(false)
 const pendingCount = ref(0)
@@ -37,6 +41,9 @@ const sections = computed(() =>
     pendingCount: pendingCount.value,
   })
 )
+
+// The new-device banner belongs to the landing page of the role only.
+const isHome = computed(() => route.path === homePathByRole[sessionRole.value])
 
 const brand = computed(() =>
   props.nav === 'hr'
@@ -78,6 +85,7 @@ onMounted(async () => {
         :sections="sections"
         :show-brand-badge="brand.badge"
       />
+      <NotificationBanner v-if="isHome" />
       <RouterView />
     </div>
   </div>

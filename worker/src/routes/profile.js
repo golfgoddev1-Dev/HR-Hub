@@ -77,7 +77,7 @@ const MESSAGE = {
 };
 
 const EMPLOYEE_COLUMNS =
-  "id,employee_code,name_prefix,full_name,email,phone,department_id,position_id,is_active,notify_pending_on_logout";
+  "id,employee_code,name_prefix,full_name,email,phone,department_id,position_id,is_active,notify_pending_on_logout,notifications_enabled";
 
 profile.use("*", async (c, next) => {
   c.header("Cache-Control", "no-store");
@@ -165,6 +165,7 @@ function publicProfile({ employee, department, position }) {
     departmentActive: department ? department.is_active !== false : null,
     positionName: position?.name ?? null,
     isActive: employee.is_active === true,
+    notificationsEnabled: employee.notifications_enabled === true,
     notifyPendingOnLogout: employee.notify_pending_on_logout !== false,
   };
 }

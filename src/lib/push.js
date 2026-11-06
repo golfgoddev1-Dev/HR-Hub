@@ -42,6 +42,20 @@ export function shouldAutoSubscribe({ enabled, permission, hasSubscription }) {
   return enabled === true && permission === 'granted' && hasSubscription !== true
 }
 
+/**
+ * What the home banner should do for an account that enabled notifications on
+ * another device. A missing browser subscription is the only case that may
+ * show a prompt; a granted browser is handled silently and a denied one never
+ * triggers a permission request.
+ */
+export function notificationBannerState({ enabled, permission, hasSubscription }) {
+  if (enabled !== true || hasSubscription === true) return 'none'
+  if (permission === 'granted') return 'auto'
+  if (permission === 'default') return 'prompt'
+  if (permission === 'denied') return 'denied'
+  return 'none'
+}
+
 function urlBase64ToUint8Array(base64Url) {
   const padded = base64Url + '='.repeat((4 - (base64Url.length % 4)) % 4)
   const base64 = padded.replace(/-/g, '+').replace(/_/g, '/')

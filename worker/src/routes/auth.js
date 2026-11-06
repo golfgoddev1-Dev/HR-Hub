@@ -360,20 +360,20 @@ auth.post("/logout", async (c) => {
           // Audit failures never block logout.
         }
 
-        // An active approver who opted in keeps this browser's row as signed
-        // out, so the generic pending-count push can still reach them. Every
-        // other logout removes the row as before. Nothing about the row is
-        // logged here.
+        // An active approver with notifications enabled keeps this browser's
+        // row as signed out, so the generic pending-count push can still reach
+        // them. Every other logout removes the row. The account preference is
+        // never changed here.
         if (endpoint) {
           let keepPushSubscription = false;
           try {
             if (await isActiveApprover(db, session.employee_id)) {
               const preference = await db.select(EMPLOYEES_TABLE, {
-                columns: "notify_pending_on_logout",
+                columns: "notifications_enabled",
                 filters: [["id", "eq", session.employee_id]],
                 single: true,
               });
-              const optedIn = preference?.notify_pending_on_logout !== false;
+              const optedIn = preference?.notifications_enabled === true;
 
               if (optedIn) {
                 const marked = await db.update(
