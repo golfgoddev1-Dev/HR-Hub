@@ -384,6 +384,9 @@ async function submitLogin() {
 .page {
   position: relative;
   min-height: 100vh;
+  /* dvh shrinks with the browser UI and the phone keyboard; 100vh is the
+     fallback for browsers that do not know dvh yet. */
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
   font-family: 'IBM Plex Sans', 'IBM Plex Sans Thai', sans-serif;
@@ -410,16 +413,16 @@ async function submitLogin() {
 }
 
 .ambient-orb-1 {
-  width: 520px;
-  height: 520px;
+  width: min(520px, 82vw);
+  height: min(520px, 82vw);
   top: -120px;
   right: -80px;
   background: radial-gradient(circle, rgba(49, 107, 243, 0.22) 0%, rgba(49, 107, 243, 0) 70%);
 }
 
 .ambient-orb-2 {
-  width: 440px;
-  height: 440px;
+  width: min(440px, 76vw);
+  height: min(440px, 76vw);
   bottom: -60px;
   right: 15%;
   background: radial-gradient(circle, rgba(133, 248, 196, 0.24) 0%, rgba(133, 248, 196, 0) 70%);
@@ -428,8 +431,8 @@ async function submitLogin() {
 }
 
 .ambient-orb-3 {
-  width: 480px;
-  height: 480px;
+  width: min(480px, 80vw);
+  height: min(480px, 80vw);
   top: 30%;
   left: -120px;
   background: radial-gradient(circle, rgba(100, 160, 255, 0.16) 0%, rgba(100, 160, 255, 0) 70%);
@@ -452,6 +455,9 @@ async function submitLogin() {
   justify-content: space-between;
   gap: 12px;
   padding: 12px 16px;
+  padding-top: max(12px, env(safe-area-inset-top));
+  padding-left: max(16px, env(safe-area-inset-left));
+  padding-right: max(16px, env(safe-area-inset-right));
   background: rgba(255, 255, 255, 0.75);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
@@ -519,8 +525,10 @@ async function submitLogin() {
   flex: 1;
   width: 100%;
   padding: 24px 16px;
+  padding-left: max(16px, env(safe-area-inset-left));
+  padding-right: max(16px, env(safe-area-inset-right));
   display: flex;
-  align-items: center;
+  flex-direction: column;
 }
 
 @media (min-width: 1024px) {
@@ -530,7 +538,10 @@ async function submitLogin() {
 .shell {
   width: 100%;
   max-width: 1280px;
-  margin: 0 auto;
+  /* Auto block margins centre the card in the free space without the top
+     clipping that align-items:center causes when the card is taller. */
+  margin: auto;
+  min-width: 0;
 }
 
 /* Glassmorphic Main Container */
@@ -582,16 +593,16 @@ async function submitLogin() {
 }
 
 .blur-tr {
-  width: 340px;
-  height: 340px;
+  width: min(340px, 80vw);
+  height: min(340px, 80vw);
   top: -80px;
   right: -80px;
   background: radial-gradient(circle, rgba(49, 107, 243, 0.2) 0%, rgba(49, 107, 243, 0) 70%);
 }
 
 .blur-bl {
-  width: 280px;
-  height: 280px;
+  width: min(280px, 72vw);
+  height: min(280px, 72vw);
   bottom: 20px;
   left: -64px;
   background: radial-gradient(circle, rgba(104, 219, 169, 0.12) 0%, rgba(104, 219, 169, 0) 70%);
@@ -814,7 +825,7 @@ async function submitLogin() {
   padding: 24px;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  justify-content: center;
 }
 
 @media (min-width: 640px) {
@@ -828,6 +839,7 @@ async function submitLogin() {
 .login-inner {
   width: 100%;
   max-width: 576px;
+  min-width: 0;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
@@ -903,8 +915,13 @@ async function submitLogin() {
 .success-close {
   margin-left: auto;
   flex-shrink: 0;
+  min-width: 44px;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
   background: none;
   border: 0;
+  border-radius: 6px;
   padding: 2px;
   cursor: pointer;
   color: #44474d;
@@ -1132,6 +1149,7 @@ async function submitLogin() {
 .input {
   width: 100%;
   height: 48px;
+  min-height: 44px;
   padding: 0 16px 0 44px;
   border: 1px solid rgba(255, 255, 255, 0.9);
   border-radius: 10px;
@@ -1164,6 +1182,15 @@ async function submitLogin() {
   color: #0051d5;
 }
 
+.input:focus-visible,
+.toggle:focus-visible,
+.success-close:focus-visible,
+.error-close:focus-visible,
+.role-option:focus-within {
+  outline: 3px solid #0051d5;
+  outline-offset: 2px;
+}
+
 .input-pin {
   letter-spacing: 0.3em;
   padding-right: 96px;
@@ -1172,7 +1199,12 @@ async function submitLogin() {
 .toggle {
   position: absolute;
   right: 8px;
-  height: 32px;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 44px;
+  min-height: 44px;
+  min-width: 44px;
+  justify-content: center;
   padding: 0 8px;
   display: flex;
   align-items: center;
@@ -1258,6 +1290,10 @@ async function submitLogin() {
 .error-close {
   background: none;
   border: 0;
+  min-width: 44px;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
   padding: 2px;
   cursor: pointer;
   color: #93000a;
@@ -1478,6 +1514,168 @@ async function submitLogin() {
 
 .footer-icon {
   font-size: 14px;
+}
+
+/* Phones: the marketing panel would push the form below the fold, so the login
+   card is the only panel and the page centres it. Everything stays in normal
+   flow: with the keyboard open the page scrolls and the focused input stays
+   visible. No fixed positioning is used for the form. */
+@media (max-width: 767px) {
+  .topbar {
+    padding-top: max(8px, env(safe-area-inset-top));
+    padding-bottom: 8px;
+    padding-left: max(16px, env(safe-area-inset-left));
+    padding-right: max(16px, env(safe-area-inset-right));
+  }
+
+  .page-main {
+    padding: 12px max(16px, env(safe-area-inset-right)) calc(12px + env(safe-area-inset-bottom))
+      max(16px, env(safe-area-inset-left));
+  }
+
+  .brand-panel,
+  .page-footer {
+    display: none;
+  }
+
+  .split {
+    border-radius: 16px;
+  }
+
+  .login-panel {
+    padding: 16px;
+    justify-content: center;
+  }
+
+  .login-inner {
+    gap: 14px;
+    max-width: 100%;
+  }
+
+  .login-title-row h1 {
+    font-size: 24px;
+    line-height: 32px;
+  }
+
+  .login-sub {
+    font-size: 13px;
+    line-height: 18px;
+  }
+
+  .form {
+    gap: 14px;
+  }
+
+  .role-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .role-option {
+    min-height: 44px;
+    padding: 8px;
+    gap: 2px;
+    border-radius: 10px;
+  }
+
+  /* Secondary copy stays out of the way so four roles and both fields fit. */
+  .role-desc,
+  .section-hint {
+    display: none;
+  }
+
+  .role-title {
+    font-size: 12px;
+    line-height: 16px;
+    overflow-wrap: anywhere;
+  }
+
+  .role-icon {
+    width: 24px;
+    height: 24px;
+  }
+
+  .role-icon .material-symbols-outlined {
+    font-size: 16px;
+  }
+
+  .section {
+    gap: 6px;
+  }
+
+  .section-label {
+    font-size: 14px;
+    line-height: 20px;
+  }
+
+  .field-hint {
+    font-size: 11px;
+    line-height: 15px;
+  }
+
+  .input {
+    height: 46px;
+  }
+
+  /* Icon-only toggle: still a 44px target, and the PIN field keeps its room. */
+  .toggle {
+    right: 4px;
+    min-width: 44px;
+    padding: 0 10px;
+  }
+
+  .toggle-text {
+    display: none;
+  }
+
+  .input-pin {
+    padding-right: 64px;
+  }
+
+  /* The global sheet adds a 24px margin and a 20px divider above this block;
+     on a phone that space is needed by the form itself. */
+  .login-footer {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: 0;
+    gap: 2px;
+    font-size: 12px;
+    line-height: 16px;
+  }
+
+  .login-footer .footer-text,
+  .login-footer .footer-link {
+    font-size: 12px;
+    line-height: 16px;
+  }
+
+  .security-row {
+    font-size: 10px;
+  }
+}
+
+/* Short screens (small phones and landscape): drop the optional lines first so
+   the form is centred and readable, then let the page scroll if needed. */
+@media (max-width: 767px) and (max-height: 720px) {
+  .login-sub,
+  .field-hint,
+  .security-row {
+    display: none;
+  }
+
+  .login-inner,
+  .form {
+    gap: 10px;
+  }
+
+  .login-title-row h1 {
+    font-size: 22px;
+    line-height: 28px;
+  }
+
+  .login-panel {
+    padding: 12px 14px;
+  }
 }
 
 /* Reduced Motion for Accessibility */
