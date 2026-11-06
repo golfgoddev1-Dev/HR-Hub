@@ -4,7 +4,14 @@ import { useRoute } from 'vue-router'
 import { getSession, postLogout } from '../api.js'
 import { completeLogout } from '../lib/logout.js'
 import { navSections } from '../lib/nav-config.js'
-import { APPROVALS_TTL_MS, DATA_KEYS, loaders, loadShared } from '../lib/shared-data.js'
+import {
+  APPROVALS_TTL_MS,
+  DATA_KEYS,
+  loaders,
+  loadShared,
+  notificationSettingEnabled,
+} from '../lib/shared-data.js'
+import { setBadgeAllowed } from '../lib/app-badge.js'
 import {
   approvalCount,
   retainApprovalCountSync,
@@ -34,8 +41,16 @@ function isActive(item) {
 
 onMounted(async () => {
   const session = await getSession()
-  if (session?.isApprover !== true) return
+  if (session?.isApprover !== true) {
+    // A previous account on this device may have left a number on the icon.
+    setBadgeAllowed(false)
+    return
+  }
   isApprover.value = true
+
+  // The icon badge follows the account's notification setting. Decide before
+  // any count paints, so an account with notifications off is cleared here.
+  setBadgeAllowed(await notificationSettingEnabled())
 
   // The controller shell has no dock, so this is the only owner of the check.
   releaseApprovals = retainApprovalCountSync()

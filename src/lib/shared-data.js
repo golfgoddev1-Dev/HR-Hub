@@ -121,6 +121,21 @@ export const loaders = {
   adminOverview: () => requestJson('/api/admin/overview'),
 }
 
+/**
+ * Whether this account opted in to leave notifications. The icon badge follows
+ * the same switch, so an unreadable answer counts as off and only clears.
+ */
+export async function notificationSettingEnabled() {
+  try {
+    const status = await getCached(DATA_KEYS.notificationStatus, loaders.notificationStatus, {
+      ttlMs: 60_000,
+    })
+    return status?.enabled === true
+  } catch {
+    return false
+  }
+}
+
 // Stale-while-revalidate: paints a cached value at once, and only when it is
 // older than ttlMs asks the server for a newer one in the background. A
 // background failure keeps the value on screen instead of clearing the page.

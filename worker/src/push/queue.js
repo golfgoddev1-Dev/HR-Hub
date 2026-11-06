@@ -14,6 +14,7 @@ import { isActiveApprover } from "../leave-approvers.js";
 import { base64UrlToBytes, utf8 } from "./base64url.js";
 import { encryptWebPush } from "./encrypt.js";
 import {
+  NOTIFICATION_KINDS,
   buildNotificationPayload,
   buildSignedOutPendingPayload,
   payloadFits,
@@ -33,6 +34,35 @@ export const MAX_SUBSCRIPTIONS_PER_EMPLOYEE = 10;
 export const STALE_CLAIM_MINUTES = 10;
 export const PENDING_NOTICE_INTERVAL_MINUTES = 60;
 const PENDING_NOTICE_INTERVAL_MS = PENDING_NOTICE_INTERVAL_MINUTES * 60 * 1000;
+
+/**
+ * The recipient's own pending total. This is the one definition: the approvals
+ * count endpoint applies these same two filters, and no leave detail is read.
+ */
+export async function pendingApprovalTotal(db, employeeId) {
+  return db.count("leave_requests", {
+    filters: [
+      ["approver_id", "eq", employeeId],
+      ["status", "eq", "pending"],
+    ],
+  });
+}
+
+/**
+ * The badge count for a submitted notice: only an active approver has a queue,
+ * so a non-approver payload stays count-free. A failed lookup only costs the
+ * icon badge; the notification itself is still queued.
+ */
+async function approverPendingTotal(db, employeeId, kind) {
+  if (kind !== NOTIFICATION_KINDS.SUBMITTED) return null;
+  try {
+    if (!(await isActiveApprover(db, employeeId))) return null;
+    const total = await pendingApprovalTotal(db, employeeId);
+    return Number.isInteger(total) && total >= 0 ? total : null;
+  } catch {
+    return null;
+  }
+}
 
 /** One generic pending-count notice per approver per hour. */
 export function pendingNoticeIsDue(lastNoticeAt, now) {
@@ -145,7 +175,8 @@ export async function enqueueNotification(
   db,
   { employeeId, leaveRequestId = null, kind, now = new Date() }
 ) {
-  const payload = buildNotificationPayload(kind);
+  const count = await approverPendingTotal(db, employeeId, kind);
+  const payload = buildNotificationPayload(kind, { count });
   if (!payload || !payloadFits(payload)) return { ok: false, code: "invalid_payload" };
 
   // One value for both columns, so a null or missing `now` cannot reach the
@@ -295,12 +326,7 @@ export async function sendPendingApproverNotices(env, db, now, summary = null) {
 
       let pendingCount = 0;
       try {
-        pendingCount = await db.count("leave_requests", {
-          filters: [
-            ["approver_id", "eq", employeeId],
-            ["status", "eq", "pending"],
-          ],
-        });
+        pendingCount = await pendingApprovalTotal(db, employeeId);
       } catch (error) {
         console.error("[notification-pending-count-error]", {
           name: error?.name,

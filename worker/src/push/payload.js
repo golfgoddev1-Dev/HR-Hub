@@ -29,16 +29,22 @@ export const MAX_PAYLOAD_BYTES = 3000;
 /**
  * Builds the payload for one queue row. Returns null for an unknown kind, which
  * the queue treats as a cancelled row instead of sending something meaningless.
+ *
+ * `count` is the recipient's own pending total, added only when the recipient
+ * has a queue (an active approver). It is the one extra field, so the service
+ * worker can set the icon badge from a push that arrives with the app closed.
  */
-export function buildNotificationPayload(kind) {
+export function buildNotificationPayload(kind, { count } = {}) {
   if (kind === NOTIFICATION_KINDS.SUBMITTED) {
-    return {
+    const payload = {
       title: TITLE,
       body: APPROVER_REQUEST_BODY,
       route: NOTIFICATION_ROUTES.APPROVALS,
       tag: "leave-submitted",
       kind,
     };
+    if (Number.isInteger(count) && count >= 0) payload.count = count;
+    return payload;
   }
 
   if (kind === NOTIFICATION_KINDS.DECIDED) {
@@ -78,6 +84,8 @@ export function buildSignedOutPendingPayload(count) {
     route: NOTIFICATION_ROUTES.APPROVALS,
     tag: "leave-pending-signed-out",
     kind: NOTIFICATION_KINDS.PENDING_SIGNED_OUT,
+    // The same pending total, so the service worker can set the icon badge.
+    count: total,
   };
 }
 

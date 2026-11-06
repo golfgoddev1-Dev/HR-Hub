@@ -8,6 +8,7 @@
 // - a tiny ETag read on focus / on becoming visible / every two minutes picks up
 //   requests that other people submitted. A 304 changes nothing.
 import { ref } from 'vue'
+import { setBadge } from './app-badge.js'
 
 export const APPROVALS_CHANNEL = 'hrhub-approvals'
 export const APPROVAL_POLL_MS = 120_000
@@ -31,6 +32,9 @@ export function decrementApprovalCount(value) {
 export function setApprovalCount(value) {
   const next = normalizeApprovalCount(value)
   if (approvalCount.value !== next) approvalCount.value = next
+  // The installed icon carries the same number. Fire-and-forget: the browser
+  // may not support a badge, and that must never slow the paint.
+  setBadge(next)
   return next
 }
 

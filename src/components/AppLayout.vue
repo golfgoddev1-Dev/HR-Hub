@@ -10,7 +10,14 @@ import NotificationBanner from './NotificationBanner.vue'
 import { getSession } from '../api.js'
 import { navSections } from '../lib/nav-config.js'
 import { homePathByRole } from '../lib/route-access.js'
-import { APPROVALS_TTL_MS, DATA_KEYS, loaders, loadShared } from '../lib/shared-data.js'
+import {
+  APPROVALS_TTL_MS,
+  DATA_KEYS,
+  loaders,
+  loadShared,
+  notificationSettingEnabled,
+} from '../lib/shared-data.js'
+import { setBadgeAllowed } from '../lib/app-badge.js'
 import {
   approvalCount,
   retainApprovalCountSync,
@@ -70,7 +77,15 @@ onMounted(async () => {
   const current = await getSession()
   session.value = current
   isApprover.value = current?.isApprover === true
-  if (!isApprover.value) return
+  if (!isApprover.value) {
+    // A previous account on this device may have left a number on the icon.
+    setBadgeAllowed(false)
+    return
+  }
+
+  // The icon badge follows the account's notification setting. Decide before
+  // any count paints, so an account with notifications off is cleared here.
+  setBadgeAllowed(await notificationSettingEnabled())
 
   // One shared visibility/focus check and one shared timer for the page.
   releaseApprovals = retainApprovalCountSync()

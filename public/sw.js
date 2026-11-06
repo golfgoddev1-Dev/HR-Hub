@@ -40,6 +40,27 @@ function sameOrigin(value) {
   }
 }
 
+// The icon badge carries the count only. A missing API or a refused call is
+// ignored: the notification itself still shows.
+function badgeNumber(value) {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : null;
+}
+
+function applyBadge(count) {
+  if (count === null) return;
+
+  try {
+    const nav = self.navigator;
+    if (count === 0) {
+      if (typeof nav?.clearAppBadge === "function") nav.clearAppBadge();
+      return;
+    }
+    if (typeof nav?.setAppBadge === "function") nav.setAppBadge(count);
+  } catch {
+    // Unsupported or refused: no badge, no error.
+  }
+}
+
 self.addEventListener("push", (event) => {
   let payload = {};
   try {
@@ -47,6 +68,8 @@ self.addEventListener("push", (event) => {
   } catch {
     payload = {};
   }
+
+  applyBadge(badgeNumber(payload.count));
 
   const title = typeof payload.title === "string" && payload.title.length > 0 ? payload.title : "HR Hub";
   const options = {
