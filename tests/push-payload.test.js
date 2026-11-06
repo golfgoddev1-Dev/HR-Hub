@@ -1,16 +1,16 @@
-// Payload builder: generic wording only, a same-origin link, and nothing that
-// reveals why someone is on leave.
+// Payload builder: fixed generic wording only and a fixed route key, with no
+// personal detail and no payload-supplied URL.
 import { describe, expect, it } from 'vitest'
 
 import {
   MAX_PAYLOAD_BYTES,
   NOTIFICATION_KINDS,
+  NOTIFICATION_ROUTES,
   buildNotificationPayload,
   buildSignedOutPendingPayload,
   payloadFits,
 } from '../worker/src/push/payload.js'
 
-const REQUEST_ID = '11111111-1111-4111-8111-111111111111'
 const REQUEST_KINDS = [
   NOTIFICATION_KINDS.SUBMITTED,
   NOTIFICATION_KINDS.DECIDED,
@@ -18,80 +18,88 @@ const REQUEST_KINDS = [
 ]
 
 describe('buildNotificationPayload', () => {
-  it('sends the approver to the approval queue', () => {
-    const payload = buildNotificationPayload(NOTIFICATION_KINDS.SUBMITTED, {
-      requestId: REQUEST_ID,
-    })
-    expect(payload.title).toBe('มีใบลารออนุมัติ')
-    expect(payload.body).toBe('มีใบลาใหม่รอการอนุมัติ')
-    expect(payload.url).toBe(`/leave/approvals?focus=${REQUEST_ID}`)
+  it('sends the approver the fixed new-request notice', () => {
+    const payload = buildNotificationPayload(NOTIFICATION_KINDS.SUBMITTED)
+    expect(payload.title).toBe('ระบบใบลา')
+    expect(payload.body).toBe('มีรายการรออนุมัติใหม่ 1 รายการ')
+    expect(payload.route).toBe(NOTIFICATION_ROUTES.APPROVALS)
     expect(payload.tag).toBe('leave-submitted')
+    expect(payload).not.toHaveProperty('url')
   })
 
-  it('sends the owner to their own list with the decision only', () => {
+  it('sends the owner the same update notice for either decision', () => {
     const approved = buildNotificationPayload(NOTIFICATION_KINDS.DECIDED, {
-      requestId: REQUEST_ID,
+      requestId: '11111111-1111-4111-8111-111111111111',
       status: 'approved',
     })
-    expect(approved.body).toBe('สถานะใบลา: อนุมัติแล้ว')
-    expect(approved.url).toBe(`/leave?focus=${REQUEST_ID}`)
+    expect(approved.title).toBe('ระบบใบลา')
+    expect(approved.body).toBe('มีการอัปเดตใบลาของคุณ')
+    expect(approved.route).toBe(NOTIFICATION_ROUTES.LEAVE)
 
     const rejected = buildNotificationPayload(NOTIFICATION_KINDS.DECIDED, {
-      requestId: REQUEST_ID,
+      requestId: '11111111-1111-4111-8111-111111111111',
       status: 'rejected',
     })
-    expect(rejected.body).toBe('สถานะใบลา: ไม่อนุมัติ')
-    expect(rejected.body).not.toContain('เหตุผล')
+    expect(rejected.title).toBe('ระบบใบลา')
+    expect(rejected.body).toBe('มีการอัปเดตใบลาของคุณ')
+    expect(rejected.route).toBe(NOTIFICATION_ROUTES.LEAVE)
   })
 
-  it('covers an HR backdated entry', () => {
-    const payload = buildNotificationPayload(NOTIFICATION_KINDS.BACKDATED, {
-      requestId: REQUEST_ID,
-    })
-    expect(payload.title).toBe('มีใบลาที่ HR บันทึกให้')
-    expect(payload.url).toBe(`/leave?focus=${REQUEST_ID}`)
+  it('treats an HR backdated entry as an employee update', () => {
+    const payload = buildNotificationPayload(NOTIFICATION_KINDS.BACKDATED)
+    expect(payload.title).toBe('ระบบใบลา')
+    expect(payload.body).toBe('มีการอัปเดตใบลาของคุณ')
+    expect(payload.route).toBe(NOTIFICATION_ROUTES.LEAVE)
   })
 
-  it('never carries a leave type, reason, date or health detail', () => {
+  it('never carries a personal field or a free-text URL', () => {
     for (const kind of REQUEST_KINDS) {
-      const payload = buildNotificationPayload(kind, { requestId: REQUEST_ID, status: 'approved' })
+      const payload = buildNotificationPayload(kind, {
+        requestId: '11111111-1111-4111-8111-111111111111',
+        status: 'approved',
+        employeeName: 'สมชาย ใจดี',
+        employeeCode: 'EMP-999',
+        department: 'การเงิน',
+        leaveType: 'ลากิจ',
+        date: '2026-11-10',
+        reason: 'ธุระส่วนตัว',
+        nationalId: '1234567890123',
+      })
       const text = JSON.stringify(payload)
-      expect(text).not.toMatch(/ป่วย|ใบรับรองแพทย์|โรงพยาบาล|ลากิจ|ลาพักร้อน/)
-      expect(text).not.toMatch(/\d{4}-\d{2}-\d{2}/)
-      expect(Object.keys(payload).sort()).toEqual(['body', 'kind', 'tag', 'title', 'url'])
+      expect(text).not.toMatch(/สมชาย|EMP-999|การเงิน|ลากิจ|2026-11-10|ธุระส่วนตัว|1234567890123/)
+      expect(text).not.toMatch(/employeeName|employeeCode|department|leaveType|reason|nationalId/)
+      expect(Object.keys(payload).sort()).toEqual(['body', 'kind', 'route', 'tag', 'title'])
     }
   })
 
   it('returns null for an unknown kind', () => {
-    expect(buildNotificationPayload('leave_reminder', { requestId: REQUEST_ID })).toBe(null)
+    expect(buildNotificationPayload('leave_reminder')).toBe(null)
     expect(buildNotificationPayload(undefined)).toBe(null)
   })
 
-  it('keeps the focus id encoded and omits it when absent', () => {
-    const withoutId = buildNotificationPayload(NOTIFICATION_KINDS.SUBMITTED, {})
-    expect(withoutId.url).toBe('/leave/approvals')
-
-    const encoded = buildNotificationPayload(NOTIFICATION_KINDS.SUBMITTED, {
+  it('omits the old focus id and every URL field', () => {
+    const payload = buildNotificationPayload(NOTIFICATION_KINDS.SUBMITTED, {
       requestId: 'a b&c',
     })
-    expect(encoded.url).toBe('/leave/approvals?focus=a%20b%26c')
+    expect(JSON.stringify(payload)).not.toContain('focus')
+    expect(payload).not.toHaveProperty('url')
   })
 
-  it('builds the signed-out notice as a count at the app root only', () => {
+  it('builds the signed-out notice as a count with the approvals route', () => {
     const payload = buildSignedOutPendingPayload(3)
 
     expect(payload.title).toBe('ระบบใบลา')
     expect(payload.body).toBe('คุณมีรายการรออนุมัติ 3 รายการ')
-    expect(payload.url).toBe('/')
+    expect(payload.route).toBe(NOTIFICATION_ROUTES.APPROVALS)
     expect(payload.kind).toBe(NOTIFICATION_KINDS.PENDING_SIGNED_OUT)
-    expect(JSON.stringify(payload)).not.toMatch(/\d{4}-\d{2}-\d{2}|ลากิจ|เหตุผล/)
+    expect(payload).not.toHaveProperty('url')
   })
 })
 
 describe('payloadFits', () => {
   it('accepts every real payload and rejects an oversized one', () => {
     for (const kind of REQUEST_KINDS) {
-      expect(payloadFits(buildNotificationPayload(kind, { requestId: REQUEST_ID }))).toBe(true)
+      expect(payloadFits(buildNotificationPayload(kind))).toBe(true)
     }
     expect(payloadFits(buildSignedOutPendingPayload(1))).toBe(true)
     expect(payloadFits({ body: 'x'.repeat(MAX_PAYLOAD_BYTES) })).toBe(false)

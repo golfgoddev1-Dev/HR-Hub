@@ -169,8 +169,9 @@ describe('enqueueNotification', () => {
     expect(rows[0].row.status).toBe('pending')
     expect(rows[0].row.attempts).toBe(0)
     expect(rows[0].row.next_attempt_at).toBe(NOW.toISOString())
-    expect(rows[0].row.payload.title).toBe('มีใบลารออนุมัติ')
-    expect(rows[0].row.payload.url).toBe(`/leave/approvals?focus=${REQUEST_ID}`)
+    expect(rows[0].row.payload.title).toBe('ระบบใบลา')
+    expect(rows[0].row.payload.body).toBe('มีรายการรออนุมัติใหม่ 1 รายการ')
+    expect(rows[0].row.payload.route).toBe('approvals')
   })
 
   it('refuses an unknown kind instead of queueing an empty notification', async () => {

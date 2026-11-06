@@ -37,6 +37,7 @@ import LeaveCalendarPage from './pages/LeaveCalendarPage.vue'
 // The allow-lists live in src/lib/route-access.js so pages can ask the same
 // question the guard asks before offering a link.
 import { canOpenPath, homePathByRole } from './lib/route-access.js'
+import { loginTargetForPath } from './lib/notification-routes.js'
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -115,7 +116,12 @@ router.beforeEach(async (to) => {
   // There is no second, module-level copy that could outlive a logout: after
   // clearAll() the next navigation asks the Worker again and gets a 401.
   const session = await getSession()
-  if (!session) return '/login'
+  if (!session) {
+    // Preserve only a notification destination, so signing in from a push tap
+    // returns to that page. Every other signed-out page keeps the old redirect.
+    const target = loginTargetForPath(to.path)
+    return target ? { path: '/login', query: { to: target } } : '/login'
+  }
 
   // A HR-issued PIN must be replaced before any other page is reachable. The
   // server enforces the same rule for every API call; this only avoids showing a

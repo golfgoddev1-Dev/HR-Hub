@@ -13,12 +13,31 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(self.clients.claim());
 });
 
-function safeUrl(value) {
-  // Only same-origin paths are accepted: a payload cannot redirect the user
-  // to another site.
-  if (typeof value !== "string") return "/leave";
-  if (!value.startsWith("/") || value.startsWith("//")) return "/leave";
-  return value;
+// Keep this list in step with src/lib/notification-routes.js. A payload may
+// name only one of these keys; it never supplies a path or URL.
+const ROUTE_PATHS = Object.freeze({
+  approvals: "/leave/approvals",
+  leave: "/leave",
+});
+
+function routeKey(value) {
+  return value === "approvals" || value === "leave" ? value : null;
+}
+
+function mappedPath(value) {
+  return ROUTE_PATHS[value] ?? "/";
+}
+
+function mappedUrl(value) {
+  return new URL(mappedPath(value), self.location.origin).href;
+}
+
+function sameOrigin(value) {
+  try {
+    return new URL(value).origin === self.location.origin;
+  } catch {
+    return false;
+  }
 }
 
 self.addEventListener("push", (event) => {
@@ -35,7 +54,7 @@ self.addEventListener("push", (event) => {
     tag: typeof payload.tag === "string" ? payload.tag : "leave",
     icon: "/icon.svg",
     badge: "/icon.svg",
-    data: { url: safeUrl(payload.url) },
+    data: { route: routeKey(payload.route) },
   };
 
   event.waitUntil(self.registration.showNotification(title, options));
@@ -43,24 +62,21 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const target = safeUrl(event.notification.data && event.notification.data.url);
+  const data = event.notification.data || {};
+  const target = mappedUrl(data.route);
 
   event.waitUntil(
     (async () => {
       const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+      const appWindow = windows.find((client) => sameOrigin(client.url));
 
-      for (const client of windows) {
-        if (client.url.includes(target) && "focus" in client) return client.focus();
-      }
-
-      const reusable = windows.find((client) => "focus" in client);
-      if (reusable) {
-        await reusable.focus();
-        if ("navigate" in reusable) {
+      if (appWindow) {
+        await appWindow.focus();
+        if (typeof appWindow.navigate === "function") {
           try {
-            return await reusable.navigate(target);
+            return await appWindow.navigate(target);
           } catch {
-            // Some browsers refuse navigate() on an uncontrolled client.
+            // Fall through to a fresh window if the browser refuses navigate().
           }
         }
       }

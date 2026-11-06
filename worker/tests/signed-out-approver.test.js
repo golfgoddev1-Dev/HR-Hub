@@ -326,7 +326,7 @@ test("the signed-out payload is only a generic count", () => {
 
   assert.equal(payload.title, "ระบบใบลา");
   assert.equal(payload.body, "คุณมีรายการรออนุมัติ 2 รายการ");
-  assert.equal(payload.url, "/");
+  assert.equal(payload.route, "approvals");
   for (const forbidden of [
     "พนักงาน",
     "EMP-",

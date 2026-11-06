@@ -236,6 +236,8 @@ describe('source checks', () => {
 
   it('a successful login starts from an empty cache', () => {
     const login = read('src/pages/LoginPage.vue')
-    expect(login).toMatch(/clearAll\(\)\s*\n\s*await router\.replace\(data\.redirectTo\)/)
+    expect(login).toMatch(/clearAll\(\)\s*\n\s*\/\//)
+    expect(login).toContain('const destination')
+    expect(login).toContain('await router.replace(destination)')
   })
 })

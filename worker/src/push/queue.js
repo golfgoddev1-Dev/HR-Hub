@@ -143,9 +143,9 @@ export function queueTimestamp(value, fallback = new Date()) {
  */
 export async function enqueueNotification(
   db,
-  { employeeId, leaveRequestId = null, kind, status = null, now = new Date() }
+  { employeeId, leaveRequestId = null, kind, now = new Date() }
 ) {
-  const payload = buildNotificationPayload(kind, { requestId: leaveRequestId, status });
+  const payload = buildNotificationPayload(kind);
   if (!payload || !payloadFits(payload)) return { ok: false, code: "invalid_payload" };
 
   // One value for both columns, so a null or missing `now` cannot reach the

@@ -5,6 +5,7 @@ import { postJson } from '../api.js'
 import { clearAll } from '../lib/data-cache.js'
 import { currentPushEndpoint } from '../lib/logout.js'
 import { autoEnablePush } from '../lib/push.js'
+import { safeLoginTarget } from '../lib/notification-routes.js'
 import LockoutDialog from '../components/LockoutDialog.vue'
 
 const router = useRouter()
@@ -29,6 +30,7 @@ const loginTypes = [
 const canSubmit = computed(() => Boolean(loginType.value) && nationalId.value.length === 13 && pin.value.length === 6 && !loading.value)
 const citizenFull = computed(() => nationalId.value.length === 13)
 const pinFull = computed(() => pin.value.length === 6)
+const loginTarget = computed(() => safeLoginTarget(route.query.to))
 
 onMounted(async () => {
   if (!showResetSuccess.value) return
@@ -70,7 +72,11 @@ async function submitLogin() {
       pin.value = ''
       // A new session is a new cache: drop the previous account's reads.
       clearAll()
-      await router.replace(data.redirectTo)
+      // A forced PIN change always wins. Otherwise a validated notification
+      // target takes priority over the server's ordinary landing path.
+      const destination =
+        data.mustChangePin === true ? data.redirectTo : loginTarget.value ?? data.redirectTo
+      await router.replace(destination)
       // This account may already have opted in and granted permission. The
       // helper never prompts; it only re-creates the missing browser endpoint.
       void autoEnablePush()
