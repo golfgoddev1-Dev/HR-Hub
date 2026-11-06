@@ -32,12 +32,11 @@ describe('push switch state', () => {
     expect(notificationSwitchIsOn({ browserSubscribed: false, serverSubscribed: false })).toBe(false)
   })
 
-  it('reads the real browser subscription and the server status', () => {
-    expect(PUSH_TOGGLE).toContain('browserSubscription')
-    expect(PUSH_TOGGLE).toContain('fetchNotificationStatus')
-    expect(PUSH_TOGGLE).toContain('browserSubscribed')
-    expect(PUSH_TOGGLE).toContain('serverSubscribed')
-    expect(PUSH_TOGGLE).toContain('notificationSwitchIsOn')
+  it('reads the account value from the toggle helper and confirms it with the server', () => {
+    expect(PUSH_TOGGLE).toContain('createNotificationToggle')
+    expect(PUSH_TOGGLE).toContain('readNotificationState')
+    expect(PUSH_TOGGLE).toContain('writeNotificationState')
+    expect(PUSH_TOGGLE).toContain('loaders.notificationStatus')
   })
 
   it('is mounted on the profile page as well as the leave page', () => {
@@ -80,34 +79,34 @@ describe('automatic re-subscribe', () => {
   it('is triggered after a successful login and on switch mount', () => {
     expect(LOGIN_PAGE).toContain('autoEnablePush')
     expect(LOGIN_PAGE).toContain('void autoEnablePush()')
-    expect(PUSH_TOGGLE).toContain('await autoEnablePush()')
+    // The mount fires it in the background too: nothing waits for the subscribe.
+    expect(PUSH_TOGGLE).toContain('void autoEnablePush()')
   })
 })
 
 describe('click-only permission and unsubscribe', () => {
-  it('requests permission only through the toggle-on click path', () => {
-    const enableStart = PUSH_TOGGLE.indexOf('async function enable()')
-    const enableEnd = PUSH_TOGGLE.indexOf('async function disable()')
-    const enableBlock = PUSH_TOGGLE.slice(enableStart, enableEnd)
+  it('requests permission only through the toggle-on tap path', () => {
+    const start = PUSH_TOGGLE.indexOf('function togglePush()')
+    const end = PUSH_TOGGLE.indexOf('onMounted(async')
+    const block = PUSH_TOGGLE.slice(start, end)
 
-    expect(enableBlock).toContain('requestAndSubscribe')
+    expect(block).toContain('toggle.request(next)')
+    expect(block).toContain('permissionTask = requestPermissionNow()')
+    expect(block.indexOf('toggle.request(next)')).toBeLessThan(
+      block.indexOf('requestPermissionNow()')
+    )
     expect(PUSH_TOGGLE).toContain('@toggle="togglePush"')
-    const toggleStart = PUSH_TOGGLE.indexOf('function togglePush()')
-    const toggleEnd = PUSH_TOGGLE.indexOf('onMounted(async')
-    expect(PUSH_TOGGLE.slice(toggleStart, toggleEnd)).toContain('enable()')
     expect(PUSH_LIB).toContain('export async function requestAndSubscribe')
     expect(PUSH_LIB).toContain('Notification.requestPermission()')
   })
 
   it('uses the server-first unsubscribe path on toggle-off', () => {
-    const disableStart = PUSH_TOGGLE.indexOf('async function disable()')
-    const disableEnd = PUSH_TOGGLE.indexOf('onMounted(async')
-    const disableBlock = PUSH_TOGGLE.slice(disableStart, disableEnd)
+    const start = PUSH_TOGGLE.indexOf('async function syncNotificationState(desired)')
+    const end = PUSH_TOGGLE.indexOf('onMounted(async')
+    const block = PUSH_TOGGLE.slice(start, end)
 
-    expect(disableBlock).toContain('unsubscribePush')
+    expect(block).toContain('unsubscribePush')
+    expect(block).toContain('requestAndSubscribe')
     expect(PUSH_TOGGLE).toContain('@toggle="togglePush"')
-    const toggleStart = PUSH_TOGGLE.indexOf('function togglePush()')
-    const toggleEnd = PUSH_TOGGLE.indexOf('onMounted(async')
-    expect(PUSH_TOGGLE.slice(toggleStart, toggleEnd)).toContain('disable()')
   })
 })

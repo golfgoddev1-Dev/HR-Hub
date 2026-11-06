@@ -9,6 +9,7 @@ import {
   peekCached,
   refreshCached,
 } from './data-cache.js'
+import { fetchNotificationStatus } from './push.js'
 
 export const SESSION_TTL_MS = 5 * 60_000
 export const SHARED_TTL_MS = 30 * 60_000
@@ -58,6 +59,7 @@ export const DATA_KEYS = {
   hrHolidays: 'leave:hr:holidays',
   directoryCatalog: 'directory:catalog',
   profile: 'profile:me',
+  notificationStatus: 'notifications:status',
   profileDepartments: 'profile:departments',
   profilePrefixes: 'profile:name-prefixes',
   adminOverview: 'admin:overview',
@@ -101,6 +103,8 @@ export const loaders = {
     requestJson(queryString ? `/api/leave/hr/requests?${queryString}` : '/api/leave/hr/requests'),
   directoryCatalog: (base) => () => requestJson(`${base}/catalog`),
   profile: () => requestJson('/api/profile/me'),
+  // Cached for a minute by the switch's background verification.
+  notificationStatus: () => fetchNotificationStatus(),
   profileDepartments: () => requestJson('/api/profile/departments'),
   profilePrefixes: () => requestJson('/api/profile/name-prefixes'),
   adminOverview: () => requestJson('/api/admin/overview'),

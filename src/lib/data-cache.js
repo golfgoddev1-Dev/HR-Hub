@@ -3,7 +3,10 @@
 // per page visit; this keeps the value until its ttl runs out.
 //
 // Nothing is persisted on purpose: a reload starts empty, so a new deploy or a
-// new login can never read a stale value from localStorage/sessionStorage.
+// new login can never read a stale value from localStorage/sessionStorage. The
+// one session key that does persist is the notification switch's last-known
+// value per account; clearAll() drops it here, so another account never sees it.
+import { clearNotificationState } from './notification-toggle.js'
 
 const entries = new Map()
 const inflight = new Map()
@@ -70,4 +73,7 @@ export function clearAll() {
   generation += 1
   entries.clear()
   inflight.clear()
+  // Logout and login both pass through here, so the previous account's switch
+  // state never paints for the next one.
+  clearNotificationState()
 }

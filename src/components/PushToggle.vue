@@ -1,16 +1,21 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import NotificationSwitch from './NotificationSwitch.vue'
+import { getCached } from '../lib/data-cache.js'
+import { DATA_KEYS, PAGE_TTL_MS, loaders } from '../lib/shared-data.js'
 import {
   autoEnablePush,
-  browserSubscription,
-  fetchNotificationStatus,
   iosNeedsInstall as detectIosNeedsInstall,
-  notificationSwitchIsOn,
   pushSupported as detectPushSupport,
   requestAndSubscribe,
   unsubscribePush,
 } from '../lib/push.js'
+import {
+  NOTIFICATION_TOGGLE_MESSAGES,
+  createNotificationToggle,
+  readNotificationState,
+  writeNotificationState,
+} from '../lib/notification-toggle.js'
 
 // The signed-out approver line is only shown to an approver; the account
 // preference itself is one setting for everybody.
@@ -18,103 +23,113 @@ defineProps({
   approver: { type: Boolean, default: false },
 })
 
+const STATUS_TTL_MS = 60_000
+
 // Push is opt-in: nothing is requested until the user presses the switch.
 const supported = ref(false)
 const iosNeedsInstall = ref(false)
-const browserSubscribed = ref(false)
-const serverSubscribed = ref(false)
-const busy = ref(false)
+// What the switch shows. It flips on tap and is corrected in the background.
+const subscribed = ref(false)
 const message = ref('')
 const errorMessage = ref('')
 
-// On only when this browser has a subscription AND the server has the account
-// preference on for the signed-in employee.
-const subscribed = computed(() =>
-  notificationSwitchIsOn({
-    browserSubscribed: browserSubscribed.value,
-    serverSubscribed: serverSubscribed.value,
-  })
-)
+// The signed-in employee id is only known after the cached profile read; until
+// then nothing is stored, so another account's value can never be shown.
+let employeeId = ''
+// Started inside the tap handler, awaited by the background sync.
+let permissionTask = null
+
+const toggle = createNotificationToggle({
+  sync: (desired) => syncNotificationState(desired),
+  onState: (value) => {
+    subscribed.value = value
+  },
+  onConfirm: (value) => {
+    writeNotificationState(employeeId, value)
+  },
+  onNotice: (text) => {
+    errorMessage.value = text
+  },
+})
 
 function detect() {
   iosNeedsInstall.value = detectIosNeedsInstall()
   supported.value = detectPushSupport()
 }
 
-async function refresh() {
-  if (!supported.value) return
-  try {
-    const subscription = await browserSubscription()
-    const status = await fetchNotificationStatus(subscription?.endpoint ?? null)
-    browserSubscribed.value = Boolean(subscription)
-    serverSubscribed.value = status.subscribed
-  } catch {
-    browserSubscribed.value = false
-    serverSubscribed.value = false
-  }
-}
-
-async function enable() {
-  if (busy.value) return
-  busy.value = true
-  message.value = ''
-  errorMessage.value = ''
-
-  try {
-    const result = await requestAndSubscribe()
-    if (!result.ok) {
-      message.value =
-        result.reason === 'permission'
-          ? 'ยังไม่ได้อนุญาตการแจ้งเตือน — เปิดได้ที่การตั้งค่าเบราว์เซอร์'
-          : result.reason === 'config'
-            ? 'ยังไม่ได้ตั้งค่าการแจ้งเตือน'
-            : 'เปิดการแจ้งเตือนไม่สำเร็จ กรุณาลองใหม่'
-      return
-    }
-
-    await refresh()
-    message.value = 'เปิดการแจ้งเตือนแล้ว'
-  } catch {
-    errorMessage.value = 'เปิดการแจ้งเตือนไม่สำเร็จ กรุณาลองใหม่'
-  } finally {
-    busy.value = false
-  }
-}
-
-async function disable() {
-  if (busy.value) return
-  busy.value = true
-  message.value = ''
-  errorMessage.value = ''
-
-  try {
+/**
+ * The browser + server work for one intent. Runs in the background, never in
+ * the tap handler, so the switch has already flipped when it starts.
+ */
+async function syncNotificationState(desired) {
+  if (desired === false) {
     const result = await unsubscribePush()
-    if (!result.ok) {
-      errorMessage.value = 'ปิดการแจ้งเตือนไม่สำเร็จ กรุณาลองใหม่'
-      return
-    }
-
-    await refresh()
-    message.value = 'ปิดการแจ้งเตือนแล้ว'
-  } catch {
-    errorMessage.value = 'ปิดการแจ้งเตือนไม่สำเร็จ กรุณาลองใหม่'
-  } finally {
-    busy.value = false
+    return result.ok ? { ok: true } : { ok: false, reason: 'server' }
   }
+
+  const pending = permissionTask
+  permissionTask = null
+  const permission = await (pending ?? Promise.resolve(Notification.permission))
+  if (permission !== 'granted') return { ok: false, reason: 'permission' }
+
+  // Permission is already granted here, so this subscribes without prompting.
+  const result = await requestAndSubscribe()
+  if (result.ok) return { ok: true }
+  return { ok: false, reason: result.reason === 'permission' ? 'permission' : 'server' }
+}
+
+/** Must run straight from the tap: no await may come before this call. */
+function requestPermissionNow() {
+  if (!supported.value) return Promise.resolve('unsupported')
+  if (Notification.permission !== 'default') return Promise.resolve(Notification.permission)
+  return Notification.requestPermission()
 }
 
 function togglePush() {
-  if (busy.value) return
-  return subscribed.value ? disable() : enable()
+  const next = !subscribed.value
+  // The switch flips here, before any network or browser work starts.
+  toggle.request(next)
+  if (!next) return
+  // Still inside the click: the browser only prompts from a user gesture.
+  permissionTask = requestPermissionNow()
+}
+
+async function accountId() {
+  try {
+    const data = await getCached(DATA_KEYS.profile, loaders.profile, { ttlMs: PAGE_TTL_MS })
+    const profile = data?.profile ?? data
+    return typeof profile?.id === 'string' ? profile.id : ''
+  } catch {
+    return ''
+  }
+}
+
+/**
+ * Confirms the painted value with the server in the background. The status read
+ * is shared and brief, so a page visit costs at most one request a minute.
+ */
+async function verify() {
+  let status
+  try {
+    status = await getCached(DATA_KEYS.notificationStatus, loaders.notificationStatus, {
+      ttlMs: STATUS_TTL_MS,
+    })
+  } catch {
+    return
+  }
+  if (typeof status?.enabled !== 'boolean') return
+  if (status.enabled === subscribed.value) return
+  if (toggle.adopt(status.enabled)) message.value = NOTIFICATION_TOGGLE_MESSAGES.updated
 }
 
 onMounted(async () => {
   detect()
+  employeeId = await accountId()
+  // Paint the last known value at once, then confirm it in the background.
+  if (employeeId) toggle.seed(readNotificationState(employeeId))
   if (!supported.value) return
-  // Re-subscribe only for an account that already opted in, and only when the
-  // browser has already granted permission. This never prompts.
-  await autoEnablePush()
-  await refresh()
+  void autoEnablePush()
+  void verify()
 })
 </script>
 
@@ -145,7 +160,6 @@ onMounted(async () => {
     <NotificationSwitch
       :checked="subscribed"
       :disabled="!supported || iosNeedsInstall"
-      :busy="busy"
       label="การแจ้งเตือนใบลา"
       @toggle="togglePush"
     />

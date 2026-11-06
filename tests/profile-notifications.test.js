@@ -23,12 +23,6 @@ function collapse(value) {
   return value.replace(/\s+/g, ' ').trim()
 }
 
-function functionBlock(source, name, nextName) {
-  const start = source.indexOf(`async function ${name}()`)
-  const end = source.indexOf(nextName, start)
-  return source.slice(start, end)
-}
-
 describe('one notification card', () => {
   it('renders one PushToggle card and no second switch on the profile page', () => {
     expect(PROFILE_PAGE.match(/<PushToggle/g) ?? []).toHaveLength(1)
@@ -72,27 +66,25 @@ describe('one notification card', () => {
 })
 
 describe('switch wiring', () => {
-  it('is on only when the server setting and this browser agree', () => {
-    expect(PUSH_TOGGLE).toContain('notificationSwitchIsOn')
-    expect(PUSH_TOGGLE).toContain('browserSubscribed: browserSubscribed.value')
-    expect(PUSH_TOGGLE).toContain('serverSubscribed: serverSubscribed.value')
-    expect(PUSH_LIB).toContain(
-      'return Boolean(browserSubscribed && serverSubscribed)'
-    )
+  it('flips optimistically and reads the account value from the helper', () => {
+    expect(PUSH_TOGGLE).toContain('createNotificationToggle')
+    expect(PUSH_TOGGLE).toContain('toggle.request(next)')
+    expect(PUSH_TOGGLE).toContain('subscribed.value = value')
+    // The pure rule is still the description of a settled switch.
+    expect(PUSH_LIB).toContain('return Boolean(browserSubscribed && serverSubscribed)')
   })
 
   it('subscribes on click and unsubscribes on click', () => {
-    const toggleStart = PUSH_TOGGLE.indexOf('function togglePush()')
-    const toggleEnd = PUSH_TOGGLE.indexOf('onMounted(async')
-    const toggleBlock = PUSH_TOGGLE.slice(toggleStart, toggleEnd)
-    const enableBlock = functionBlock(PUSH_TOGGLE, 'enable', 'async function disable()')
-    const disableBlock = functionBlock(PUSH_TOGGLE, 'disable', 'function togglePush()')
+    const start = PUSH_TOGGLE.indexOf('async function syncNotificationState(desired)')
+    const end = PUSH_TOGGLE.indexOf('onMounted(async')
+    const block = PUSH_TOGGLE.slice(start, end)
 
     expect(PUSH_TOGGLE).toContain('@toggle="togglePush"')
-    expect(toggleBlock).toContain('enable()')
-    expect(toggleBlock).toContain('disable()')
-    expect(enableBlock).toContain('requestAndSubscribe')
-    expect(disableBlock).toContain('unsubscribePush')
+    expect(PUSH_TOGGLE.indexOf('toggle.request(next)')).toBeLessThan(
+      PUSH_TOGGLE.indexOf('permissionTask = requestPermissionNow()')
+    )
+    expect(block).toContain('requestAndSubscribe')
+    expect(block).toContain('unsubscribePush')
     expect(SWITCH).toContain('@click="$emit(\'toggle\')"')
   })
 
