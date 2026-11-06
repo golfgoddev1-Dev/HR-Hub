@@ -24,6 +24,7 @@ export const allowedPathsByRole = {
     '/hr/employees/password',
     '/hr/leave',
     '/hr/leave/backdated',
+    '/leave/approvals/history',
     '/hr/leave/approvers',
     '/hr/leave/holidays',
     '/hr/leave/settings',
@@ -84,7 +85,12 @@ export function canOpenPath(role, path, session = null) {
   if (hasEmployeeRecord(session)) {
     if (employeeSelfPaths.includes(path)) return true
     // The approvals queue follows the approver row, not the role.
-    if (session.isApprover === true && path === '/leave/approvals') return true
+    if (
+      session.isApprover === true &&
+      (path === '/leave/approvals' || path === '/leave/approvals/history')
+    ) {
+      return true
+    }
   }
 
   const allowedPrefixes = allowedPrefixesByRole[role] ?? []

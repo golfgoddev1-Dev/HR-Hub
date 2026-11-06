@@ -47,7 +47,16 @@ import {
 import { insertWithRequestCode } from "../leave-request-code.js";
 import { dispatchQueuedNotifications, enqueueNotificationSafely } from "../push/queue.js";
 import { NOTIFICATION_KINDS } from "../push/payload.js";
-import { CALENDAR_MAX_RANGE_DAYS, CALENDAR_MESSAGES } from "../leave-calendar.js";
+import { CALENDAR_MAX_RANGE_DAYS, CALENDAR_MESSAGES, chunksOf, displayName } from "../leave-calendar.js";
+import { canViewLeaveRequest } from "../leave-scope.js";
+import {
+  HISTORY_MAX_SCAN_ROWS,
+  HISTORY_SEARCH_LIMIT,
+  historyFilters,
+  parseHistoryQuery,
+  publicHistoryRow,
+  sortHistoryRows,
+} from "../leave-history.js";
 import { isDateString as isCalendarDate, spanDays as calendarSpanDays } from "../leave-rules.js";
 import { readHolidayRows } from "../leave-holidays.js";
 
@@ -702,6 +711,91 @@ leave.get("/requests/mine", async (c) => {
   }
 });
 
+// --- GET /api/leave/requests/:id ---------------------------------------------
+// The read-only detail the approvals page shows. The scope is the one shared
+// rule (worker/src/leave-scope.js): HR, or the request's own active approver.
+// Opening a calendar row reuses this shape; no calendar row can read a request
+// its caller may not read here.
+
+leave.get("/requests/:id", async (c) => {
+  const denied = await guard(c);
+  if (denied) return denied.response;
+
+  const id = c.req.param("id");
+  if (!isUuid(id)) return invalidBody(c);
+
+  try {
+    const db = c.get("leaveDb");
+    const employee = c.get("leaveEmployee");
+    const session = c.get("leaveSession");
+
+    const row = await db.select(LEAVE_REQUESTS_TABLE, {
+      columns:
+        "id,request_code,employee_id,approver_id,leave_type_id,other_type_detail,start_date,end_date,days,return_date,return_time,status,ot_option,shift_option_code,shift_end_override,reason,has_medical_certificate,medical_certificate_url,decision_note,decided_at,created_at,source,entered_by_id",
+      filters: [["id", "eq", id]],
+      single: true,
+    });
+    if (!row) return c.json({ ok: false, message: MESSAGE.requestNotFound }, 404);
+
+    const isApprover =
+      session.role === "hr" ? false : await isActiveApprover(db, employee.id);
+    if (
+      !canViewLeaveRequest({
+        role: session.role,
+        employeeId: employee.id,
+        isApprover,
+        request: row,
+      })
+    ) {
+      return c.json({ ok: false, message: MESSAGE.forbidden }, 403);
+    }
+
+    const [typeRow, requester] = await Promise.all([
+      row.leave_type_id
+        ? db.select(LEAVE_TYPES_TABLE, {
+            columns: "id,name",
+            filters: [["id", "eq", row.leave_type_id]],
+            single: true,
+          })
+        : null,
+      db.select(EMPLOYEES_TABLE, {
+        columns: "id,employee_code,name_prefix,full_name,department_id",
+        filters: [["id", "eq", row.employee_id]],
+        single: true,
+      }),
+    ]);
+
+    const department = requester?.department_id
+      ? await db.select(DEPARTMENTS_TABLE, {
+          columns: "id,name",
+          filters: [["id", "eq", requester.department_id]],
+          single: true,
+        })
+      : null;
+
+    const types = typeMapOf(typeRow ? [typeRow] : []);
+    return c.json(
+      {
+        ok: true,
+        request: {
+          ...publicRequest(row, types),
+          requester: {
+            id: row.employee_id ?? null,
+            employeeCode: requester?.employee_code ?? null,
+            namePrefix: requester?.name_prefix ?? null,
+            fullName: displayName(requester?.name_prefix, requester?.full_name) || null,
+            departmentName: department?.name ?? null,
+          },
+        },
+      },
+      200
+    );
+  } catch (error) {
+    logError("leave detail failed", error);
+    return c.json({ ok: false, message: MESSAGE.saveError }, 500);
+  }
+});
+
 // --- GET /api/leave/requests/:id/attachment ---------------------------------
 // The certificate is private: the viewer gets a signed URL that lives for 60
 // seconds. Allowed: the owner, the approver of that request, and HR.
@@ -885,6 +979,151 @@ leave.get("/approvals", async (c) => {
     return c.json({ ok: true, limit: LIST_LIMIT, count: results.length, results }, 200);
   } catch (error) {
     logError("leave approvals failed", error);
+    return c.json({ ok: false, message: MESSAGE.saveError }, 500);
+  }
+});
+
+// --- GET /api/leave/approvals/history ----------------------------------------
+// The decision log. An active approver sees only requests they decided; an HR
+// member (role hr plus the hr_admins row) sees every decision. The list has no
+// reason and no note: only the scoped detail read can show those.
+
+leave.get("/approvals/history", async (c) => {
+  const denied = await guard(c);
+  if (denied) return denied.response;
+
+  const parsed = parseHistoryQuery(new URL(c.req.raw.url).searchParams);
+  if (parsed.ok !== true) {
+    return c.json({ ok: false, message: parsed.message }, 400);
+  }
+
+  try {
+    const db = c.get("leaveDb");
+    const employee = c.get("leaveEmployee");
+    const session = c.get("leaveSession");
+    const isHr = session.role === "hr";
+
+    if (isHr) {
+      const member = await db.select(HR_ADMINS_TABLE, {
+        columns: "employee_id",
+        filters: [["employee_id", "eq", employee.id]],
+        single: true,
+      });
+      if (!member) return c.json({ ok: false, message: MESSAGE.forbidden }, 403);
+    } else if (!(await isActiveApprover(db, employee.id))) {
+      return c.json({ ok: false, message: MESSAGE.forbidden }, 403);
+    }
+
+    const filters = historyFilters({
+      employeeId: isHr ? null : employee.id,
+      from: parsed.from,
+      to: parsed.to,
+      decision: parsed.decision,
+    });
+    const offset = (parsed.page - 1) * parsed.pageSize;
+
+    let rows = [];
+    let hasMore = false;
+
+    if (parsed.search) {
+      // The name lives in employees, so resolve ids first, then read the
+      // decided requests for them in id chunks. Bounded by HISTORY_MAX_SCAN_ROWS.
+      const matches = await db.select(EMPLOYEES_TABLE, {
+        columns: "id",
+        filters: [
+          ["is_active", "eq", true],
+          ["full_name", "ilike", `%${parsed.search}%`],
+        ],
+        limit: HISTORY_SEARCH_LIMIT,
+      });
+      const ids = (Array.isArray(matches) ? matches : [])
+        .map((row) => row.id)
+        .filter(Boolean);
+
+      const collected = [];
+      for (const chunk of chunksOf(ids, 100)) {
+        const part = await db.select(LEAVE_REQUESTS_TABLE, {
+          columns: "id,employee_id,leave_type_id,start_date,end_date,days,status,decided_at",
+          filters: [...filters, ["employee_id", "in", chunk]],
+          order: "decided_at.desc",
+          limit: HISTORY_MAX_SCAN_ROWS,
+        });
+        collected.push(...part);
+        if (collected.length >= HISTORY_MAX_SCAN_ROWS) break;
+      }
+
+      const sorted = sortHistoryRows(collected).slice(0, HISTORY_MAX_SCAN_ROWS);
+      rows = sorted.slice(offset, offset + parsed.pageSize);
+      hasMore = sorted.length > offset + parsed.pageSize;
+    } else {
+      rows = await db.select(LEAVE_REQUESTS_TABLE, {
+        columns: "id,employee_id,leave_type_id,start_date,end_date,days,status,decided_at",
+        filters,
+        order: "decided_at.desc",
+        limit: parsed.pageSize + 1,
+        extra: [`offset=${offset}`],
+      });
+      hasMore = rows.length > parsed.pageSize;
+      rows = rows.slice(0, parsed.pageSize);
+    }
+
+    const employeeIds = [...new Set(rows.map((row) => row.employee_id).filter(Boolean))];
+    const typeIds = [...new Set(rows.map((row) => row.leave_type_id).filter(Boolean))];
+
+    const [requesters, typeRows] = await Promise.all([
+      employeeIds.length
+        ? db.select(EMPLOYEES_TABLE, {
+            columns: "id,employee_code,name_prefix,full_name,department_id",
+            filters: [["id", "in", employeeIds]],
+          })
+        : [],
+      typeIds.length
+        ? db.select(LEAVE_TYPES_TABLE, {
+            columns: "id,name",
+            filters: [["id", "in", typeIds]],
+          })
+        : [],
+    ]);
+
+    const departmentIds = [
+      ...new Set(requesters.map((row) => row.department_id).filter(Boolean)),
+    ];
+    const departments = departmentIds.length
+      ? await db.select(DEPARTMENTS_TABLE, {
+          columns: "id,name",
+          filters: [["id", "in", departmentIds]],
+        })
+      : [];
+
+    const requesterById = new Map(requesters.map((row) => [row.id, row]));
+    const typeNameById = new Map(typeRows.map((row) => [row.id, row.name ?? ""]));
+    const departmentNameById = new Map(departments.map((row) => [row.id, row.name ?? null]));
+
+    const results = rows.map((row) => {
+      const requester = requesterById.get(row.employee_id) ?? null;
+      return publicHistoryRow({
+        row,
+        requesterName: displayName(requester?.name_prefix, requester?.full_name),
+        departmentName: requester?.department_id
+          ? departmentNameById.get(requester.department_id) ?? null
+          : null,
+        leaveTypeName: typeNameById.get(row.leave_type_id) ?? "",
+      });
+    });
+
+    return c.json(
+      {
+        ok: true,
+        page: parsed.page,
+        pageSize: parsed.pageSize,
+        hasMore,
+        count: results.length,
+        results,
+      },
+      200
+    );
+  } catch (error) {
+    logError("leave approval history failed", error);
     return c.json({ ok: false, message: MESSAGE.saveError }, 500);
   }
 });

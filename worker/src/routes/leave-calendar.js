@@ -15,11 +15,15 @@ import { createDb } from "../db.js";
 import {
   CALENDAR_MESSAGES,
   CALENDAR_STATUSES,
+  buildDayCounts,
   chunksOf,
   displayName,
   parseCalendarRange,
+  publicCalendarDetail,
   publicCalendarEvent,
 } from "../leave-calendar.js";
+import { isActiveApprover } from "../leave-approvers.js";
+import { canViewLeaveRequest } from "../leave-scope.js";
 import { requireRole } from "../require-role.js";
 
 const leaveCalendar = new Hono();
@@ -86,6 +90,10 @@ leaveCalendar.get("/", async (c) => {
       return c.json({ ok: false, message: CALENDAR_MESSAGES.departmentInvalid }, 400);
     }
 
+    // The same active-approver flag the approvals queue checks. Only a request
+    // this person may decide gets the review fields in its event.
+    const isApprover = isHr ? false : await isActiveApprover(db, employee.id);
+
     // The employee/approver scope is the caller's own department; only HR may
     // choose one, and no filter at all means every department.
     const scopeDepartmentId = isHr ? range.departmentId : employee.department_id ?? null;
@@ -99,6 +107,7 @@ leaveCalendar.get("/", async (c) => {
           scope: isHr ? (scopeDepartmentId ? "department" : "all") : "department",
           departmentId: scopeDepartmentId,
           count: 0,
+          dayCounts: {},
           events: [],
         },
         200
@@ -123,7 +132,8 @@ leaveCalendar.get("/", async (c) => {
       ["end_date", "gte", range.from],
     ];
 
-    const columns = "id,employee_id,leave_type_id,start_date,end_date,status";
+    const columns =
+      "id,employee_id,approver_id,leave_type_id,request_code,other_type_detail,start_date,end_date,status,days,return_date,return_time,shift_option_code,shift_end_override,ot_option,reason,has_medical_certificate,decision_note,decided_at,created_at";
     let rows = [];
 
     if (scopedEmployeeIds === null) {
@@ -157,7 +167,7 @@ leaveCalendar.get("/", async (c) => {
 
     const requesters = requesterIds.length
       ? await db.select(EMPLOYEES_TABLE, {
-          columns: "id,name_prefix,full_name,department_id",
+          columns: "id,employee_code,name_prefix,full_name,department_id",
           filters: [["id", "in", requesterIds]],
         })
       : [];
@@ -193,6 +203,31 @@ leaveCalendar.get("/", async (c) => {
           status: row.status,
           startDate: String(row.start_date ?? "").slice(0, 10),
           endDate: String(row.end_date ?? "").slice(0, 10),
+          // The reason and the other review fields only reach a caller who
+          // passes the approvals scope for this very request.
+          detail: canViewLeaveRequest({
+            role: auth.session.role,
+            employeeId: employee.id,
+            isApprover,
+            request: row,
+          })
+            ? publicCalendarDetail({
+                requestCode: row.request_code,
+                employeeCode: requester?.employee_code,
+                otherTypeDetail: row.other_type_detail,
+                days: row.days,
+                returnDate: row.return_date,
+                returnTime: row.return_time,
+                shiftCode: row.shift_option_code,
+                shiftEndOverride: row.shift_end_override,
+                otOption: row.ot_option,
+                reason: row.reason,
+                hasMedicalCertificate: row.has_medical_certificate,
+                decisionNote: row.decision_note,
+                decidedAt: row.decided_at,
+                createdAt: row.created_at,
+              })
+            : null,
         });
       })
       .filter((event) => event.id && event.startDate && event.endDate);
@@ -205,6 +240,9 @@ leaveCalendar.get("/", async (c) => {
         scope: isHr ? (scopeDepartmentId ? "department" : "all") : "department",
         departmentId: scopeDepartmentId,
         count: events.length,
+        // Approved people per Bangkok calendar day, counted from the same rows
+        // the grid was built from. The day panel's count and list use this.
+        dayCounts: buildDayCounts(visible),
         events,
       },
       200

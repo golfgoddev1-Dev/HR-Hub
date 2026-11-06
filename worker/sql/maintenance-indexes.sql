@@ -25,3 +25,23 @@ create index if not exists auth_sessions_revoked_at_idx
 -- column; the table default supplies it.
 create index if not exists audit_logs_created_at_idx
   on public.audit_logs (created_at);
+
+-- Daily cleanup: notification_queue created_at < cutoff, limited to the final
+-- statuses. pending and sending rows are never matched.
+create index if not exists notification_queue_status_created_at_idx
+  on public.notification_queue (status, created_at);
+
+-- Leave cleanup and the history read: final requests by end_date, and one
+-- approver's decisions newest first.
+create index if not exists leave_requests_status_end_date_idx
+  on public.leave_requests (status, end_date);
+
+create index if not exists leave_requests_approver_status_decided_at_idx
+  on public.leave_requests (approver_id, status, decided_at desc);
+
+create index if not exists leave_requests_status_decided_at_idx
+  on public.leave_requests (status, decided_at desc);
+
+-- Leave cleanup reads the queue rows of the requests it is about to delete.
+create index if not exists notification_queue_leave_request_id_idx
+  on public.notification_queue (leave_request_id);

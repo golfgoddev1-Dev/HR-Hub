@@ -3,7 +3,7 @@
 // base lists because it depends on the signed-in employee
 // (src/lib/leave-nav-items.js).
 
-import { approvalsMenuItem } from './leave-nav-items.js'
+import { approvalHistoryMenuItem, approvalsMenuItem } from './leave-nav-items.js'
 
 export const NAV_SECTION_LABELS = Object.freeze({
   mine: 'งานของฉัน',
@@ -97,9 +97,16 @@ export function navSections({ role, isApprover = false, pendingCount = 0 } = {})
     sections.push({ id: 'admin', label: NAV_SECTION_LABELS.admin, items: adminNavItems() })
   }
 
+  // The approver section holds the queue and its decision log. HR sees the log
+  // even when it is not an approver itself; the queue still follows the flag.
+  const approverItems = []
   const approval = approvalsMenuItem({ isApprover, pendingCount })
-  if (approval) {
-    sections.push({ id: 'approver', label: NAV_SECTION_LABELS.approver, items: [approval] })
+  if (approval) approverItems.push(approval)
+  const history = approvalHistoryMenuItem({ isApprover, role })
+  if (history) approverItems.push(history)
+
+  if (approverItems.length > 0) {
+    sections.push({ id: 'approver', label: NAV_SECTION_LABELS.approver, items: approverItems })
   }
 
   return sections.filter((section) => section.items.length > 0)

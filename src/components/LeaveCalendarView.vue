@@ -26,6 +26,15 @@ import {
   initialLeaveView,
   storeLeaveView,
 } from '../lib/leave-calendar-view.js'
+import {
+  DAY_PANEL_EMPTY,
+  buildDayRows,
+  dayCountLabel,
+  formatThaiDayHeading,
+  groupDayRows,
+  toDetailRequest,
+} from '../lib/leave-day.js'
+import LeaveRequestDetail from './LeaveRequestDetail.vue'
 import { getCached } from '../lib/data-cache.js'
 import {
   DATA_KEYS,
@@ -62,6 +71,13 @@ const width = ref(typeof window === 'undefined' ? 1024 : window.innerWidth)
 const loadedRange = ref({ from: '', to: '' })
 // The month the grid is showing (without its leading/trailing filler days).
 const monthRange = ref({ from: '', to: '' })
+// Approved people per Bangkok day, computed by the Worker from the same rows.
+const dayCounts = ref({})
+const dayPanel = ref(null)
+const dayPanelEl = ref(null)
+const dayPanelClose = ref(null)
+const expandedRowId = ref('')
+let lastDayCell = null
 
 /** localStorage, or null when the browser refuses to hand it over. */
 function localStore() {
@@ -85,6 +101,8 @@ const rangeLabel = computed(() => {
   if (!from || !to) return ''
   return formatThaiDateRange(from, to)
 })
+
+const groupedDayRows = computed(() => groupDayRows(dayPanel.value?.rows ?? []))
 
 const options = computed(() => ({
   plugins: [dayGridPlugin],
@@ -166,16 +184,23 @@ async function load(range) {
 
     leaveEvents.value = Array.isArray(calendarData.events) ? calendarData.events : []
     holidays.value = Array.isArray(holidayData?.holidays) ? holidayData.holidays : []
+    dayCounts.value =
+      calendarData?.dayCounts && typeof calendarData.dayCounts === 'object'
+        ? calendarData.dayCounts
+        : {}
 
     events.value = [
       ...leaveEvents.value.map(toCalendarEvent),
       ...holidays.value.map(toHolidayEvent),
     ]
+    nextTick(syncDayBadges)
   } catch (error) {
     errorMessage.value = errorTextOf(error, LOAD_ERROR)
     events.value = []
     leaveEvents.value = []
     holidays.value = []
+    dayCounts.value = {}
+    nextTick(syncDayBadges)
   } finally {
     loading.value = false
   }
@@ -204,6 +229,94 @@ function openPanel(event) {
 
 function closePanel() {
   selected.value = null
+}
+
+/** The day panel opens from the data already in memory: no list request. */
+function openDayPanel(date, cell) {
+  const key = String(date ?? '').slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return
+
+  dayPanel.value = {
+    date: key,
+    rows: buildDayRows({ events: leaveEvents.value, date: key }),
+  }
+  expandedRowId.value = ''
+  lastDayCell = cell ?? (typeof document === 'undefined' ? null : document.activeElement)
+  nextTick(() => dayPanelClose.value?.focus())
+}
+
+/** Escape, the close button and the backdrop all land here; focus goes back. */
+function closeDayPanel() {
+  if (!dayPanel.value) return
+  dayPanel.value = null
+  expandedRowId.value = ''
+  const target = lastDayCell
+  lastDayCell = null
+  nextTick(() => {
+    if (target && target.isConnected !== false) target.focus()
+  })
+}
+
+/** Escape closes, and Tab stays inside the modal while it is open. */
+function onDayPanelKeydown(event) {
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    closeDayPanel()
+    return
+  }
+  if (event.key !== 'Tab') return
+
+  const nodes = [
+    ...(dayPanelEl.value?.querySelectorAll(
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    ) ?? []),
+  ].filter((node) => node.offsetParent !== null)
+  if (nodes.length === 0) return
+
+  const first = nodes[0]
+  const last = nodes[nodes.length - 1]
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault()
+    last.focus()
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault()
+    first.focus()
+  }
+}
+
+/** One expanded row at a time; it is the same detail the approvals page shows. */
+function toggleRow(row) {
+  if (!row?.id) return
+  expandedRowId.value = expandedRowId.value === row.id ? '' : row.id
+}
+
+/** Paints the approved-people badge on every visible day cell. */
+function syncDayBadges() {
+  if (typeof document === 'undefined') return
+
+  for (const cell of document.querySelectorAll('.fc-daygrid-day[data-date]')) {
+    const date = cell.getAttribute('data-date') ?? ''
+    const count = Number(dayCounts.value[date] ?? 0)
+    const existing = cell.querySelector('.day-count')
+
+    if (!Number.isFinite(count) || count <= 0) {
+      existing?.remove()
+      cell.removeAttribute('data-leave-count')
+      continue
+    }
+
+    const badge = existing ?? document.createElement('span')
+    if (!existing) {
+      badge.className = 'day-count'
+      badge.setAttribute('aria-hidden', 'true')
+      cell.querySelector('.fc-daygrid-day-frame')?.appendChild(badge)
+    }
+    badge.textContent = String(count)
+    cell.setAttribute('data-leave-count', String(count))
+
+    const label = `ดูรายละเอียดวันที่ ${formatThaiDate(date)} มีผู้ลา ${count} คน`
+    cell.setAttribute('aria-label', label)
+  }
 }
 
 /** Events are real buttons: tabindex plus Enter/Space, with a focus ring. */
@@ -254,23 +367,11 @@ function selectView(next) {
   storeLeaveView(next, localStore())
   if (next === VIEW_CALENDAR) {
     // The grid was hidden, so it has to measure itself again.
-    nextTick(() => calendarRef.value?.getApi()?.updateSize())
-  }
-}
-
-/** A day tap opens the list at that day without moving the selected month. */
-function openDay(date) {
-  const day = String(date ?? '').slice(0, 10)
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return
-  selectView(VIEW_LIST)
-  nextTick(() => {
-    const target = document.getElementById(`leave-day-${day}`)
-    if (!target) return
-    target.scrollIntoView({
-      block: 'start',
-      behavior: prefersReducedMotion() ? 'auto' : 'smooth',
+    nextTick(() => {
+      calendarRef.value?.getApi()?.updateSize()
+      syncDayBadges()
     })
-  })
+  }
 }
 
 /** One calendar instance owns the range, so the list navigates the same month. */
@@ -280,17 +381,22 @@ function moveRange(action) {
   api[action]()
 }
 
-/** On phones a day cell opens that day in the list; desktop cells stay inert. */
+/** Every day cell is a button: tap/click or Enter/Space opens the day panel. */
 function decorateDayCell(info) {
-  if (!isPhone.value) return
   const date = isoDayOf(info.date)
   if (!date) return
 
   const el = info.el
-  const open = () => openDay(date)
+  const count = Number(dayCounts.value[date] ?? 0)
+  const open = () => openDayPanel(date, el)
   el.setAttribute('tabindex', '0')
   el.setAttribute('role', 'button')
-  el.setAttribute('aria-label', `ดูรายการวันที่ ${formatThaiDate(date)}`)
+  el.setAttribute(
+    'aria-label',
+    count > 0
+      ? `ดูรายละเอียดวันที่ ${formatThaiDate(date)} มีผู้ลา ${count} คน`
+      : `ดูรายละเอียดวันที่ ${formatThaiDate(date)}`
+  )
 
   el.addEventListener('click', open)
   el.addEventListener('keydown', (keyEvent) => {
@@ -447,6 +553,76 @@ onBeforeUnmount(() => {
         </li>
       </ul>
     </section>
+
+    <div v-if="dayPanel" class="day-panel-layer">
+      <div class="day-panel-backdrop" aria-hidden="true" @click="closeDayPanel"></div>
+      <section
+        ref="dayPanelEl"
+        class="day-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="day-panel-title"
+        tabindex="-1"
+        @keydown="onDayPanelKeydown"
+      >
+        <header class="day-panel-head">
+          <div>
+            <h2 id="day-panel-title" class="day-panel-title">
+              {{ formatThaiDayHeading(dayPanel.date) }}
+            </h2>
+            <p class="day-panel-count">{{ dayCountLabel(dayPanel.rows.length) }}</p>
+          </div>
+          <button
+            ref="dayPanelClose"
+            type="button"
+            class="day-panel-close"
+            aria-label="ปิด"
+            @click="closeDayPanel"
+          >
+            ปิด
+          </button>
+        </header>
+
+        <div class="day-panel-body">
+          <p v-if="dayPanel.rows.length === 0" class="day-panel-empty">
+            {{ DAY_PANEL_EMPTY }}
+          </p>
+
+          <section
+            v-for="group in groupedDayRows"
+            :key="group.department"
+            class="day-department"
+          >
+            <h3 class="day-department-name">{{ group.department }}</h3>
+
+            <template v-for="row in group.rows" :key="row.id">
+              <button
+                type="button"
+                class="day-person"
+                :aria-expanded="expandedRowId === row.id ? 'true' : 'false'"
+                @click="toggleRow(row)"
+              >
+                <span class="day-person-head">
+                  <span class="day-person-name">{{ row.employeeName || '—' }}</span>
+                  <span class="day-person-type">{{ row.leaveTypeLabel || '—' }}</span>
+                </span>
+                <span class="day-person-dates">
+                  {{ formatThaiDateRange(row.startDate, row.endDate) }}
+                </span>
+                <span class="day-person-hint">
+                  {{ row.detail ? 'ดูรายละเอียด' : 'รายละเอียดถูกจำกัดตามสิทธิ์' }}
+                </span>
+              </button>
+
+              <div v-if="expandedRowId === row.id" class="day-person-detail">
+                <LeaveRequestDetail v-if="row.detail" :request="toDetailRequest(row)" />
+                <p v-else class="day-panel-empty">ไม่มีสิทธิ์ดูรายละเอียดใบลานี้</p>
+              </div>
+            </template>
+          </section>
+        </div>
+      </section>
+    </div>
 
     <aside
       v-if="selected"
@@ -1020,6 +1196,215 @@ onBeforeUnmount(() => {
   }
 }
 
+/* ---------- Day panel: bottom sheet on phones, centred dialog above ---------- */
+.day-panel-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.day-panel-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(11, 28, 24, 0.45);
+}
+
+.day-panel {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  width: min(560px, 100%);
+  max-height: 80vh;
+  overflow: hidden;
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 24px 60px -24px rgba(11, 28, 24, 0.55);
+}
+
+.day-panel:focus {
+  outline: none;
+}
+
+.day-panel-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px;
+  border-bottom: 1px solid #e2e9e7;
+  background: #ffffff;
+}
+
+.day-panel-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: #12343b;
+  overflow-wrap: anywhere;
+}
+
+.day-panel-count {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: #48615e;
+}
+
+.day-panel-close {
+  flex: 0 0 auto;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid #d8e3e1;
+  border-radius: 10px;
+  background: #f3f8f6;
+  color: #10504e;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.day-panel-close:focus-visible,
+.day-person:focus-visible {
+  outline: 3px solid #10504e;
+  outline-offset: 2px;
+}
+
+.day-panel-body {
+  display: grid;
+  gap: 16px;
+  padding: 12px 16px 20px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.day-panel-empty {
+  margin: 8px 0;
+  text-align: center;
+  font-size: 13px;
+  color: #5c7176;
+}
+
+.day-department {
+  display: grid;
+  gap: 8px;
+}
+
+.day-department-name {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: #10504e;
+}
+
+.day-person {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid #e2e9e7;
+  border-radius: 12px;
+  background: #fbfdfc;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.day-person-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: baseline;
+}
+
+.day-person-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: #12343b;
+  overflow-wrap: anywhere;
+}
+
+.day-person-type {
+  font-size: 12px;
+  color: #48615e;
+}
+
+.day-person-dates {
+  font-size: 12px;
+  color: #5c7176;
+}
+
+.day-person-hint {
+  font-size: 12px;
+  font-weight: 600;
+  color: #10504e;
+}
+
+.day-person-detail {
+  margin-bottom: 4px;
+}
+
+/* Approved people on the day, as a small badge the cell cannot overflow. */
+.day-count {
+  position: absolute;
+  left: 3px;
+  top: 2px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  box-sizing: border-box;
+  border-radius: 999px;
+  background: #10504e;
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  pointer-events: none;
+}
+
+:deep(.fc-daygrid-day-frame) {
+  position: relative;
+}
+
+@media (max-width: 767px) {
+  .day-panel-layer {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .day-panel {
+    width: 100%;
+    max-height: 80vh;
+    border-radius: 16px 16px 0 0;
+    animation: day-panel-rise 0.22s ease-out;
+  }
+}
+
+@keyframes day-panel-rise {
+  from {
+    opacity: 0.6;
+    transform: translateY(12%);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .view-option,
   .list-nav-button {
@@ -1028,6 +1413,10 @@ onBeforeUnmount(() => {
 
   .day-group {
     scroll-behavior: auto;
+  }
+
+  .day-panel {
+    animation: none !important;
   }
 }
 </style>

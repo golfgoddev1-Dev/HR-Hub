@@ -150,8 +150,10 @@ describe('navSections', () => {
 
     const sections = navSections({ role: 'meeting_controller', isApprover: true, pendingCount: 4 })
     const approver = sections.find((section) => section.id === 'approver')
-    expect(approver.items).toHaveLength(1)
+    expect(approver.items).toHaveLength(2)
     expect(approver.items[0]).toMatchObject({ to: '/leave/approvals', badge: 4 })
+    expect(approver.items[1]).toMatchObject({ to: '/leave/approvals/history' })
+    expect(approver.items[1].badge).toBeUndefined()
 
     for (const section of sections) {
       if (section.id === 'approver') continue

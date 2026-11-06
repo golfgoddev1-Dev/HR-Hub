@@ -171,6 +171,7 @@ describe('persistent shell route', () => {
       '/leave',
       '/leave/new',
       '/leave/approvals',
+      '/leave/approvals/history',
       '/leave/calendar',
       '/profile',
       '/hr',
