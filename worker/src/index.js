@@ -9,7 +9,25 @@ import app from "./app.js";
 import { AUTO_ABSENT_CRON, runAutoAbsentOnce } from "./auto-absent.js";
 import { KEEP_ALIVE_CRON, runKeepAlive } from "./keep-alive.js";
 import { CERT_CLEANUP_CRON, runCertificateCleanup } from "./leave-retention.js";
+import {
+  CLEANUP_TIMEOUT_MS,
+  runDataCleanup,
+} from "./maintenance/cleanup.js";
 import { NOTIFICATION_CRON, runNotificationQueue } from "./push/queue.js";
+
+/** Runs both daily jobs under waitUntil, or waits a bounded time if absent. */
+async function runScheduledMaintenance(ctx, job) {
+  if (typeof ctx?.waitUntil === "function") {
+    ctx.waitUntil(job);
+    return;
+  }
+
+  let timer;
+  const timeout = new Promise((resolve) => {
+    timer = setTimeout(resolve, CLEANUP_TIMEOUT_MS);
+  });
+  await Promise.race([job, timeout]).finally(() => clearTimeout(timer));
+}
 
 export {
   ContextRateLimiter,
@@ -19,7 +37,7 @@ export {
 
 export default {
   fetch: app.fetch,
-  scheduled(event, env, ctx) {
+  async scheduled(event, env, ctx) {
     const cron = event?.cron;
 
     // Auto-absent is opt-in: only the exact string "true" enables it. It shares
@@ -39,15 +57,22 @@ export default {
       return;
     }
 
-    // Medical certificate retention. Separate from auto-absent and keep-alive:
-    // it only deletes Storage objects past the configured age, then clears the
-    // column, and is safe to re-run.
+    // Daily maintenance. Medical certificate retention and the bounded
+    // auth_sessions/audit_logs cleanup share the existing 02:00 trigger: no
+    // extra cron is added. Both jobs catch their own failures, so one table
+    // never blocks the other or the scheduled run.
     if (cron === CERT_CLEANUP_CRON) {
       const now = new Date(event.scheduledTime);
-      ctx.waitUntil(
-        runCertificateCleanup(env, now).catch((error) => {
-          console.error("[cert-cleanup-error]", error?.code ?? error?.name);
-        })
+      await runScheduledMaintenance(
+        ctx,
+        Promise.all([
+          runCertificateCleanup(env, now).catch((error) => {
+            console.error("[cert-cleanup-error]", error?.code ?? error?.name);
+          }),
+          runDataCleanup(env, now).catch((error) => {
+            console.error("[data-cleanup-error]", error?.code ?? error?.name);
+          }),
+        ])
       );
       return;
     }
