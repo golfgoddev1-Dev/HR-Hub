@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
+import { getSession } from '../api.js'
 import {
   DEPARTMENT_CHANGE_NOTE,
   departmentOptions,
@@ -23,6 +24,7 @@ import {
   loadShared,
 } from '../lib/shared-data.js'
 import PushToggle from '../components/PushToggle.vue'
+import NotificationSwitch from '../components/NotificationSwitch.vue'
 
 const PROFILE_URL = '/api/profile/me'
 
@@ -50,6 +52,8 @@ const editing = ref(false)
 const notifySaving = ref(false)
 const notifyError = ref('')
 const notifyMessage = ref('')
+const isApprover = ref(false)
+const pushOn = ref(false)
 
 const profile = ref(readProfile({}))
 const departments = ref([])
@@ -66,6 +70,7 @@ const validation = computed(() =>
 const fieldErrors = computed(() => ({ ...validation.value.errors, ...serverErrors.value }))
 const changed = computed(() => hasProfileChanges(profile.value, form))
 const canSave = computed(() => !saving.value && validation.value.ok && changed.value)
+const notifyDisabled = computed(() => !pushOn.value || notifySaving.value)
 
 function mapServerErrors(errors) {
   const mapped = {}
@@ -175,7 +180,7 @@ async function save() {
 }
 
 async function toggleNotifyPending() {
-  if (notifySaving.value) return
+  if (notifySaving.value || !pushOn.value) return
   notifySaving.value = true
   notifyError.value = ''
   notifyMessage.value = ''
@@ -207,6 +212,11 @@ async function toggleNotifyPending() {
   }
 }
 
+async function loadApprover() {
+  const session = await getSession()
+  isApprover.value = session?.isApprover === true
+}
+
 watch(form, () => {
   serverErrors.value = {}
 })
@@ -228,6 +238,7 @@ function handleBeforeUnload(event) {
 
 onMounted(() => {
   load()
+  loadApprover()
   loadDepartments()
   loadPrefixes()
   window.addEventListener('beforeunload', handleBeforeUnload)
@@ -260,30 +271,35 @@ onBeforeUnmount(() => {
         {{ successMessage }}
       </v-alert>
 
-      <!-- The real push switch: browser subscription plus the server row. -->
-      <PushToggle />
+      <section v-if="!loading && !loadError" class="card notify-card">
+        <h2 class="notify-title">การแจ้งเตือน</h2>
 
-      <section v-if="!loading && !loadError" class="card pref-card">
-        <div class="pref-copy">
-          <h2 class="pref-title">การแจ้งเตือน</h2>
-          <p class="pref-label">รับแจ้งเตือนรายการรออนุมัติแม้ออกจากระบบ</p>
-          <p class="pref-note">
-            ใช้สำหรับผู้อนุมัติเท่านั้น: ระบบจะส่งเฉพาะจำนวนรายการที่รอคุณอนุมัติ
-            โดยไม่มีชื่อ ประเภทการลา วันที่ หรือเหตุผล
-          </p>
-          <p v-if="notifyMessage" class="pref-hint">{{ notifyMessage }}</p>
-          <p v-if="notifyError" class="pref-error" role="alert">{{ notifyError }}</p>
-        </div>
-        <button
-          type="button"
-          role="switch"
-          :aria-checked="profile.notifyPendingOnLogout"
-          :class="['pref-switch', { 'pref-switch-on': profile.notifyPendingOnLogout }]"
-          :disabled="notifySaving"
-          @click="toggleNotifyPending"
+        <PushToggle v-model:active="pushOn" embedded />
+
+        <div
+          v-if="isApprover"
+          class="pref-row"
+          :class="{ 'pref-row-disabled': !pushOn }"
         >
-          {{ notifySaving ? 'กำลังบันทึก…' : profile.notifyPendingOnLogout ? 'เปิด' : 'ปิด' }}
-        </button>
+          <div class="pref-copy">
+            <p class="pref-label">รับแจ้งเตือนรายการรออนุมัติแม้ออกจากระบบ</p>
+            <p class="pref-note">
+              ใช้สำหรับผู้อนุมัติเท่านั้น: ระบบจะส่งเฉพาะจำนวนรายการที่รอคุณอนุมัติ
+              โดยไม่มีชื่อ ประเภทการลา วันที่ หรือเหตุผล
+            </p>
+            <p v-if="!pushOn" class="pref-gate">เปิดแจ้งเตือนใบลาก่อน</p>
+            <p v-if="notifyMessage" class="pref-hint">{{ notifyMessage }}</p>
+            <p v-if="notifyError" class="pref-error" role="alert">{{ notifyError }}</p>
+          </div>
+
+          <NotificationSwitch
+            :checked="profile.notifyPendingOnLogout"
+            :disabled="notifyDisabled"
+            :busy="notifySaving"
+            label="รับแจ้งเตือนรายการรออนุมัติแม้ออกจากระบบ"
+            @toggle="toggleNotifyPending"
+          />
+        </div>
       </section>
 
       <section v-if="!loading && !loadError && !editing" class="card">
@@ -481,25 +497,31 @@ onBeforeUnmount(() => {
   margin: 0 0 14px;
 }
 
-.pref-card {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
-  justify-content: space-between;
+.notify-card {
   margin-bottom: 16px;
 }
 
-.pref-copy {
-  flex: 1 1 320px;
-  min-width: 240px;
-}
-
-.pref-title {
-  margin: 0 0 4px;
+.notify-title {
+  margin: 0 0 14px;
   font-size: 15px;
   font-weight: 700;
   color: #12343b;
+}
+
+.pref-row {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid #e0e8e6;
+}
+
+.pref-copy {
+  flex: 1;
+  min-width: 0;
 }
 
 .pref-label {
@@ -507,6 +529,7 @@ onBeforeUnmount(() => {
   font-size: 13.5px;
   font-weight: 600;
   color: #12343b;
+  overflow-wrap: anywhere;
 }
 
 .pref-note,
@@ -515,37 +538,26 @@ onBeforeUnmount(() => {
   font-size: 12.5px;
   line-height: 1.6;
   color: #5c7176;
+  overflow-wrap: anywhere;
+}
+
+.pref-gate {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #a05b06;
+  overflow-wrap: anywhere;
+}
+
+.pref-row-disabled .pref-label,
+.pref-row-disabled .pref-note {
+  color: #8b9c9a;
 }
 
 .pref-error {
   margin: 4px 0 0;
   font-size: 12.5px;
   color: #a01b1b;
-}
-
-.pref-switch {
-  min-width: 84px;
-  min-height: 42px;
-  padding: 0 18px;
-  border: 1px solid #cfdcda;
-  border-radius: 999px;
-  background: #ffffff;
-  color: #5c7176;
-  font-family: inherit;
-  font-size: 13.5px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.pref-switch-on {
-  border-color: #10504e;
-  background: #10504e;
-  color: #ffffff;
-}
-
-.pref-switch:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
 }
 
 .rows {

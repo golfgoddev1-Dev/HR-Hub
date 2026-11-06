@@ -77,8 +77,10 @@ describe('profile card', () => {
   it('offers the signed-out approval notification toggle with the Thai label', () => {
     expect(PROFILE.notifyPendingOnLogout).toBe(true)
     expect(PROFILE_PAGE).toContain('รับแจ้งเตือนรายการรออนุมัติแม้ออกจากระบบ')
-    expect(PROFILE_PAGE).toContain('role="switch"')
+    // The switch markup now lives in the shared NotificationSwitch component.
+    expect(PROFILE_PAGE).toContain('<NotificationSwitch')
     expect(PROFILE_PAGE).toContain('toggleNotifyPending')
+    expect(PROFILE_PAGE).toContain('v-model:active="pushOn"')
   })
 
   it('always explains what a department change means', () => {

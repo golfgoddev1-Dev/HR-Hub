@@ -1,5 +1,6 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import NotificationSwitch from './NotificationSwitch.vue'
 import {
   autoEnablePush,
   browserSubscription,
@@ -11,7 +12,15 @@ import {
   unsubscribePush,
 } from '../lib/push.js'
 
-// Push is opt-in: nothing is requested until the user presses the button.
+defineProps({
+  embedded: { type: Boolean, default: false },
+})
+
+// The profile page reads this to disable the signed-out approver preference
+// until leave notifications themselves are on.
+const active = defineModel('active', { type: Boolean, default: false })
+
+// Push is opt-in: nothing is requested until the user presses the switch.
 const supported = ref(false)
 const iosNeedsInstall = ref(false)
 const browserSubscribed = ref(false)
@@ -27,6 +36,14 @@ const subscribed = computed(() =>
     browserSubscribed: browserSubscribed.value,
     serverSubscribed: serverSubscribed.value,
   })
+)
+
+watch(
+  subscribed,
+  (value) => {
+    active.value = value
+  },
+  { immediate: true }
 )
 
 function detect() {
@@ -96,6 +113,11 @@ async function disable() {
   }
 }
 
+function togglePush() {
+  if (busy.value) return
+  return subscribed.value ? disable() : enable()
+}
+
 onMounted(async () => {
   detect()
   if (!supported.value) return
@@ -107,45 +129,48 @@ onMounted(async () => {
 </script>
 
 <template>
-  <section class="push-card">
+  <section :class="embedded ? 'push-row' : 'push-card push-row'">
     <div class="push-copy">
-      <h2 class="push-title">แจ้งเตือนใบลา</h2>
+      <h2 v-if="!embedded" class="push-title">แจ้งเตือนใบลา</h2>
+      <h3 v-else class="push-title">แจ้งเตือนใบลา</h3>
 
-      <p v-if="iosNeedsInstall" class="push-text">
-        บน iPhone/iPad ต้องเพิ่มหน้านี้ไปที่หน้าจอโฮมก่อน: เปิดใน Safari → ปุ่มแชร์ →
-        “เพิ่มไปที่หน้าจอโฮม” แล้วเปิดจากไอคอนนั้นอีกครั้ง
-      </p>
-      <p v-else-if="!supported" class="push-text">
-        เบราว์เซอร์นี้ยังไม่รองรับการแจ้งเตือนแบบ Web Push — ใช้ Chrome, Edge หรือ Safari
-        เวอร์ชันใหม่บนมือถือหรือคอมพิวเตอร์
-      </p>
-      <p v-else class="push-text">
+      <p class="push-text">
         เปิดเพื่อรับแจ้งเตือนเมื่อมีใบลารออนุมัติ หรือเมื่อใบลาของคุณได้รับการพิจารณา
         (ไม่ส่งรายละเอียดการลาหรือเหตุผล)
       </p>
-    </div>
-
-    <div v-if="supported && !iosNeedsInstall" class="push-actions">
-      <button v-if="!subscribed" type="button" class="push-btn" :disabled="busy" @click="enable">
-        {{ busy ? 'กำลังเปิด…' : 'เปิดการแจ้งเตือน' }}
-      </button>
-      <button v-else type="button" class="push-btn push-btn-off" :disabled="busy" @click="disable">
-        {{ busy ? 'กำลังปิด…' : 'ยกเลิกการแจ้งเตือน' }}
-      </button>
+      <p v-if="iosNeedsInstall" class="push-warning">
+        บน iPhone/iPad ต้องเพิ่มหน้านี้ไปที่หน้าจอโฮมก่อน: เปิดใน Safari → ปุ่มแชร์ →
+        “เพิ่มไปที่หน้าจอโฮม” แล้วเปิดจากไอคอนนั้นอีกครั้ง
+      </p>
+      <p v-else-if="!supported" class="push-warning">
+        เบราว์เซอร์นี้ยังไม่รองรับการแจ้งเตือนแบบ Web Push — ใช้ Chrome, Edge หรือ Safari
+        เวอร์ชันใหม่บนมือถือหรือคอมพิวเตอร์
+      </p>
 
       <p v-if="message" class="push-hint">{{ message }}</p>
       <p v-if="errorMessage" class="push-hint push-error" role="alert">{{ errorMessage }}</p>
     </div>
+
+    <NotificationSwitch
+      :checked="subscribed"
+      :disabled="!supported || iosNeedsInstall"
+      :busy="busy"
+      label="แจ้งเตือนใบลา"
+      @toggle="togglePush"
+    />
   </section>
 </template>
 
 <style scoped>
-.push-card {
+.push-row {
   display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
+  min-width: 0;
+  align-items: flex-start;
   justify-content: space-between;
+  gap: 12px;
+}
+
+.push-card {
   margin-bottom: 16px;
   padding: 16px 20px;
   border: 1px solid #e0e8e6;
@@ -154,8 +179,8 @@ onMounted(async () => {
 }
 
 .push-copy {
-  min-width: 240px;
-  flex: 1 1 320px;
+  flex: 1;
+  min-width: 0;
 }
 
 .push-title {
@@ -163,6 +188,7 @@ onMounted(async () => {
   font-size: 15px;
   font-weight: 700;
   color: #12343b;
+  overflow-wrap: anywhere;
 }
 
 .push-text {
@@ -170,46 +196,33 @@ onMounted(async () => {
   font-size: 12.5px;
   line-height: 1.6;
   color: #5c7176;
+  overflow-wrap: anywhere;
 }
 
-.push-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  align-items: flex-start;
-}
-
-.push-btn {
-  min-height: 42px;
-  padding: 0 18px;
-  border: 0;
-  border-radius: 10px;
-  background: #10504e;
-  color: #ffffff;
-  font-family: inherit;
-  font-size: 13.5px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.push-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.push-btn-off {
-  background: #ffffff;
-  color: #12343b;
-  border: 1px solid #cfdcda;
+.push-warning {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: #a05b06;
 }
 
 .push-hint {
-  margin: 0;
+  margin: 6px 0 0;
   font-size: 12px;
   color: #5c7176;
 }
 
 .push-error {
   color: #a01b1b;
+}
+
+@media (max-width: 360px) {
+  .push-card {
+    padding: 14px;
+  }
+
+  .push-row {
+    gap: 10px;
+  }
 }
 </style>

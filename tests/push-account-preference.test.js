@@ -42,7 +42,8 @@ describe('push switch state', () => {
 
   it('is mounted on the profile page as well as the leave page', () => {
     expect(PROFILE_PAGE).toContain("import PushToggle from '../components/PushToggle.vue'")
-    expect(PROFILE_PAGE).toContain('<PushToggle />')
+    expect(PROFILE_PAGE).toContain('<PushToggle')
+    expect(PROFILE_PAGE).toContain('v-model:active="pushOn"')
   })
 })
 
@@ -90,7 +91,10 @@ describe('click-only permission and unsubscribe', () => {
     const enableBlock = PUSH_TOGGLE.slice(enableStart, enableEnd)
 
     expect(enableBlock).toContain('requestAndSubscribe')
-    expect(PUSH_TOGGLE).toContain('@click="enable"')
+    expect(PUSH_TOGGLE).toContain('@toggle="togglePush"')
+    const toggleStart = PUSH_TOGGLE.indexOf('function togglePush()')
+    const toggleEnd = PUSH_TOGGLE.indexOf('onMounted(async')
+    expect(PUSH_TOGGLE.slice(toggleStart, toggleEnd)).toContain('enable()')
     expect(PUSH_LIB).toContain('export async function requestAndSubscribe')
     expect(PUSH_LIB).toContain('Notification.requestPermission()')
   })
@@ -101,6 +105,9 @@ describe('click-only permission and unsubscribe', () => {
     const disableBlock = PUSH_TOGGLE.slice(disableStart, disableEnd)
 
     expect(disableBlock).toContain('unsubscribePush')
-    expect(PUSH_TOGGLE).toContain('@click="disable"')
+    expect(PUSH_TOGGLE).toContain('@toggle="togglePush"')
+    const toggleStart = PUSH_TOGGLE.indexOf('function togglePush()')
+    const toggleEnd = PUSH_TOGGLE.indexOf('onMounted(async')
+    expect(PUSH_TOGGLE.slice(toggleStart, toggleEnd)).toContain('disable()')
   })
 })
