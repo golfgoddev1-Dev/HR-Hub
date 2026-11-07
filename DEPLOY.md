@@ -68,6 +68,20 @@
 - Rate limit ใช้ Durable Objects ที่ประกาศไว้ใน `wrangler.toml`
   (`RL_CONTEXT_IP`, `RL_SUBMIT_IP`, `RL_SUBMIT_TOKEN`) จึงไม่ต้องใช้บริการภายนอกเพิ่ม
 
+### 2.1 Mail relay (Worker แยก — ใช้ส่งอีเมล)
+
+โฟลเดอร์ `mail-relay/` เป็น Worker แยกชื่อ **`hr-hub-mail-relay`** เพื่อให้คีย์ของผู้ให้บริการอีเมล
+อยู่ที่ Worker นี้เท่านั้น ไม่ขึ้นไปอยู่ใน `hr-hub-api`
+
+- Endpoint เดียว: `POST /send` แบบ server-to-server ต้องมี `Authorization: Bearer <MAIL_RELAY_SECRET>`
+- Body รับเฉพาะ `{ to, subject, text }` (plain text ล้วน) — ไม่มี HTML, cc/bcc, ไฟล์แนบ
+  หรือ header ที่ผู้เรียกกำหนดเอง; ถ้าส่ง key อื่นมาจะถูกปฏิเสธทั้งก้อน
+- Secrets ของ relay: `MAIL_RELAY_SECRET`, `RESEND_API_KEY`
+- ตัวแปรของ relay: `MAIL_FROM` = ผู้ส่งที่ยืนยันโดเมนกับผู้ให้บริการแล้ว
+- `hr-hub-api` ต้องมี `MAIL_RELAY_URL` (URL ของ relay) และ `MAIL_RELAY_SECRET` ชุดเดียวกับ relay
+- Deploy: `cd mail-relay && npx wrangler deploy` — ทดสอบ: `cd mail-relay && npm test`
+- ค่า secret ตั้งด้วย `npx wrangler secret put <NAME>` ในโฟลเดอร์ `mail-relay/` และห้าม commit
+
 ## 3. Cloudflare Pages (frontend)
 
 - Pages project: **`hr-hub`** — โดเมน **`https://hr-hub-3yr.pages.dev`** (โดเมนที่ใช้งานจริง ไม่เปลี่ยนชื่อโปรเจกต์)
