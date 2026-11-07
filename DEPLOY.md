@@ -68,19 +68,25 @@
 - Rate limit ใช้ Durable Objects ที่ประกาศไว้ใน `wrangler.toml`
   (`RL_CONTEXT_IP`, `RL_SUBMIT_IP`, `RL_SUBMIT_TOKEN`) จึงไม่ต้องใช้บริการภายนอกเพิ่ม
 
-### 2.1 Mail relay (Worker แยก — ใช้ส่งอีเมล)
+### 2.1 Mail relay (Google Apps Script — ใช้ส่งอีเมล)
 
-โฟลเดอร์ `mail-relay/` เป็น Worker แยกชื่อ **`hr-hub-mail-relay`** เพื่อให้คีย์ของผู้ให้บริการอีเมล
-อยู่ที่ Worker นี้เท่านั้น ไม่ขึ้นไปอยู่ใน `hr-hub-api`
+อีเมลของระบบส่งผ่าน **Google Apps Script web app** ที่อยู่ในบัญชี Google Workspace ของบริษัท
+โดยใช้ `MailApp` — **ไม่มี Worker แยก ไม่มีผู้ให้บริการอีเมลรายที่สาม และไม่ต้องแก้ DNS**
+ผู้ส่งคือบัญชี Workspace ของบริษัทเอง
 
-- Endpoint เดียว: `POST /send` แบบ server-to-server ต้องมี `Authorization: Bearer <MAIL_RELAY_SECRET>`
-- Body รับเฉพาะ `{ to, subject, text }` (plain text ล้วน) — ไม่มี HTML, cc/bcc, ไฟล์แนบ
-  หรือ header ที่ผู้เรียกกำหนดเอง; ถ้าส่ง key อื่นมาจะถูกปฏิเสธทั้งก้อน
-- Secrets ของ relay: `MAIL_RELAY_SECRET`, `RESEND_API_KEY`
-- ตัวแปรของ relay: `MAIL_FROM` = ผู้ส่งที่ยืนยันโดเมนกับผู้ให้บริการแล้ว
-- `hr-hub-api` ต้องมี `MAIL_RELAY_URL` (URL ของ relay) และ `MAIL_RELAY_SECRET` ชุดเดียวกับ relay
-- Deploy: `cd mail-relay && npx wrangler deploy` — ทดสอบ: `cd mail-relay && npm test`
-- ค่า secret ตั้งด้วย `npx wrangler secret put <NAME>` ในโฟลเดอร์ `mail-relay/` และห้าม commit
+- Worker `hr-hub-api` ส่ง `POST` JSON `{ to, subject, text }` ไปที่ URL ที่ลงท้าย `/exec`
+  (plain text เท่านั้น ไม่มี HTML, cc/bcc หรือไฟล์แนบ; key อื่นถูกปฏิเสธทั้งก้อน)
+- Secrets ที่ต้องตั้งบน `hr-hub-api` ด้วย `npx wrangler secret put <NAME>` ในโฟลเดอร์ `worker/`:
+  - `APPS_SCRIPT_URL` = URL ของ web app deployment (ลงท้าย `/exec`) — ถือเป็นค่าที่อ่อนไหว
+  - `MAIL_RELAY_SECRET` = ค่าเดียวกับ `RELAY_TOKEN` ใน Script Properties ของ Apps Script
+  ห้ามใส่ค่าจริงใน `wrangler.toml` หรือไฟล์ใด ๆ
+- ฝั่ง Apps Script: ไฟล์ `Code.gs` และ `relay-core.js` จากโฟลเดอร์ `mail-relay/` ถูกวางใน
+  โปรเจกต์ Apps Script ใหม่ และเพิ่ม `RELAY_TOKEN` ใน Script Properties
+  — ขั้นตอนทั้งหมด (รวมการ deploy เป็น Web app และการ rotate) อยู่ใน `mail-relay/README.md`
+- เหตุผลที่ token ส่งมาใน query string ด้วย: Apps Script ไม่เปิดเผย request header ให้ `doPost`
+  จึงอ่าน token ได้จาก `e.parameter.token` เท่านั้น (Worker ยังส่ง header `X-Relay-Token` ตามเดิม)
+- โควตาส่งอีเมลต่อวันของ Workspace ต้องตรวจจากเอกสารของ Google โดยตรง (ตัวเลขเปลี่ยนได้)
+- ทดสอบ: `cd mail-relay && npm test` (ทดสอบ logic ล้วน ไม่ได้ส่งอีเมลจริง)
 
 ## 3. Cloudflare Pages (frontend)
 

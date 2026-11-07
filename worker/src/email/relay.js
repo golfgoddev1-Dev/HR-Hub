@@ -1,65 +1,68 @@
-// Client for the HR Hub mail relay (mail-relay/).
+// Client for the HR Hub mail relay: a Google Apps Script web app that sends
+// through the company Workspace account with MailApp (see mail-relay/README.md).
 //
-// The relay is a separate Worker that holds the email provider key. This
-// module only knows two values: where the relay is (MAIL_RELAY_URL) and the
-// shared secret it must present (MAIL_RELAY_SECRET). It sends one plain-text
-// message — one recipient, one subject, one body — and never a second field
-// the relay would have to ignore.
+// The Worker knows two values: the deployment URL (APPS_SCRIPT_URL) and the
+// shared token (MAIL_RELAY_SECRET, the same value as RELAY_TOKEN in the
+// script's Script Properties). The token travels in the X-Relay-Token header
+// and, because Apps Script's web-app event object does not expose inbound
+// request headers, also as the `token` query parameter on the deployment URL.
 //
-// The function never throws and never logs: a caller (a queue worker, later the
-// approval email) gets a small result object and decides whether to retry. No
-// recipient, subject, body or secret ever reaches a log line or an error.
+// sendRelayEmail never throws and never logs the URL, token, recipient, subject
+// or text. Callers retry "upstream" and "network"; "config" and "invalid" are
+// permanent until the caller or the configuration changes.
 
 import { getRequiredEnv } from "../env.js";
 
-export const MAIL_RELAY_URL_ENV = "MAIL_RELAY_URL";
+export const APPS_SCRIPT_URL_ENV = "APPS_SCRIPT_URL";
 export const MAIL_RELAY_SECRET_ENV = "MAIL_RELAY_SECRET";
 
-export const RELAY_SEND_PATH = "/send";
+export const TOKEN_HEADER = "X-Relay-Token";
+export const TOKEN_QUERY_PARAM = "token";
 export const RELAY_TIMEOUT_MS = 10000;
 
-// Kept equal to the relay's own limits (mail-relay/src/message.js). A mismatch
-// would only mean the relay refuses a message this side accepted, which the
-// contract test in worker/tests/mail-relay-client.test.js guards.
-export const MAX_RECIPIENT_LENGTH = 254;
-export const MAX_SUBJECT_LENGTH = 200;
+// Kept equal to the relay's own limits (mail-relay/relay-core.js). A mismatch
+// would only mean the relay refuses a message this side accepted; the contract
+// test in worker/tests/mail-relay-client.test.js guards the two together.
+export const MAX_SUBJECT_LENGTH = 120;
 export const MAX_TEXT_LENGTH = 4000;
+export const MAX_RECIPIENT_LENGTH = 254;
 
+// One bare address: no display name, no list, no whitespace.
 const EMAIL_PATTERN = /^[^\s@,;<>"]+@[^\s@,;<>"]+\.[^\s@,;<>"]+$/;
-const HEADER_CONTROL = /[\u0000-\u001f\u007f]/;
-const BODY_CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/;
-const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
+// A subject is a mail header: CR, LF and NUL would let a caller add headers.
+const SUBJECT_CONTROL = /[\u0000\r\n]/;
 
 function isPlainObject(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isPlainEmail(value) {
+function isSingleEmail(value) {
   return (
     typeof value === "string" &&
     value.length > 0 &&
     value.length <= MAX_RECIPIENT_LENGTH &&
-    !HEADER_CONTROL.test(value) &&
     EMAIL_PATTERN.test(value)
   );
 }
 
 /**
  * Local copy of the relay's message rules, so an obviously bad message is
- * refused before it costs a network call. Returns the three fields or null.
+ * refused before it costs a network call. Kept as a copy rather than an import:
+ * mail-relay/relay-core.js is a pasted Apps Script file that publishes a global,
+ * not a module the Worker bundles. Returns the three fields or null.
  */
 export function validateOutgoingMessage(message) {
   if (!isPlainObject(message)) return null;
 
   const { to, subject, text } = message;
-  if (!isPlainEmail(to)) return null;
+  if (!isSingleEmail(to)) return null;
 
   if (
     typeof subject !== "string" ||
     subject.length < 1 ||
     subject.length > MAX_SUBJECT_LENGTH ||
-    subject !== subject.trim() ||
-    HEADER_CONTROL.test(subject)
+    subject.trim().length === 0 ||
+    SUBJECT_CONTROL.test(subject)
   ) {
     return null;
   }
@@ -68,8 +71,7 @@ export function validateOutgoingMessage(message) {
     typeof text !== "string" ||
     text.length < 1 ||
     text.length > MAX_TEXT_LENGTH ||
-    text.trim().length === 0 ||
-    BODY_CONTROL.test(text)
+    text.trim().length === 0
   ) {
     return null;
   }
@@ -78,44 +80,47 @@ export function validateOutgoingMessage(message) {
 }
 
 /**
- * Reads MAIL_RELAY_URL and MAIL_RELAY_SECRET. HTTPS is required because the
- * secret travels in a header; the only exception is a loopback http URL, which
- * local `wrangler dev` uses. Query strings and fragments are refused so the
- * base URL is unambiguous.
+ * Reads APPS_SCRIPT_URL and MAIL_RELAY_SECRET and builds the request URL.
+ *
+ * HTTPS only: the token travels with the request. The token is appended as the
+ * `token` query parameter because that is the only place an Apps Script web app
+ * can read it (headers are not exposed). An existing value is replaced, so
+ * rotating the Worker secret is enough and a stale URL copy cannot win.
  */
 export function readRelayConfig(env) {
-  const config = { ok: false, reason: "config" };
+  const unconfigured = { ok: false, reason: "config" };
 
-  const rawUrl = typeof env?.[MAIL_RELAY_URL_ENV] === "string" ? env[MAIL_RELAY_URL_ENV].trim() : "";
-  const secret = typeof env?.[MAIL_RELAY_SECRET_ENV] === "string" ? env[MAIL_RELAY_SECRET_ENV] : "";
-  if (rawUrl.length === 0 || secret.trim().length === 0) return config;
+  const rawUrl =
+    typeof env?.[APPS_SCRIPT_URL_ENV] === "string" ? env[APPS_SCRIPT_URL_ENV].trim() : "";
+  const secret =
+    typeof env?.[MAIL_RELAY_SECRET_ENV] === "string" ? env[MAIL_RELAY_SECRET_ENV] : "";
+  if (rawUrl.length === 0 || secret.trim().length === 0) return unconfigured;
 
-  let baseUrl;
+  let url;
   try {
-    const url = new URL(rawUrl);
-    const loopbackHttp = url.protocol === "http:" && LOOPBACK_HOSTS.has(url.hostname);
-    if (url.protocol !== "https:" && !loopbackHttp) return config;
-    if (url.search.length > 0 || url.hash.length > 0) return config;
-    baseUrl = url.origin + url.pathname.replace(/\/+$/, "");
+    url = new URL(rawUrl);
   } catch {
-    return config;
+    return unconfigured;
   }
+  if (url.protocol !== "https:") return unconfigured;
 
-  return { ok: true, baseUrl, secret };
+  url.searchParams.set(TOKEN_QUERY_PARAM, secret);
+  url.hash = "";
+
+  return { ok: true, url: url.toString(), secret };
 }
 
 /**
  * Sends one plain-text message through the relay.
  *
- * Returns:
- *   { ok: true, status }
- *   { ok: false, reason: "config" }             — missing or unsafe relay config
- *   { ok: false, reason: "invalid" }            — message fails the local rules
- *   { ok: false, reason: "upstream", status }   — the relay refused it
- *   { ok: false, reason: "network" }            — transport failure or timeout
+ * Returns { ok: true } or { ok: false, reason } where reason is:
+ *   "config"   — missing/unsafe configuration, or the relay rejected the token
+ *   "invalid"  — the message fails the rules (and the relay's bad_request)
+ *   "upstream" — quota, send failure, non-JSON answer or a non-2xx response
+ *   "network"  — transport failure or the 10 second timeout
  *
- * A "network" or "upstream" result is retryable by the caller; "config" and
- * "invalid" are not.
+ * "config" and "invalid" are permanent; "upstream" and "network" are worth
+ * retrying later.
  */
 export async function sendRelayEmail(env, options = {}) {
   const config = readRelayConfig(env);
@@ -135,22 +140,37 @@ export async function sendRelayEmail(env, options = {}) {
   }
 
   try {
-    const response = await fetchImpl(`${config.baseUrl}${RELAY_SEND_PATH}`, {
+    const response = await fetchImpl(config.url, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${config.secret}`,
+        [TOKEN_HEADER]: config.secret,
         "Content-Type": "application/json",
       },
       body: JSON.stringify(message),
+      // Apps Script answers with a redirect to its own echo endpoint.
+      redirect: "follow",
       ...(controller ? { signal: controller.signal } : {}),
     });
 
-    // The relay's body is a short code we do not need; not reading it keeps any
-    // echo of the message out of this process entirely.
-    if (response && response.ok === true) {
-      return { ok: true, status: response.status };
+    if (!response || response.ok !== true) {
+      return { ok: false, reason: "upstream" };
     }
-    return { ok: false, reason: "upstream", status: response?.status ?? 0 };
+
+    let data;
+    try {
+      data = await response.json();
+    } catch {
+      // A sign-in or error page instead of JSON: treat it as an upstream fault.
+      return { ok: false, reason: "upstream" };
+    }
+
+    if (data && data.ok === true) return { ok: true };
+
+    const code = data && typeof data.code === "string" ? data.code : "";
+    if (code === "unauthorized") return { ok: false, reason: "config" };
+    if (code === "bad_request") return { ok: false, reason: "invalid" };
+    // "quota", "send_failed" and anything unrecognised: worth retrying later.
+    return { ok: false, reason: "upstream" };
   } catch {
     return { ok: false, reason: "network" };
   } finally {
@@ -161,7 +181,7 @@ export async function sendRelayEmail(env, options = {}) {
 /** True when both relay values are present; lets a caller skip quietly. */
 export function relayIsConfigured(env) {
   try {
-    getRequiredEnv(env, MAIL_RELAY_URL_ENV);
+    getRequiredEnv(env, APPS_SCRIPT_URL_ENV);
     getRequiredEnv(env, MAIL_RELAY_SECRET_ENV);
     return true;
   } catch {
