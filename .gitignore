@@ -34,3 +34,6 @@ scripts/spike/
 .dev.vars
 worker/.dev.vars
 .env.local
+
+# Local secret files: names only, values never belong in the repository
+*.secret

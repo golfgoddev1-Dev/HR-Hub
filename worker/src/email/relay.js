@@ -1,15 +1,18 @@
-// Client for the HR Hub mail relay: a Google Apps Script web app that sends
-// through the company Workspace account with MailApp (see mail-relay/README.md).
+// Worker client for the HR Hub mail relay: a Google Apps Script web app that
+// sends through the company Workspace account with MailApp.
 //
-// The Worker knows two values: the deployment URL (APPS_SCRIPT_URL) and the
-// shared token (MAIL_RELAY_SECRET, the same value as RELAY_TOKEN in the
-// script's Script Properties). The token travels in the X-Relay-Token header
-// and, because Apps Script's web-app event object does not expose inbound
-// request headers, also as the `token` query parameter on the deployment URL.
+// Hardening rules enforced here:
+// - APPS_SCRIPT_URL must be https and its host must be script.google.com, so a
+//   wrong or tampered value cannot point the Worker at another server;
+// - MAIL_RELAY_SECRET must be at least 32 characters;
+// - the token is written with URLSearchParams (never concatenated) and is the
+//   only query parameter sent;
+// - the final response must come from script.google.com or
+//   script.googleusercontent.com, and at most 4 KiB of it is read.
 //
 // sendRelayEmail never throws and never logs the URL, token, recipient, subject
 // or text. Callers retry "upstream" and "network"; "config" and "invalid" are
-// permanent until the caller or the configuration changes.
+// permanent until the configuration or the caller changes.
 
 import { getRequiredEnv } from "../env.js";
 
@@ -20,6 +23,17 @@ export const TOKEN_HEADER = "X-Relay-Token";
 export const TOKEN_QUERY_PARAM = "token";
 export const RELAY_TIMEOUT_MS = 10000;
 
+export const MIN_SECRET_LENGTH = 32;
+export const MAX_RESPONSE_BYTES = 4096;
+
+// The deployment URL must be the Apps Script host; the redirect it answers with
+// lands on its googleusercontent echo host.
+export const RELAY_HOST = "script.google.com";
+export const ALLOWED_HOSTS = Object.freeze([
+  "script.google.com",
+  "script.googleusercontent.com",
+]);
+
 // Kept equal to the relay's own limits (mail-relay/relay-core.js). A mismatch
 // would only mean the relay refuses a message this side accepted; the contract
 // test in worker/tests/mail-relay-client.test.js guards the two together.
@@ -27,10 +41,26 @@ export const MAX_SUBJECT_LENGTH = 120;
 export const MAX_TEXT_LENGTH = 4000;
 export const MAX_RECIPIENT_LENGTH = 254;
 
+// Relay code -> caller decision. "config" is a configuration problem the queue
+// cannot fix by waiting; "invalid" is the caller's fault; everything else is
+// worth retrying later.
+const CODE_REASONS = Object.freeze({
+  bad_request: "invalid",
+  unauthorized: "config",
+  disabled: "config",
+  config: "config",
+  recipient_not_allowed: "config",
+  rate_limited: "upstream",
+  quota: "upstream",
+  send_failed: "upstream",
+});
+
 // One bare address: no display name, no list, no whitespace.
 const EMAIL_PATTERN = /^[^\s@,;<>"]+@[^\s@,;<>"]+\.[^\s@,;<>"]+$/;
 // A subject is a mail header: CR, LF and NUL would let a caller add headers.
 const SUBJECT_CONTROL = /[\u0000\r\n]/;
+// No control character anywhere in an address.
+const ADDRESS_CONTROL = /[\u0000-\u001f\u007f]/;
 
 function isPlainObject(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -41,8 +71,16 @@ function isSingleEmail(value) {
     typeof value === "string" &&
     value.length > 0 &&
     value.length <= MAX_RECIPIENT_LENGTH &&
+    !ADDRESS_CONTROL.test(value) &&
     EMAIL_PATTERN.test(value)
   );
+}
+
+function byteLength(text) {
+  if (typeof TextEncoder === "function") {
+    return new TextEncoder().encode(String(text)).length;
+  }
+  return String(text).length;
 }
 
 /**
@@ -82,10 +120,11 @@ export function validateOutgoingMessage(message) {
 /**
  * Reads APPS_SCRIPT_URL and MAIL_RELAY_SECRET and builds the request URL.
  *
- * HTTPS only: the token travels with the request. The token is appended as the
- * `token` query parameter because that is the only place an Apps Script web app
- * can read it (headers are not exposed). An existing value is replaced, so
- * rotating the Worker secret is enough and a stale URL copy cannot win.
+ * The URL must be https on script.google.com. Every query parameter it already
+ * carried is dropped, then the token is set once through URLSearchParams: the
+ * relay refuses unknown or duplicated parameters, and this keeps the request to
+ * exactly one. Dropping the old value also means rotating the Worker secret is
+ * enough and a stale copy in the URL cannot win.
  */
 export function readRelayConfig(env) {
   const unconfigured = { ok: false, reason: "config" };
@@ -94,7 +133,7 @@ export function readRelayConfig(env) {
     typeof env?.[APPS_SCRIPT_URL_ENV] === "string" ? env[APPS_SCRIPT_URL_ENV].trim() : "";
   const secret =
     typeof env?.[MAIL_RELAY_SECRET_ENV] === "string" ? env[MAIL_RELAY_SECRET_ENV] : "";
-  if (rawUrl.length === 0 || secret.trim().length === 0) return unconfigured;
+  if (rawUrl.length === 0 || secret.trim().length < MIN_SECRET_LENGTH) return unconfigured;
 
   let url;
   try {
@@ -103,9 +142,11 @@ export function readRelayConfig(env) {
     return unconfigured;
   }
   if (url.protocol !== "https:") return unconfigured;
+  if (url.hostname !== RELAY_HOST) return unconfigured;
 
-  url.searchParams.set(TOKEN_QUERY_PARAM, secret);
+  url.search = "";
   url.hash = "";
+  url.searchParams.set(TOKEN_QUERY_PARAM, secret);
 
   return { ok: true, url: url.toString(), secret };
 }
@@ -114,13 +155,10 @@ export function readRelayConfig(env) {
  * Sends one plain-text message through the relay.
  *
  * Returns { ok: true } or { ok: false, reason } where reason is:
- *   "config"   — missing/unsafe configuration, or the relay rejected the token
+ *   "config"   — bad configuration, or the relay refused the token / allowlist
  *   "invalid"  — the message fails the rules (and the relay's bad_request)
- *   "upstream" — quota, send failure, non-JSON answer or a non-2xx response
+ *   "upstream" — caps, send failure, odd answer, unexpected host
  *   "network"  — transport failure or the 10 second timeout
- *
- * "config" and "invalid" are permanent; "upstream" and "network" are worth
- * retrying later.
  */
 export async function sendRelayEmail(env, options = {}) {
   const config = readRelayConfig(env);
@@ -156,21 +194,49 @@ export async function sendRelayEmail(env, options = {}) {
       return { ok: false, reason: "upstream" };
     }
 
+    // The final URL after redirects is exposed by the Workers runtime (and by
+    // Node's fetch). If a runtime ever leaves it empty, the https-only config
+    // check above is what stands.
+    const finalUrl = typeof response.url === "string" ? response.url : "";
+    if (finalUrl.length > 0) {
+      let host;
+      try {
+        host = new URL(finalUrl).hostname;
+      } catch {
+        return { ok: false, reason: "upstream" };
+      }
+      if (ALLOWED_HOSTS.indexOf(host) === -1) return { ok: false, reason: "upstream" };
+    }
+
+    // Refuse an oversized declared body without reading it, then refuse anything
+    // that still arrives over the cap. The read is not streamed: the body is
+    // bounded by this check, not by aborting mid-stream.
+    const declared = Number(response.headers?.get?.("Content-Length"));
+    if (Number.isFinite(declared) && declared > MAX_RESPONSE_BYTES) {
+      return { ok: false, reason: "upstream" };
+    }
+
+    let text;
+    try {
+      text = await response.text();
+    } catch {
+      return { ok: false, reason: "upstream" };
+    }
+    if (byteLength(text) > MAX_RESPONSE_BYTES) return { ok: false, reason: "upstream" };
+
     let data;
     try {
-      data = await response.json();
+      data = JSON.parse(text);
     } catch {
-      // A sign-in or error page instead of JSON: treat it as an upstream fault.
+      // A sign-in or error page instead of JSON: an upstream fault.
       return { ok: false, reason: "upstream" };
     }
 
     if (data && data.ok === true) return { ok: true };
 
     const code = data && typeof data.code === "string" ? data.code : "";
-    if (code === "unauthorized") return { ok: false, reason: "config" };
-    if (code === "bad_request") return { ok: false, reason: "invalid" };
-    // "quota", "send_failed" and anything unrecognised: worth retrying later.
-    return { ok: false, reason: "upstream" };
+    const reason = CODE_REASONS[code];
+    return { ok: false, reason: typeof reason === "string" ? reason : "upstream" };
   } catch {
     return { ok: false, reason: "network" };
   } finally {
