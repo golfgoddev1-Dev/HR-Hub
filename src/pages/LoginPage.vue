@@ -1728,7 +1728,9 @@ async function submitLogin() {
 
 /* 1) เข้าฉาก */
 .topbar { animation: m-fade-in-down 0.8s cubic-bezier(0.16, 1, 0.3, 1) both; }
-.split { animation: m-scale-in 0.9s cubic-bezier(0.16, 1, 0.3, 1) both; }
+/* The panel and its heading must be readable at first paint. The remaining
+   motion below the fold is decorative and does not gate the login LCP. */
+.split { animation: none; }
 
 /* 2) ฝั่งแบรนด์ ทยอยขึ้นทีละส่วน */
 .brand-top { animation: m-fade-in-up 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.15s both; }
@@ -1740,7 +1742,7 @@ async function submitLogin() {
 .brand-footnote { animation: m-fade-in-up 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.65s both; }
 
 /* 3) ฝั่งฟอร์ม */
-.login-head { animation: m-fade-in 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.2s both; }
+.login-head { animation: none; }
 .form > .section { animation: m-fade-in-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) both; }
 .form > .section:nth-child(1) { animation-delay: 0.3s; }
 .form > .section:nth-child(2) { animation-delay: 0.38s; }
