@@ -45,6 +45,9 @@ import {
   uploadCertificate,
 } from "../leave-storage.js";
 import { insertWithRequestCode } from "../leave-request-code.js";
+import { applyLeaveDecision } from "../leave-decision.js";
+import { createApprovalLinkEmail } from "../approval-link.js";
+import { dispatchApprovalEmails } from "../email/approval-queue.js";
 import { dispatchQueuedNotifications, enqueueNotificationSafely } from "../push/queue.js";
 import { NOTIFICATION_KINDS } from "../push/payload.js";
 import { CALENDAR_MAX_RANGE_DAYS, CALENDAR_MESSAGES, chunksOf, displayName } from "../leave-calendar.js";
@@ -177,6 +180,15 @@ function dispatchQueued(c, queued, now) {
     ctx = null;
   }
   return dispatchQueuedNotifications(c.env, ctx, ids, now);
+}
+
+/** The request's ExecutionContext, or null when the runtime has none. */
+function requestContext(c) {
+  try {
+    return c.executionCtx;
+  } catch {
+    return null;
+  }
 }
 
 /** JSON object body, at most 8 KB, no other content type accepted. */
@@ -639,6 +651,39 @@ leave.post("/requests", async (c) => {
         }),
       })
     );
+
+    // The approval email is queued, never sent inside this handler: a slow relay
+    // must not slow down the submission. A missing approver address or a missing
+    // APP_PUBLIC_URL only skips the email; the leave itself is already saved.
+    if (typeof inserted.data?.id === "string") {
+      const approver = await db.select(EMPLOYEES_TABLE, {
+        columns: "id,email,is_active",
+        filters: [["id", "eq", approverId]],
+        single: true,
+      });
+      const approverEmail = typeof approver?.email === "string" ? approver.email.trim() : "";
+
+      if (approverEmail.length > 0) {
+        const issued = await createApprovalLinkEmail({
+          db,
+          publicUrl: c.env.APP_PUBLIC_URL,
+          leaveRequestId: inserted.data.id,
+          approverEmployeeId: approverId,
+          createdBy: null,
+          now,
+          to: approverEmail,
+          employeeName: employee.full_name ?? "",
+          employeeCode: employee.employee_code ?? null,
+          leaveTypeName: leaveType.name ?? "",
+          request: row,
+        });
+        if (issued.ok === true) {
+          await dispatchApprovalEmails(c.env, requestContext(c), [issued.job]);
+        } else {
+          console.error("[approval-link-issue]", { code: issued.code });
+        }
+      }
+    }
 
     // The approver gets a push. A queue failure is logged, never returned: the
     // leave itself is already saved and must not look broken.
@@ -1261,26 +1306,19 @@ async function decide(c, status) {
     }
 
     const nowIso = new Date().toISOString();
-    const updated = await db.update(
-      LEAVE_REQUESTS_TABLE,
-      {
-        status,
-        decided_at: nowIso,
-        decision_note: note,
-        updated_at: nowIso,
-      },
-      [
-        ["id", "eq", id],
-        ["status", "eq", "pending"],
-        ["approver_id", "eq", employee.id],
-      ],
-      { returning: true, columns: "id,status,decided_at" }
-    );
-    if (updated.error) {
-      throw Object.assign(new Error("leave decision failed"), { code: updated.error.code });
+    // One shared decision function: the email link calls this same update.
+    const applied = await applyLeaveDecision(db, {
+      requestId: id,
+      approverId: employee.id,
+      status,
+      note,
+      nowIso,
+    });
+    if (applied.error) {
+      throw Object.assign(new Error("leave decision failed"), { code: applied.code });
     }
     // Zero rows matched: someone else decided first, or the status changed.
-    if (!Array.isArray(updated.data) || updated.data.length === 0) {
+    if (applied.ok !== true) {
       return c.json({ ok: false, message: MESSAGE.alreadyDecided }, 409);
     }
 

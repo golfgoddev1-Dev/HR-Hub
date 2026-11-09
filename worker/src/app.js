@@ -18,6 +18,7 @@ import { createEmployeeDirectoryRoutes } from "./routes/employee-directory.js";
 import leave from "./routes/leave.js";
 import leaveCalendar from "./routes/leave-calendar.js";
 import leaveHr from "./routes/leave-hr.js";
+import approveLink from "./routes/approve-link.js";
 import admin from "./routes/admin.js";
 import profile from "./routes/profile.js";
 import notifications from "./routes/notifications.js";
@@ -52,6 +53,8 @@ app.route("/api/admin", admin);
 app.route("/api/profile", profile);
 // Mounted before /api/leave so the calendar path matches its own app first.
 app.route("/api/leave/calendar", leaveCalendar);
+// Public approval-by-email routes: no session, own rate limiting.
+app.route("/api/approve-link", approveLink);
 app.route("/api/leave", leave);
 app.route("/api/meeting/monthly-session", monthlySession);
 app.route("/api/meeting/roster", meetingRoster);

@@ -43,6 +43,9 @@ new_sqlite_classes = [
 
 [vars]
 APP_ORIGIN = "https://hr-hub-3yr.pages.dev"
+# Public frontend origin used to build the approval email link. Plain config,
+# not a secret; it is never derived from a request header.
+APP_PUBLIC_URL = "https://hr-hub-3yr.pages.dev"
 # AUTO_ABSENT_ENABLED is intentionally not set: auto-absent is off by default.
 # The owner turns it on deliberately by adding it here with the value "true"
 # (the exact string; anything else, including "false", keeps it off), then

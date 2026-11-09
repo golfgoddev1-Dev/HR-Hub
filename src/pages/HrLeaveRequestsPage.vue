@@ -1,5 +1,6 @@
 <script setup>
 import { onMounted, ref } from 'vue'
+import { postJson } from '../api.js'
 import { formatThaiDate, formatThaiDateRange } from '../lib/thai-date.js'
 import {
   CERTIFICATE_OPEN_LABEL,
@@ -56,6 +57,9 @@ const filters = ref({
 
 const detail = ref(null)
 const detailLoading = ref(false)
+const resendBusy = ref(false)
+const resendMessage = ref('')
+const resendError = ref('')
 
 // The certificate is private: the Worker issues a signed URL for 60 seconds.
 async function openAttachment(id) {
@@ -138,6 +142,8 @@ async function loadOptions() {
 async function openDetail(item) {
   detailLoading.value = true
   detail.value = { id: item.id, loading: true }
+  resendMessage.value = ''
+  resendError.value = ''
   try {
     const response = await fetch(`/api/leave/hr/requests/${encodeURIComponent(item.id)}`, {
       credentials: 'same-origin',
@@ -162,6 +168,33 @@ function certificateOf(request) {
 function openPrint(id) {
   if (!id) return
   window.open(`/leave/hr/requests/${encodeURIComponent(id)}/print`, '_blank', 'noopener')
+}
+
+// HR replaces the request's open email links with one new 72-hour link. The
+// response carries no token or URL, only the new expiry.
+async function resendApprovalLink(id) {
+  if (!id || resendBusy.value) return
+  resendBusy.value = true
+  resendMessage.value = ''
+  resendError.value = ''
+  try {
+    const { status, data } = await postJson(
+      `/api/leave/hr/requests/${encodeURIComponent(id)}/approval-link`,
+      {}
+    )
+    if (status !== 200 || data.ok !== true) {
+      resendError.value =
+        typeof data.message === 'string'
+          ? data.message
+          : 'ส่งลิงก์อนุมัติใหม่ไม่สำเร็จ กรุณาลองใหม่'
+      return
+    }
+    resendMessage.value = 'ส่งลิงก์อนุมัติใหม่แล้ว (ลิงก์ใหม่มีอายุ 72 ชั่วโมง)'
+  } catch {
+    resendError.value = 'ส่งลิงก์อนุมัติใหม่ไม่สำเร็จ กรุณาลองใหม่'
+  } finally {
+    resendBusy.value = false
+  }
 }
 
 function resetFilters() {
@@ -376,7 +409,19 @@ onMounted(async () => {
             <button type="button" class="ghost-btn" @click="openPrint(detail.id)">
               พิมพ์ / บันทึกเป็น PDF
             </button>
+            <button
+              v-if="detail.status === 'pending'"
+              type="button"
+              class="primary-btn"
+              :disabled="resendBusy"
+              @click="resendApprovalLink(detail.id)"
+            >
+              ส่งลิงก์อนุมัติใหม่
+            </button>
           </div>
+
+          <p v-if="resendError" class="hint error">{{ resendError }}</p>
+          <p v-if="resendMessage" class="hint">{{ resendMessage }}</p>
         </template>
       </section>
     </main>

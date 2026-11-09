@@ -46,6 +46,9 @@ import { dispatchQueuedNotifications, enqueueNotificationSafely } from "../push/
 import { NOTIFICATION_KINDS } from "../push/payload.js";
 import { MESSAGES, isDateString, isOtherType } from "../leave-rules.js";
 import { insertWithRequestCode } from "../leave-request-code.js";
+import { createApprovalLinkEmail, invalidateOpenApprovalTokens } from "../approval-link.js";
+import { displayName } from "../leave-calendar.js";
+import { dispatchApprovalEmails } from "../email/approval-queue.js";
 
 const leaveHr = new Hono();
 
@@ -68,6 +71,7 @@ const HOLIDAY_NAME_MAX_LENGTH = 100;
 const APPROVER_LIST_LIMIT = 200;
 
 const ACTION_BACKDATED = "leave_backdated_created";
+const ACTION_APPROVAL_LINK_RESENT = "leave_approval_link_resent";
 const ACTION_APPROVER_ADDED = "leave_approver_added";
 const ACTION_APPROVER_DEACTIVATED = "leave_approver_deactivated";
 const ACTION_APPROVER_REACTIVATED = "leave_approver_reactivated";
@@ -101,6 +105,8 @@ const MESSAGE = {
   forbidden: "ไม่มีสิทธิ์เข้าถึงส่วนนี้",
   saveError: "ระบบขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้ง",
   requestNotFound: "ไม่พบใบลานี้",
+  alreadyDecided: "ใบลานี้ถูกดำเนินการแล้ว",
+  approverEmailMissing: "ผู้อนุมัติยังไม่มีอีเมลในระบบ กรุณาเพิ่มอีเมลก่อนส่งลิงก์",
   duplicateCode: "รหัสใบลาซ้ำ กรุณาบันทึกใหม่",
   approverNotFound: "ไม่พบผู้อนุมัติที่เลือก",
   approverNotEligible: "ผู้อนุมัติที่เลือกไม่ได้เป็นผู้อนุมัติของพนักงานคนนี้",
@@ -172,6 +178,15 @@ function dispatchQueued(c, queued, now) {
     ctx = null;
   }
   return dispatchQueuedNotifications(c.env, ctx, ids, now);
+}
+
+/** The request's ExecutionContext, or null when the runtime has none. */
+function requestContext(c) {
+  try {
+    return c.executionCtx;
+  } catch {
+    return null;
+  }
 }
 
 async function readStrictJson(c) {
@@ -532,6 +547,108 @@ leaveHr.get("/requests/:id", async (c) => {
     return c.json({ ok: true, request }, 200);
   } catch (error) {
     logError("hr leave detail failed", error);
+    return c.json({ ok: false, message: MESSAGE.saveError }, 500);
+  }
+});
+
+// --- POST /api/leave/hr/requests/:id/approval-link (resend) ------------------
+// HR replaces every open link for a pending request with one new 72-hour link,
+// then queues the email. The audit row names the channel and the request code
+// only: no token, no reason and no name.
+
+leaveHr.post("/requests/:id/approval-link", async (c) => {
+  const denied = await guard(c);
+  if (denied) return denied.response;
+
+  const id = c.req.param("id");
+  if (!isUuid(id)) return invalidBody(c);
+
+  try {
+    const db = c.get("hrLeaveDb");
+    const session = c.get("hrLeaveSession");
+
+    const row = await db.select(LEAVE_REQUESTS_TABLE, {
+      columns: REQUEST_COLUMNS,
+      filters: [["id", "eq", id]],
+      single: true,
+    });
+    if (!row) return c.json({ ok: false, message: MESSAGE.requestNotFound }, 404);
+    if (row.status !== "pending") {
+      return c.json({ ok: false, message: MESSAGE.alreadyDecided }, 409);
+    }
+    if (!isUuid(row.approver_id)) {
+      return c.json({ ok: false, message: MESSAGE.approverNotFound }, 409);
+    }
+
+    const [approver, requester, leaveType] = await Promise.all([
+      db.select(EMPLOYEES_TABLE, {
+        columns: "id,email,is_active",
+        filters: [["id", "eq", row.approver_id]],
+        single: true,
+      }),
+      db.select(EMPLOYEES_TABLE, {
+        columns: "id,employee_code,name_prefix,full_name",
+        filters: [["id", "eq", row.employee_id]],
+        single: true,
+      }),
+      row.leave_type_id
+        ? db.select(LEAVE_TYPES_TABLE, {
+            columns: "id,name",
+            filters: [["id", "eq", row.leave_type_id]],
+            single: true,
+          })
+        : null,
+    ]);
+
+    if (!approver || approver.is_active !== true) {
+      return c.json({ ok: false, message: MESSAGE.approverNotFound }, 409);
+    }
+    const approverEmail = typeof approver.email === "string" ? approver.email.trim() : "";
+    if (approverEmail.length === 0) {
+      return c.json({ ok: false, message: MESSAGE.approverEmailMissing }, 409);
+    }
+
+    const now = new Date();
+    const nowIso = now.toISOString();
+
+    const invalidated = await invalidateOpenApprovalTokens(db, id, nowIso);
+    if (invalidated.error) {
+      throw Object.assign(new Error("approval token invalidate failed"), {
+        code: invalidated.error.code,
+      });
+    }
+
+    const issued = await createApprovalLinkEmail({
+      db,
+      publicUrl: c.env.APP_PUBLIC_URL,
+      leaveRequestId: id,
+      approverEmployeeId: row.approver_id,
+      createdBy: session.employeeId,
+      now,
+      to: approverEmail,
+      employeeName: displayName(requester?.name_prefix, requester?.full_name) || "",
+      employeeCode: requester?.employee_code ?? null,
+      leaveTypeName: leaveType?.name ?? "",
+      request: row,
+    });
+    if (issued.ok !== true) {
+      console.error("[approval-link-resend]", { code: issued.code });
+      return c.json({ ok: false, message: MESSAGE.saveError }, 500);
+    }
+
+    await writeAudit(db, {
+      actorId: session.employeeId,
+      action: ACTION_APPROVAL_LINK_RESENT,
+      entity: ENTITY_REQUEST,
+      entityId: id,
+      detail: { channel: "email_resend", requestCode: row.request_code ?? null },
+    });
+
+    await dispatchApprovalEmails(c.env, requestContext(c), [issued.job]);
+
+    return c.json({ ok: true, expiresAt: issued.expiresAt }, 200);
+  } catch (error) {
+    logError("hr approval link resend failed", error);
     return c.json({ ok: false, message: MESSAGE.saveError }, 500);
   }
 });

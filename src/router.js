@@ -21,6 +21,15 @@ export const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/login', component: page(() => import('./pages/LoginPage.vue')) },
+    // Public approval page, reached from the approval email. It is outside the
+    // signed-in shell and carries no requiresAuth, so the guard never redirects
+    // it to /login. Opening the page changes nothing; only a button does.
+    {
+      path: '/approve/:token',
+      component: page(() => import('./pages/ApproveLinkPage.vue')),
+      meta: { publicPage: true },
+    },
+
     { path: '/pending', component: page(() => import('./pages/PendingPage.vue')) },
     { path: '/', redirect: '/login' },
     { path: '/set-pin', component: page(() => import('./pages/SetPinPage.vue')) },
