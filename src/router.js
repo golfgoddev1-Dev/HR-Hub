@@ -188,6 +188,10 @@ export const router = createRouter({
         {
           path: '/meeting/register',
           component: page(() => import('./pages/RegisterPage.vue')),
+          // Public QR page: an anonymous visitor gets the form without the
+          // signed-in dock. The guard still skips this route; the shell reads
+          // the session itself and only bare-renders when there is none.
+          meta: { cleanShellWhenAnonymous: true },
         },
 
         // system_admin keeps AdminNav, drawn by the same RoleShell.

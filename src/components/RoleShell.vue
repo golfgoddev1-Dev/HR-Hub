@@ -4,6 +4,7 @@
 // stays inside the controller sidebar on /leave, and an HR user stays inside the
 // HR dock; moving between pages only swaps the routed page below the nav.
 import { computed, onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import AppLayout from './AppLayout.vue'
 import ControllerShell from './ControllerShell.vue'
 import { getSession } from '../api.js'
@@ -20,6 +21,14 @@ const NAV_BY_ROLE = {
 // synchronously: the first paint is the correct shell, never a swap.
 const session = ref(peekCached(DATA_KEYS.session) ?? null)
 const role = computed(() => session.value?.role ?? '')
+const route = useRoute()
+
+// The public registration route is reached by scanning a QR code. A visitor
+// without a session must see the form alone, not the signed-in app chrome; the
+// route flag keeps this exception scoped to that page.
+const bareRegistration = computed(
+  () => route.meta.cleanShellWhenAnonymous === true && !session.value
+)
 
 onMounted(async () => {
   const current = await getSession()
@@ -28,6 +37,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <ControllerShell v-if="role === 'meeting_controller'" />
+  <RouterView v-if="bareRegistration" />
+  <ControllerShell v-else-if="role === 'meeting_controller'" />
   <AppLayout v-else :nav="NAV_BY_ROLE[role] ?? 'leave'" />
 </template>
