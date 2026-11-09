@@ -30,6 +30,7 @@
 - **ข้อมูลส่วนตัว** (เมนู) — /profile — ทุกบทบาทที่มีประวัติพนักงาน — ทั้งสอง — src/lib/nav-config.js
 - **เปลี่ยน PIN** (เมนู) — /change-pin — ทุกบทบาทที่มีประวัติพนักงาน — ทั้งสอง — src/lib/nav-config.js
 - **อนุมัติใบลา** (เมนู) — /leave/approvals — ผู้อนุมัติ — ทั้งสอง — src/lib/leave-nav-items.js
+- **ประวัติการอนุมัติ** (เมนู) — /leave/approvals/history — ผู้อนุมัติ, ผู้ดูแล HR — ทั้งสอง — src/lib/leave-nav-items.js
 - **หน้าหลัก** (เมนู HR) — /hr — ผู้ดูแล HR — ทั้งสอง — src/lib/nav-config.js
 - **รายชื่อพนักงาน** (เมนู HR) — /hr/employees — ผู้ดูแล HR — ทั้งสอง — src/lib/nav-config.js
 - **นำเข้าพนักงาน** (เมนู HR) — /hr/employees/import — ผู้ดูแล HR — ทั้งสอง — src/lib/nav-config.js
@@ -38,6 +39,7 @@
 - **ใบลาทั้งหมด** (เมนู HR) — /hr/leave — ผู้ดูแล HR — ทั้งสอง — src/lib/nav-config.js
 - **คีย์ใบลาย้อนหลัง** (เมนู HR) — /hr/leave/backdated — ผู้ดูแล HR — ทั้งสอง — src/lib/nav-config.js
 - **วันหยุด** (เมนู HR) — /hr/leave/holidays — ผู้ดูแล HR — ทั้งสอง — src/lib/nav-config.js
+- **ใบรับรองแพทย์** (เมนู HR) — /hr/leave/certificates — ผู้ดูแล HR — ทั้งสอง — src/lib/nav-config.js
 - **ผู้อนุมัติ** (เมนู HR) — /hr/leave/approvers — ผู้ดูแล HR — ทั้งสอง — src/lib/nav-config.js
 - **ตั้งค่าใบลา** (เมนู HR) — /hr/leave/settings — ผู้ดูแล HR — ทั้งสอง — src/lib/nav-config.js
 - **หน้าหลัก** (เมนูประชุม) — /meeting/controller — หัวหน้าคุมประชุม — คอมพิวเตอร์ — src/lib/nav-config.js
@@ -111,6 +113,14 @@
 - **ยังไม่มีรายการใบลา** — /leave — ทุกบทบาทที่มีประวัติพนักงาน — ทั้งสอง — src/pages/LeaveHomePage.vue
 - **เปิดไฟล์แนบ (ต้องล็อกอิน)** — /leave — ทุกบทบาทที่มีประวัติพนักงาน — ทั้งสอง — src/leave-certificate.js
 
+## อีเมลแจ้งผลใบลา
+
+- **HR Hub: แจ้งทราบการลาที่ได้รับการอนุมัติ** — อีเมล — หัวหน้ากะ — ทั้งสอง — worker/src/email/decision-email.js
+- **HR Hub: แจ้งทราบการลาที่ไม่ได้รับการอนุมัติ** — อีเมล — หัวหน้ากะ — ทั้งสอง — worker/src/email/decision-email.js
+- **HR Hub: ใบลาของคุณได้รับการอนุมัติแล้ว** — อีเมล — พนักงานทั่วไป — ทั้งสอง — worker/src/email/decision-email.js
+- **HR Hub: ใบลาของคุณไม่ได้รับการอนุมัติ** — อีเมล — พนักงานทั่วไป — ทั้งสอง — worker/src/email/decision-email.js
+- **เหตุผลที่ไม่อนุมัติ** — อีเมล — พนักงานทั่วไป, หัวหน้ากะ — ทั้งสอง — worker/src/email/decision-email.js
+
 ## ยื่นใบลา (/leave/new)
 
 - **ยื่นใบลา** (ชื่อหน้า) — /leave/new — ทุกบทบาทที่มีประวัติพนักงาน — ทั้งสอง — src/pages/LeaveRequestPage.vue
@@ -151,7 +161,12 @@
 - **ประเภทการลา** — /leave/calendar — ทุกบทบาทที่มีประวัติพนักงาน — ทั้งสอง — src/components/LeaveCalendarView.vue
 - **วันที่** — /leave/calendar — ทุกบทบาทที่มีประวัติพนักงาน — ทั้งสอง — src/components/LeaveCalendarView.vue
 - **สถานะ** — /leave/calendar — ทุกบทบาทที่มีประวัติพนักงาน — ทั้งสอง — src/components/LeaveCalendarView.vue
-- **ใบลาที่อนุมัติแล้วและรออนุมัติของพนักงานในแผนกคุณ** — /leave/calendar — พนักงานทั่วไป — ทั้งสอง — src/components/LeaveCalendarView.vue
+- **ใบลาที่อนุมัติแล้วและรออนุมัติที่คุณมีสิทธิ์เห็น** — /leave/calendar — พนักงานทั่วไป, ผู้อนุมัติ — ทั้งสอง — src/components/LeaveCalendarView.vue
+- **ลาวันนี้** — /leave/calendar — พนักงานทั่วไป, ผู้อนุมัติ — มือถือ — src/lib/leave-day.js
+- **ดูรายละเอียด** — /leave/calendar — พนักงานทั่วไป, ผู้อนุมัติ — มือถือ — src/components/LeaveCalendarView.vue
+- **รายละเอียดถูกจำกัดตามสิทธิ์** — /leave/calendar — พนักงานทั่วไป, ผู้อนุมัติ — มือถือ — src/components/LeaveCalendarView.vue
+- **ไม่มีสิทธิ์ดูรายละเอียดใบลานี้** — /leave/calendar — พนักงานทั่วไป, ผู้อนุมัติ — มือถือ — src/components/LeaveCalendarView.vue
+- **ไม่มีผู้ลาในวันนี้** — /leave/calendar — พนักงานทั่วไป, ผู้อนุมัติ — มือถือ — src/lib/leave-day.js
 - **ใบลาที่อนุมัติแล้วและรออนุมัติของทุกแผนก** — /leave/calendar — ผู้ดูแล HR — ทั้งสอง — src/components/LeaveCalendarView.vue
 
 ## ข้อมูลส่วนตัว (/profile)
@@ -207,6 +222,49 @@
 - **ไม่อนุมัติ** — /leave/approvals — ผู้อนุมัติ — ทั้งสอง — src/pages/LeaveApprovalsPage.vue
 - **กรุณาระบุเหตุผลที่ไม่อนุมัติ** — /leave/approvals — ผู้อนุมัติ — ทั้งสอง — src/pages/LeaveApprovalsPage.vue
 - **ดำเนินการไม่สำเร็จ กรุณาลองใหม่** — /leave/approvals — ผู้อนุมัติ — ทั้งสอง — src/pages/LeaveApprovalsPage.vue
+
+## อนุมัติจากลิงก์ในอีเมล (/approve/:token)
+
+- **อนุมัติใบลา** (ชื่อหน้า) — /approve/:token — ผู้อนุมัติ — ทั้งสอง — src/components/ApprovalLinkView.vue
+- **พนักงาน** — /approve/:token — ผู้อนุมัติ — ทั้งสอง — src/components/ApprovalLinkView.vue
+- **แผนก** — /approve/:token — ผู้อนุมัติ — ทั้งสอง — src/components/ApprovalLinkView.vue
+- **ประเภทการลา** — /approve/:token — ผู้อนุมัติ — ทั้งสอง — src/components/ApprovalLinkView.vue
+- **ช่วงวันที่** — /approve/:token — ผู้อนุมัติ — ทั้งสอง — src/components/ApprovalLinkView.vue
+- **จำนวนวัน** — /approve/:token — ผู้อนุมัติ — ทั้งสอง — src/components/ApprovalLinkView.vue
+- **กลับมาทำงาน** — /approve/:token — ผู้อนุมัติ — ทั้งสอง — src/components/ApprovalLinkView.vue
+- **กะ / OT** — /approve/:token — ผู้อนุมัติ — ทั้งสอง — src/components/ApprovalLinkView.vue
+- **ใบรับรองแพทย์** — /approve/:token — ผู้อนุมัติ — ทั้งสอง — src/components/ApprovalLinkView.vue
+- **เหตุผล:** — /approve/:token — ผู้อนุมัติ — ทั้งสอง — src/components/ApprovalLinkView.vue
+- **อนุมัติ** — /approve/:token — ผู้อนุมัติ — ทั้งสอง — src/components/ApprovalLinkView.vue
+- **ไม่อนุมัติ** — /approve/:token — ผู้อนุมัติ — ทั้งสอง — src/components/ApprovalLinkView.vue
+- **เหตุผลที่ไม่อนุมัติ (จำเป็น)** — /approve/:token — ผู้อนุมัติ — ทั้งสอง — src/components/ApprovalLinkView.vue
+- **ยืนยันไม่อนุมัติ** — /approve/:token — ผู้อนุมัติ — ทั้งสอง — src/components/ApprovalLinkView.vue
+- **ยกเลิก** — /approve/:token — ผู้อนุมัติ — ทั้งสอง — src/components/ApprovalLinkView.vue
+- **อนุมัติแล้ว** — /approve/:token — ผู้อนุมัติ — ทั้งสอง — src/components/ApprovalLinkView.vue
+- **ไม่อนุมัติแล้ว** — /approve/:token — ผู้อนุมัติ — ทั้งสอง — src/components/ApprovalLinkView.vue
+- **ลิงก์นี้ใช้ไม่ได้แล้ว** — /approve/:token — ผู้อนุมัติ — ทั้งสอง — src/lib/approval-link.js
+- **ลิงก์หมดอายุแล้ว** — /approve/:token — ผู้อนุมัติ — ทั้งสอง — src/lib/approval-link.js
+- **ลิงก์นี้ถูกใช้ไปแล้ว** — /approve/:token — ผู้อนุมัติ — ทั้งสอง — src/lib/approval-link.js
+- **ลิงก์ไม่ถูกต้องหรือถูกแทนที่แล้ว** — /approve/:token — ผู้อนุมัติ — ทั้งสอง — src/lib/approval-link.js
+- **กรุณาระบุเหตุผลที่ไม่อนุมัติ** — /approve/:token — ผู้อนุมัติ — ทั้งสอง — src/lib/approval-link.js
+- **เหตุผลต้องไม่เกิน 500 ตัวอักษร** — /approve/:token — ผู้อนุมัติ — ทั้งสอง — src/lib/approval-link.js
+- **โหลดข้อมูลไม่สำเร็จ กรุณาลองใหม่** — /approve/:token — ผู้อนุมัติ — ทั้งสอง — src/lib/approval-link.js
+- **ลองใหม่** — /approve/:token — ผู้อนุมัติ — ทั้งสอง — src/components/ApprovalLinkView.vue
+
+## ประวัติการอนุมัติ (/leave/approvals/history)
+
+- **ประวัติการอนุมัติ** (ชื่อหน้า) — /leave/approvals/history — ผู้อนุมัติ, ผู้ดูแล HR — ทั้งสอง — src/pages/LeaveApprovalHistoryPage.vue
+- **ตั้งแต่วันที่** — /leave/approvals/history — ผู้อนุมัติ, ผู้ดูแล HR — ทั้งสอง — src/pages/LeaveApprovalHistoryPage.vue
+- **ถึงวันที่** — /leave/approvals/history — ผู้อนุมัติ, ผู้ดูแล HR — ทั้งสอง — src/pages/LeaveApprovalHistoryPage.vue
+- **การตัดสินใจ** — /leave/approvals/history — ผู้อนุมัติ, ผู้ดูแล HR — ทั้งสอง — src/pages/LeaveApprovalHistoryPage.vue
+- **ทั้งหมด** — /leave/approvals/history — ผู้อนุมัติ, ผู้ดูแล HR — ทั้งสอง — src/pages/LeaveApprovalHistoryPage.vue
+- **ค้นหาชื่อ** — /leave/approvals/history — ผู้อนุมัติ, ผู้ดูแล HR — ทั้งสอง — src/pages/LeaveApprovalHistoryPage.vue
+- **ค้นหา** — /leave/approvals/history — ผู้อนุมัติ, ผู้ดูแล HR — ทั้งสอง — src/pages/LeaveApprovalHistoryPage.vue
+- **โหลดเพิ่ม** — /leave/approvals/history — ผู้อนุมัติ, ผู้ดูแล HR — ทั้งสอง — src/pages/LeaveApprovalHistoryPage.vue
+- **รายละเอียดใบลา** — /leave/approvals/history — ผู้อนุมัติ, ผู้ดูแล HR — ทั้งสอง — src/pages/LeaveApprovalHistoryPage.vue
+- **ปิด** — /leave/approvals/history — ผู้อนุมัติ, ผู้ดูแล HR — ทั้งสอง — src/pages/LeaveApprovalHistoryPage.vue
+- **ไม่พบประวัติการอนุมัติในช่วงนี้** — /leave/approvals/history — ผู้อนุมัติ, ผู้ดูแล HR — ทั้งสอง — src/pages/LeaveApprovalHistoryPage.vue
+- **โหลดประวัติการอนุมัติไม่สำเร็จ กรุณาลองใหม่** — /leave/approvals/history — ผู้อนุมัติ, ผู้ดูแล HR — ทั้งสอง — src/pages/LeaveApprovalHistoryPage.vue
 
 ## หน้าหลักของ HR (/hr)
 
@@ -293,6 +351,9 @@
 - **คีย์ใบลาย้อนหลัง** — /hr/leave — ผู้ดูแล HR — ทั้งสอง — src/pages/HrLeaveRequestsPage.vue
 - **คีย์ย้อนหลัง** — /hr/leave — ผู้ดูแล HR — ทั้งสอง — src/pages/HrLeaveRequestsPage.vue
 - **รายละเอียดใบลา** — /hr/leave — ผู้ดูแล HR — ทั้งสอง — src/pages/HrLeaveRequestsPage.vue
+- **ส่งลิงก์อนุมัติใหม่** — /hr/leave — ผู้ดูแล HR — ทั้งสอง — src/pages/HrLeaveRequestsPage.vue
+- **ส่งลิงก์อนุมัติใหม่แล้ว (ลิงก์ใหม่มีอายุ 72 ชั่วโมง)** — /hr/leave — ผู้ดูแล HR — ทั้งสอง — src/pages/HrLeaveRequestsPage.vue
+- **ส่งลิงก์อนุมัติใหม่ไม่สำเร็จ กรุณาลองใหม่** — /hr/leave — ผู้ดูแล HR — ทั้งสอง — src/pages/HrLeaveRequestsPage.vue
 - **พิมพ์ / บันทึกเป็น PDF** — /hr/leave — ผู้ดูแล HR — ทั้งสอง — src/pages/HrLeaveRequestsPage.vue
 - **รออนุมัติ** (ตัวกรองสถานะ) — /hr/leave — ผู้ดูแล HR — ทั้งสอง — src/pages/HrLeaveRequestsPage.vue
 - **อนุมัติแล้ว** (ตัวกรองสถานะ) — /hr/leave — ผู้ดูแล HR — ทั้งสอง — src/pages/HrLeaveRequestsPage.vue
@@ -342,12 +403,43 @@
 - **ปิดใช้งาน** (ป้ายสถานะและปุ่มสลับ) — /hr/leave/approvers — ผู้ดูแล HR — ทั้งสอง — src/lib/leave-approvers-view.js
 - **เปิดใช้งาน** (ปุ่มสลับเมื่อถูกปิดไว้) — /hr/leave/approvers — ผู้ดูแล HR — ทั้งสอง — src/lib/leave-approvers-view.js
 - **ผู้อนุมัติต้องไม่ใช่พนักงานคนเดียวกัน** — /hr/leave/approvers — ผู้ดูแล HR — ทั้งสอง — src/pages/HrLeaveApproversPage.vue
+- **หัวหน้ากะที่รับแจ้งทราบ** — /hr/leave/approvers — ผู้ดูแล HR — ทั้งสอง — src/components/ShiftLeadsSection.vue
+- **ชื่อกะ** — /hr/leave/approvers — ผู้ดูแล HR — ทั้งสอง — src/components/ShiftLeadsSection.vue
+- **เพิ่มหัวหน้ากะ** — /hr/leave/approvers — ผู้ดูแล HR — ทั้งสอง — src/components/ShiftLeadsSection.vue
+- **บันทึกหัวหน้ากะ** — /hr/leave/approvers — ผู้ดูแล HR — ทั้งสอง — src/components/ShiftLeadsSection.vue
+- **ลบ** (หัวหน้ากะ) — /hr/leave/approvers — ผู้ดูแล HR — ทั้งสอง — src/components/ShiftLeadsSection.vue
+- **ยังไม่มีหัวหน้ากะสำหรับแผนกนี้** — /hr/leave/approvers — ผู้ดูแล HR — ทั้งสอง — src/components/ShiftLeadsSection.vue
+- **เลือกแผนกเพื่อตั้งหัวหน้ากะที่รับแจ้งทราบ** — /hr/leave/approvers — ผู้ดูแล HR — ทั้งสอง — src/pages/HrLeaveApproversPage.vue
+- **พนักงานคนนี้ไม่มีอีเมล จะไม่ได้รับแจ้งเตือน** — /hr/leave/approvers — ผู้ดูแล HR — ทั้งสอง — src/lib/shift-leads.js
+- **กรุณากรอกชื่อกะ** — /hr/leave/approvers — ผู้ดูแล HR — ทั้งสอง — src/lib/shift-leads.js
+- **ชื่อกะต้องไม่เกิน 30 ตัวอักษร** — /hr/leave/approvers — ผู้ดูแล HR — ทั้งสอง — src/lib/shift-leads.js
+- **ชื่อกะซ้ำกันในแผนกนี้** — /hr/leave/approvers — ผู้ดูแล HR — ทั้งสอง — src/lib/shift-leads.js
+
+## ใบรับรองแพทย์ (/hr/leave/certificates)
+
+- **ใบรับรองแพทย์** (ชื่อหน้า) — /hr/leave/certificates — ผู้ดูแล HR — ทั้งสอง — src/pages/HrLeaveCertificatesPage.vue
+- **พนักงาน** — /hr/leave/certificates — ผู้ดูแล HR — ทั้งสอง — src/pages/HrLeaveCertificatesPage.vue
+- **พิมพ์ชื่อหรือรหัสพนักงาน** — /hr/leave/certificates — ผู้ดูแล HR — ทั้งสอง — src/components/EmployeePicker.vue
+- **รายการที่พบ** — /hr/leave/certificates — ผู้ดูแล HR — ทั้งสอง — src/pages/HrLeaveCertificatesPage.vue
+- **เปิดใบรับรองแพทย์** — /hr/leave/certificates — ผู้ดูแล HR — ทั้งสอง — src/pages/HrLeaveCertificatesPage.vue
+- **ไม่พบใบรับรองแพทย์ของพนักงานคนนี้** — /hr/leave/certificates — ผู้ดูแล HR — ทั้งสอง — src/pages/HrLeaveCertificatesPage.vue
+- **ดูใบรับรองแพทย์** — /leave — พนักงานทั่วไป — ทั้งสอง — src/leave-certificate.js
 
 ## ตั้งค่าใบลา (/hr/leave/settings)
 
 - **ตั้งค่าใบลา** — /hr/leave/settings — ผู้ดูแล HR — ทั้งสอง — src/pages/HrLeaveSettingsPage.vue
 - **เก็บใบรับรองแพทย์ (วัน)** — /hr/leave/settings — ผู้ดูแล HR — ทั้งสอง — src/pages/HrLeaveSettingsPage.vue
 - **บันทึกการตั้งค่า** — /hr/leave/settings — ผู้ดูแล HR — ทั้งสอง — src/pages/HrLeaveSettingsPage.vue
+- **เก็บข้อมูลใบลา** — /hr/leave/settings — ผู้ดูแล HR — ทั้งสอง — src/pages/HrLeaveSettingsPage.vue
+- **เปิดการลบข้อมูลใบลาอัตโนมัติ** — /hr/leave/settings — ผู้ดูแล HR — ทั้งสอง — src/pages/HrLeaveSettingsPage.vue
+- **เก็บข้อมูลใบลา (วัน)** — /hr/leave/settings — ผู้ดูแล HR — ทั้งสอง — src/pages/HrLeaveSettingsPage.vue
+- **บันทึกจำนวนวันเก็บข้อมูล** — /hr/leave/settings — ผู้ดูแล HR — ทั้งสอง — src/pages/HrLeaveSettingsPage.vue
+- **จำนวนวันต้องอยู่ระหว่าง 730 ถึง 3650 วัน** — /hr/leave/settings — ผู้ดูแล HR — ทั้งสอง — src/pages/HrLeaveSettingsPage.vue
+- **ยืนยันเปิดการลบข้อมูลอัตโนมัติ** — /hr/leave/settings — ผู้ดูแล HR — ทั้งสอง — src/pages/HrLeaveSettingsPage.vue
+- **ใบลาที่จะถูกลบตอนนี้** — /hr/leave/settings — ผู้ดูแล HR — ทั้งสอง — src/pages/HrLeaveSettingsPage.vue
+- **ไฟล์ใบรับรองแพทย์ที่จะถูกลบตอนนี้** — /hr/leave/settings — ผู้ดูแล HR — ทั้งสอง — src/pages/HrLeaveSettingsPage.vue
+- **ยืนยัน** — /hr/leave/settings — ผู้ดูแล HR — ทั้งสอง — src/pages/HrLeaveSettingsPage.vue
+- **ยกเลิก** (ปิดหน้าต่างยืนยัน) — /hr/leave/settings — ผู้ดูแล HR — ทั้งสอง — src/pages/HrLeaveSettingsPage.vue
 
 ## หัวหน้าคุมการประชุม (/meeting/controller…)
 
