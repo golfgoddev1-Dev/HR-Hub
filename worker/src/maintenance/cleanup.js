@@ -10,6 +10,7 @@
 
 import { createDb } from "../db.js";
 import { certificateStoragePath, deleteStorageObjects } from "../leave-retention.js";
+import { readLeaveSettings } from "../leave-settings.js";
 
 export const AUTH_SESSION_RETENTION_DAYS = 30;
 export const AUDIT_RETENTION_DAYS = 365;
@@ -18,8 +19,9 @@ export const CLEANUP_BATCH_SIZE = 200;
 export const CLEANUP_MAX_ROWS = 5000;
 export const CLEANUP_TIMEOUT_MS = 25_000;
 
-// Growing tables that used to have no retention at all. The leave window is an
-// environment value the owner sets; it is never written into a config file.
+// Growing tables that used to have no retention at all. The leave window comes
+// from the leave_settings row HR edits on the settings page, never from an
+// environment variable.
 export const NOTIFICATION_QUEUE_RETENTION_DAYS = 30;
 export const APPROVAL_TOKEN_RETENTION_DAYS = 30;
 export const APPROVAL_TOKENS_TABLE = "approval_tokens";
@@ -259,9 +261,10 @@ export async function purgeOldApprovalTokens(
 }
 
 /**
- * Deletes final leave requests older than LEAVE_RETENTION_DAYS, children before
- * parents. It is opt-in: with no positive integer retention value it returns at
- * once and logs that the job is disabled. Pending requests are never selected.
+ * Deletes final leave requests older than the stored retention window, children
+ * before parents. It is opt-in: `enabled: false` (the default setting) or an
+ * unusable retention value returns at once and logs that the job is disabled.
+ * Pending requests are never selected.
  *
  * `end_date` is the cutoff column: a leave record ages from the day the leave
  * ended. A request whose end_date equals the cutoff date is kept; only a date
@@ -270,7 +273,7 @@ export async function purgeOldApprovalTokens(
 export async function purgeOldLeaveData(
   db,
   now = new Date(),
-  { retentionDays = null, dryRun = false, env = null } = {}
+  { enabled = null, retentionDays = null, dryRun = false, env = null } = {}
 ) {
   const startedAt = Date.now();
   const summary = {
@@ -284,7 +287,7 @@ export async function purgeOldLeaveData(
   };
 
   const days = parseLeaveRetentionDays(retentionDays);
-  if (days === null) {
+  if (enabled === false || days === null) {
     summary.disabled = true;
     console.log("[maintenance-cleanup]", {
       table: LEAVE_REQUESTS_TABLE,
@@ -481,8 +484,18 @@ export async function runDataCleanup(env, now = new Date()) {
   const auditLogs = await purgeOldAuditLogs(db, now);
   const notificationQueue = await purgeOldNotificationQueue(db, now);
   const approvalTokens = await purgeOldApprovalTokens(db, now);
+
+  // The stored row is the only source for the leave window. A read failure
+  // leaves the job disabled for this run; only the error code is logged.
+  let leaveSettings = null;
+  try {
+    leaveSettings = await readLeaveSettings(db);
+  } catch (error) {
+    logFailure(LEAVE_REQUESTS_TABLE, error);
+  }
   const leaveRetention = await purgeOldLeaveData(db, now, {
-    retentionDays: parseLeaveRetentionDays(env?.LEAVE_RETENTION_DAYS),
+    enabled: leaveSettings?.leaveRetentionEnabled === true,
+    retentionDays: leaveSettings?.leaveRetentionDays ?? null,
     env,
   });
   return { authSessions, auditLogs, notificationQueue, approvalTokens, leaveRetention };

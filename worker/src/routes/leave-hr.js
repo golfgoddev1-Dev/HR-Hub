@@ -34,13 +34,18 @@ import {
 import { findOverlappingRequest } from "../leave-overlap.js";
 import {
   DEFAULT_CERTIFICATE_RETENTION_DAYS,
+  DEFAULT_LEAVE_RETENTION_DAYS,
   MAX_CERTIFICATE_RETENTION_DAYS,
+  MAX_LEAVE_RETENTION_DAYS,
   MIN_CERTIFICATE_RETENTION_DAYS,
+  MIN_LEAVE_RETENTION_DAYS,
   SETTINGS_ROW_ID,
   SETTINGS_TABLE,
+  normalizeLeaveRetentionDays,
   normalizeRetentionDays,
   readLeaveSettings,
 } from "../leave-settings.js";
+import { purgeOldLeaveData } from "../maintenance/cleanup.js";
 import { buildBackdatedRow } from "../leave-backdated.js";
 import { dispatchQueuedNotifications, enqueueNotificationSafely } from "../push/queue.js";
 import { NOTIFICATION_KINDS } from "../push/payload.js";
@@ -118,6 +123,7 @@ const MESSAGE = {
   holidayNotInstalled: "ยังไม่มีตาราง holidays กรุณารันไฟล์ SQL ก่อน",
   settingsNotInstalled: "ยังไม่ได้ติดตั้งตารางตั้งค่า (leave_settings) กรุณารันไฟล์ SQL ก่อน",
   settingsInvalid: `จำนวนวันเก็บไฟล์ต้องอยู่ระหว่าง ${MIN_CERTIFICATE_RETENTION_DAYS} ถึง ${MAX_CERTIFICATE_RETENTION_DAYS} วัน`,
+  leaveRetentionInvalid: `จำนวนวันเก็บข้อมูลใบลาต้องอยู่ระหว่าง ${MIN_LEAVE_RETENTION_DAYS} ถึง ${MAX_LEAVE_RETENTION_DAYS} วัน`,
   scopeInvalid: "ต้องระบุขอบเขตเป็น department หรือ employee",
 };
 
@@ -1332,6 +1338,48 @@ leaveHr.post("/holidays/:holiday_date/delete", async (c) => {
 
 // --- /api/leave/hr/settings --------------------------------------------------
 
+leaveHr.get("/settings/leave-retention/preview", async (c) => {
+  const denied = await guard(c);
+  if (denied) return denied.response;
+
+  try {
+    const db = c.get("hrLeaveDb");
+    const settings = await readLeaveSettings(db);
+    const requested = c.req.query("days");
+    let days = settings.leaveRetentionDays;
+    if (requested !== undefined) {
+      days = normalizeLeaveRetentionDays(requested);
+      if (days === null) {
+        return c.json({ ok: false, message: MESSAGE.leaveRetentionInvalid }, 400);
+      }
+    }
+
+    // Same selection rule as the daily job, forced on even while the setting is
+    // off, and a dry run so nothing is deleted.
+    const summary = await purgeOldLeaveData(db, new Date(), {
+      enabled: true,
+      retentionDays: days,
+      dryRun: true,
+    });
+
+    return c.json(
+      {
+        ok: true,
+        days,
+        cutoff: summary.cutoff,
+        leaveRequests: summary.leaveRequests,
+        certificateFiles: summary.certificates,
+        notifications: summary.notifications,
+        skipped: summary.skipped,
+      },
+      200
+    );
+  } catch (error) {
+    logError("hr leave retention preview failed", error);
+    return c.json({ ok: false, message: MESSAGE.saveError }, 500);
+  }
+});
+
 leaveHr.get("/settings", async (c) => {
   const denied = await guard(c);
   if (denied) return denied.response;
@@ -1348,6 +1396,13 @@ leaveHr.get("/settings", async (c) => {
           max: MAX_CERTIFICATE_RETENTION_DAYS,
           default: DEFAULT_CERTIFICATE_RETENTION_DAYS,
         },
+        leaveRetentionEnabled: settings.leaveRetentionEnabled,
+        leaveRetentionDays: settings.leaveRetentionDays,
+        leaveRetentionLimits: {
+          min: MIN_LEAVE_RETENTION_DAYS,
+          max: MAX_LEAVE_RETENTION_DAYS,
+          default: DEFAULT_LEAVE_RETENTION_DAYS,
+        },
       },
       200
     );
@@ -1362,25 +1417,73 @@ leaveHr.put("/settings", async (c) => {
   if (denied) return denied.response;
 
   const body = await readStrictJson(c);
-  if (!hasOnlyKeys(body, ["certificateRetentionDays"])) return invalidBody(c);
+  const settingKeys = [
+    "certificateRetentionDays",
+    "leaveRetentionEnabled",
+    "leaveRetentionDays",
+  ];
+  if (!hasOnlyKeys(body, settingKeys) || Object.keys(body).length === 0) {
+    return invalidBody(c);
+  }
 
-  const days = normalizeRetentionDays(body.certificateRetentionDays);
-  if (days === null) return c.json({ ok: false, message: MESSAGE.settingsInvalid }, 400);
+  const hasCertificateDays = Object.prototype.hasOwnProperty.call(
+    body,
+    "certificateRetentionDays"
+  );
+  const hasLeaveEnabled = Object.prototype.hasOwnProperty.call(body, "leaveRetentionEnabled");
+  const hasLeaveDays = Object.prototype.hasOwnProperty.call(body, "leaveRetentionDays");
+
+  let certificateDays = null;
+  if (hasCertificateDays) {
+    certificateDays = normalizeRetentionDays(body.certificateRetentionDays);
+    if (certificateDays === null) {
+      return c.json({ ok: false, message: MESSAGE.settingsInvalid }, 400);
+    }
+  }
+
+  if (hasLeaveEnabled && typeof body.leaveRetentionEnabled !== "boolean") {
+    return invalidBody(c);
+  }
+
+  let leaveDays = null;
+  if (hasLeaveDays) {
+    leaveDays = normalizeLeaveRetentionDays(body.leaveRetentionDays);
+    if (leaveDays === null) {
+      return c.json({ ok: false, message: MESSAGE.leaveRetentionInvalid }, 400);
+    }
+  }
 
   try {
     const db = c.get("hrLeaveDb");
     const session = c.get("hrLeaveSession");
     const before = await readLeaveSettings(db);
 
+    // A partial update keeps every value the body did not name.
+    const next = {
+      certificateRetentionDays: hasCertificateDays
+        ? certificateDays
+        : before.certificateRetentionDays,
+      leaveRetentionEnabled: hasLeaveEnabled
+        ? body.leaveRetentionEnabled
+        : before.leaveRetentionEnabled,
+      leaveRetentionDays: hasLeaveDays ? leaveDays : before.leaveRetentionDays,
+    };
+
     const saved = await db.upsert(
       SETTINGS_TABLE,
       {
         id: SETTINGS_ROW_ID,
-        certificate_retention_days: days,
+        certificate_retention_days: next.certificateRetentionDays,
+        leave_retention_enabled: next.leaveRetentionEnabled,
+        leave_retention_days: next.leaveRetentionDays,
         updated_at: new Date().toISOString(),
         updated_by: session.employeeId,
       },
-      { conflict: "id", columns: "id,certificate_retention_days" }
+      {
+        conflict: "id",
+        columns:
+          "id,certificate_retention_days,leave_retention_enabled,leave_retention_days",
+      }
     );
     if (saved.error) {
       if (isMissingTableError(saved.error)) {
@@ -1389,19 +1492,44 @@ leaveHr.put("/settings", async (c) => {
       throw Object.assign(new Error("settings save failed"), { code: saved.error.code });
     }
 
+    // One audit row per change request, with the actor and the new value only:
+    // no names, reasons, paths or file names.
+    const detail = {};
+    if (hasCertificateDays) {
+      detail.certificateRetentionDays = {
+        before: before.certificateRetentionDays,
+        after: next.certificateRetentionDays,
+      };
+    }
+    if (hasLeaveEnabled) {
+      detail.leaveRetentionEnabled = {
+        before: before.leaveRetentionEnabled,
+        after: next.leaveRetentionEnabled,
+      };
+    }
+    if (hasLeaveDays) {
+      detail.leaveRetentionDays = {
+        before: before.leaveRetentionDays,
+        after: next.leaveRetentionDays,
+      };
+    }
+
     await writeAudit(db, {
       actorId: session.employeeId,
       action: ACTION_SETTINGS_UPDATED,
       entity: ENTITY_SETTINGS,
       entityId: null,
-      detail: {
-        before: before.certificateRetentionDays,
-        after: days,
-      },
+      detail,
     });
 
     return c.json(
-      { ok: true, configured: true, certificateRetentionDays: days },
+      {
+        ok: true,
+        configured: true,
+        certificateRetentionDays: next.certificateRetentionDays,
+        leaveRetentionEnabled: next.leaveRetentionEnabled,
+        leaveRetentionDays: next.leaveRetentionDays,
+      },
       200
     );
   } catch (error) {
