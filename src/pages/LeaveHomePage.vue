@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import PushToggle from '../components/PushToggle.vue'
+import { getSession } from '../api.js'
 import { formatThaiDate, formatThaiDateRange } from '../lib/thai-date.js'
 import { peekCached } from '../lib/data-cache.js'
 import {
@@ -104,9 +105,11 @@ function attachmentUrl(id) {
   return `/api/leave/requests/${encodeURIComponent(id)}/attachment`
 }
 
-onMounted(() => {
+onMounted(async () => {
   load()
-  loadPendingApprovals()
+  // Only an approver has a queue; other employees must not trigger the 403.
+  const session = await getSession()
+  if (session?.isApprover === true) await loadPendingApprovals()
 })
 </script>
 
