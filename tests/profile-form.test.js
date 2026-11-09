@@ -21,8 +21,8 @@ import {
   validateProfileForm,
 } from '../src/lib/profile-form.js'
 
-const B1_SUBTITLE =
-  'แก้ไขคำนำหน้า ชื่อ-นามสกุล อีเมล เบอร์มือถือ และแผนกได้เอง · รหัสพนักงาน เลขบัตรประชาชน และตำแหน่งแก้ไขโดย HR เท่านั้น'
+const READ_ONLY_NOTE =
+  'หากต้องการแก้ไขข้อมูล กรุณาติดต่อฝ่ายบุคคล (HR) เท่านั้น'
 
 const ROUTER = readFileSync(new URL('../src/router.js', import.meta.url), 'utf8')
 const ROUTE_ACCESS = readFileSync(new URL('../src/lib/route-access.js', import.meta.url), 'utf8')
@@ -87,9 +87,15 @@ describe('profile card', () => {
     expect(PROFILE_PAGE).toContain('<PushToggle')
   })
 
-  it('always explains what a department change means', () => {
-    expect(DEPARTMENT_CHANGE_NOTE).toBe('การเปลี่ยนแผนกจะมีผลกับผู้อนุมัติใบลาครั้งถัดไป')
-    expect(PROFILE_PAGE).toContain('DEPARTMENT_CHANGE_NOTE')
+  it('shows the prominent HR-contact note and offers no personal-data save control', () => {
+    expect(PROFILE_PAGE).toContain(READ_ONLY_NOTE)
+    expect(PROFILE_PAGE).toContain('readonly-note')
+    expect(PROFILE_PAGE).not.toContain('profilePatch')
+    expect(PROFILE_PAGE).not.toContain('startEdit')
+    expect(PROFILE_PAGE).not.toContain('บันทึกข้อมูลส่วนตัวแล้ว')
+    expect(PROFILE_PAGE).not.toContain('<form')
+    expect(PROFILE_PAGE).not.toContain('<input')
+    expect(PROFILE_PAGE).not.toContain('<select')
   })
 })
 
@@ -251,11 +257,10 @@ describe('position row', () => {
 })
 
 describe('page wiring', () => {
-  it('describes the real edit rules in the subtitle', () => {
-    expect(PROFILE_PAGE).toContain(B1_SUBTITLE)
-    // The prefix URL now lives in the shared cached loader.
-    expect(PROFILE_PAGE).toContain('loaders.profilePrefixes')
-    expect(PROFILE_PAGE).toContain('เลือกคำนำหน้า')
+  it('describes the read-only rule in the subtitle', () => {
+    expect(PROFILE_PAGE).toContain('ข้อมูลส่วนตัวของคุณเป็นแบบอ่านอย่างเดียว')
+    expect(PROFILE_PAGE).not.toContain('loaders.profilePrefixes')
+    expect(PROFILE_PAGE).not.toContain('เลือกคำนำหน้า')
   })
 
   it('is reachable for the employee role and linked from the leave menu', () => {
@@ -269,8 +274,8 @@ describe('page wiring', () => {
   it('is content only, with the leave dock supplied by the layout route', () => {
     expect(PROFILE_PAGE).not.toContain('LeaveLayout')
     expect(PROFILE_PAGE).not.toContain('<AppDock')
-    expect(PROFILE_PAGE).toContain('hasProfileChanges')
-    expect(PROFILE_PAGE).toContain('onBeforeRouteLeave')
+    expect(PROFILE_PAGE).not.toContain('hasProfileChanges')
+    expect(PROFILE_PAGE).not.toContain('onBeforeRouteLeave')
     expect(PROFILE_PAGE).not.toContain('localStorage')
     expect(PROFILE_PAGE).not.toContain('sessionStorage')
   })

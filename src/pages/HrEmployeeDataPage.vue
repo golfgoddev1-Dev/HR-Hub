@@ -9,14 +9,14 @@ import EmployeeDirectoryManager from '../components/EmployeeDirectoryManager.vue
         <div>
           <h1 class="title">จัดการข้อมูลพนักงาน</h1>
           <p class="sub">
-            เปลี่ยนแผนกและตำแหน่งของพนักงานรายคน และเปลี่ยนชื่อรายการแผนก/ตำแหน่งที่ใช้ร่วมกัน ·
-            แสดงเฉพาะข้อมูลที่จำเป็น
+            แก้ไขข้อมูลส่วนตัวของพนักงานรายคน ทั้งรหัสพนักงาน ชื่อ-นามสกุล เลขบัตรประชาชน
+            อีเมล เบอร์โทร แผนก ตำแหน่ง และสถานะ · การแก้ไขทุกครั้งจะถูกบันทึกไว้ในประวัติระบบ
           </p>
         </div>
         <RouterLink to="/hr/employees" class="link">ไปที่รายชื่อพนักงาน →</RouterLink>
       </div>
 
-      <EmployeeDirectoryManager base="/api/hr/directory" />
+      <EmployeeDirectoryManager base="/api/hr/directory" full />
     </main>
 </template>
 

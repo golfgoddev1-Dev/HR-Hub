@@ -77,7 +77,7 @@ app.route("/api/hr/departments", hrShiftLeads);
 // own login role and its own membership table.
 app.route(
   "/api/hr/directory",
-  createEmployeeDirectoryRoutes({ role: "hr", adminTable: "hr_admins" })
+  createEmployeeDirectoryRoutes({ role: "hr", adminTable: "hr_admins", manageAll: true })
 );
 app.route(
   "/api/meeting/directory",

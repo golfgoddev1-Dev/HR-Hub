@@ -6,12 +6,16 @@ import {
   dataKey,
   invalidateAdminOverview,
   invalidateDirectoryCatalog,
+  invalidateProfile,
   loaders,
 } from '../lib/shared-data.js'
 
 const props = defineProps({
   // API base for this role, e.g. /api/hr/directory or /api/meeting/directory.
   base: { type: String, required: true },
+  // HR uses the full employee editor; the meeting controller keeps the narrow
+  // department/position editor.
+  full: { type: Boolean, default: false },
 })
 
 const MIN_SEARCH_LENGTH = 2
@@ -23,7 +27,12 @@ const EMPTY_TEXT = 'ไม่พบพนักงานที่ตรงกั
 const SEARCH_ERROR = 'ไม่สามารถค้นหาได้ กรุณาลองใหม่'
 const CATALOG_ERROR = 'โหลดรายการแผนกและตำแหน่งไม่สำเร็จ กรุณาลองใหม่'
 const SAVE_ERROR = 'ไม่สามารถบันทึกได้ กรุณาลองใหม่'
+const DETAIL_ERROR = 'โหลดข้อมูลพนักงานไม่สำเร็จ กรุณาลองใหม่'
 const SAVED_TEXT = 'บันทึกข้อมูลพนักงานแล้ว'
+const NATIONAL_ID_HINT = 'เว้นว่างไว้หากไม่ต้องการเปลี่ยนเลขบัตรประชาชน'
+const FULL_SAVE_NOTE =
+  'ระบบจะบันทึกเฉพาะช่องที่มีการเปลี่ยนแปลง และเก็บประวัติเป็นชื่อฟิลด์เท่านั้น ไม่เก็บค่าข้อมูลส่วนตัว'
+const LIMITED_SAVE_NOTE = 'ระบบบันทึกเฉพาะแผนกและตำแหน่งของพนักงานคนนี้ ไม่แตะข้อมูลอื่น'
 const RENAMED_TEXT = 'บันทึกชื่อใหม่แล้ว'
 const RENAME_NOTE = 'การนำเข้าไฟล์ต้องใช้ชื่อใหม่ตามที่เปลี่ยนแล้ว'
 const RENAME_HINT = 'ชื่อต้องไม่ว่าง ยาวไม่เกิน 100 ตัวอักษร และห้ามซ้ำกับรายการอื่น'
@@ -40,10 +49,49 @@ const catalogError = ref('')
 
 const editorOpen = ref(false)
 const selected = ref(null)
-const form = ref({ departmentId: '', positionId: '' })
+const form = ref(emptyForm())
 const saving = ref(false)
+const detailLoading = ref(false)
+const detailError = ref('')
 const saveError = ref('')
+const saveErrors = ref({})
 const saveMessage = ref('')
+
+let detailSeq = 0
+
+function emptyForm() {
+  return {
+    employeeCode: '',
+    firstName: '',
+    lastName: '',
+    nationalId: '',
+    email: '',
+    phone: '',
+    departmentId: '',
+    positionId: '',
+    isActive: true,
+  }
+}
+
+function formFromEmployee(employee) {
+  return {
+    employeeCode: employee.employeeCode ?? '',
+    firstName: employee.firstName ?? '',
+    lastName: employee.lastName ?? '',
+    nationalId: '',
+    email: employee.email ?? '',
+    phone: employee.phone ?? '',
+    departmentId: employee.departmentId ?? '',
+    positionId: employee.positionId ?? '',
+    isActive: employee.isActive !== false,
+  }
+}
+
+function onNationalIdInput(event) {
+  const digits = String(event?.target?.value ?? '').replace(/\D/g, '').slice(0, 13)
+  form.value.nationalId = digits
+  if (event?.target) event.target.value = digits
+}
 
 const renaming = ref({ kind: '', id: '' })
 const renameValue = ref('')
@@ -172,16 +220,38 @@ function displayName(item) {
   return `${prefix} ${name}`
 }
 
-function openEmployee(item) {
+async function openEmployee(item) {
   if (!item) return
-  selected.value = item
-  form.value = {
-    departmentId: item.departmentId ?? '',
-    positionId: item.positionId ?? '',
-  }
+  const seq = ++detailSeq
+  selected.value = { ...item }
+  form.value = formFromEmployee(item)
   saveError.value = ''
+  saveErrors.value = {}
   saveMessage.value = ''
+  detailError.value = ''
+  detailLoading.value = false
   editorOpen.value = true
+
+  if (!props.full) return
+
+  detailLoading.value = true
+  try {
+    const { ok, data } = await requestJson(
+      'GET',
+      `${props.base}/employees/${encodeURIComponent(item.id)}`
+    )
+    if (seq !== detailSeq) return
+    if (!ok || data.ok !== true || !data.employee) {
+      detailError.value = typeof data.message === 'string' ? data.message : DETAIL_ERROR
+      return
+    }
+    selected.value = { ...item, ...data.employee }
+    form.value = formFromEmployee(data.employee)
+  } catch {
+    if (seq === detailSeq) detailError.value = DETAIL_ERROR
+  } finally {
+    if (seq === detailSeq) detailLoading.value = false
+  }
 }
 
 function closeEditor() {
@@ -193,9 +263,13 @@ function closeEditor() {
 // does not vanish before the closing animation ends.
 function onDialogClosed() {
   if (saving.value || editorOpen.value) return
+  detailSeq += 1
   selected.value = null
-  form.value = { departmentId: '', positionId: '' }
+  form.value = emptyForm()
   saveError.value = ''
+  saveErrors.value = {}
+  detailError.value = ''
+  detailLoading.value = false
 }
 
 // The dialog asks to close on the ×, Cancel, Esc and a scrim click. A save in
@@ -210,38 +284,88 @@ function onDialogModel(value) {
 }
 
 const canSave = computed(() => {
-  if (!selected.value || saving.value || !hasCatalog.value) return false
+  if (
+    !selected.value ||
+    saving.value ||
+    detailLoading.value ||
+    detailError.value ||
+    !hasCatalog.value
+  ) {
+    return false
+  }
   if (!form.value.departmentId) return false
-  const departmentChanged = form.value.departmentId !== (selected.value.departmentId ?? '')
-  const positionChanged = (form.value.positionId || '') !== (selected.value.positionId ?? '')
-  return departmentChanged || positionChanged
+
+  if (!props.full) {
+    const departmentChanged = form.value.departmentId !== (selected.value.departmentId ?? '')
+    const positionChanged = (form.value.positionId || '') !== (selected.value.positionId ?? '')
+    return departmentChanged || positionChanged
+  }
+
+  if (!form.value.employeeCode.trim() || !form.value.firstName.trim()) return false
+
+  const employeeCode = form.value.employeeCode.trim()
+  const firstName = form.value.firstName.trim()
+  const lastName = form.value.lastName.trim()
+  const email = form.value.email.trim()
+  const phone = form.value.phone.trim()
+  const nationalId = form.value.nationalId.replace(/\D/g, '')
+
+  return (
+    employeeCode !== (selected.value.employeeCode ?? '') ||
+    firstName !== (selected.value.firstName ?? '') ||
+    lastName !== (selected.value.lastName ?? '') ||
+    nationalId.length > 0 ||
+    email !== (selected.value.email ?? '') ||
+    phone !== (selected.value.phone ?? '') ||
+    form.value.departmentId !== (selected.value.departmentId ?? '') ||
+    (form.value.positionId || '') !== (selected.value.positionId ?? '') ||
+    form.value.isActive !== (selected.value.isActive !== false)
+  )
 })
 
 async function saveEmployee() {
   if (!canSave.value) return
   saving.value = true
   saveError.value = ''
+  saveErrors.value = {}
   saveMessage.value = ''
   try {
+    const payload = props.full
+      ? {
+          employeeCode: form.value.employeeCode.trim(),
+          firstName: form.value.firstName.trim(),
+          lastName: form.value.lastName.trim(),
+          nationalId: form.value.nationalId.replace(/\D/g, ''),
+          email: form.value.email.trim(),
+          phone: form.value.phone.trim(),
+          departmentId: form.value.departmentId,
+          positionId: form.value.positionId ? form.value.positionId : null,
+          isActive: form.value.isActive,
+        }
+      : {
+          departmentId: form.value.departmentId,
+          positionId: form.value.positionId ? form.value.positionId : null,
+        }
+
     const { ok, data } = await requestJson(
       'PATCH',
       `${props.base}/employees/${encodeURIComponent(selected.value.id)}`,
-      {
-        departmentId: form.value.departmentId,
-        positionId: form.value.positionId ? form.value.positionId : null,
-      }
+      payload
     )
     if (!ok || data.ok !== true) {
+      saveErrors.value = data.errors && typeof data.errors === 'object' ? data.errors : {}
       saveError.value = typeof data.message === 'string' ? data.message : SAVE_ERROR
       return
     }
     const employee = data.employee
     if (employee) {
+      selected.value = { ...selected.value, ...employee }
       results.value = results.value.map((row) => (row.id === employee.id ? { ...row, ...employee } : row))
     }
     editorOpen.value = false
     saveMessage.value = SAVED_TEXT
     invalidateAdminOverview()
+    if (props.full) invalidateProfile()
   } catch {
     saveError.value = SAVE_ERROR
   } finally {
@@ -507,12 +631,129 @@ onBeforeUnmount(() => {
               <dt>รหัสพนักงาน</dt>
               <dd class="code">{{ selected.employeeCode || '—' }}</dd>
             </div>
+            <div v-if="props.full && selected.nationalIdMasked" class="who-row">
+              <dt>เลขบัตรประชาชน</dt>
+              <dd class="code">{{ selected.nationalIdMasked }}</dd>
+            </div>
           </dl>
+
+          <p v-if="detailLoading" class="hint">กำลังโหลดข้อมูลพนักงาน…</p>
+          <p v-else-if="detailError" class="inline-error" role="alert">{{ detailError }}</p>
 
           <p v-if="catalogLoading" class="hint">กำลังโหลดรายการแผนกและตำแหน่ง…</p>
           <p v-else-if="catalogError" class="inline-error" role="alert">{{ catalogError }}</p>
 
-          <div class="form-grid">
+          <div v-if="props.full && !detailLoading && !detailError" class="form-grid">
+            <label class="field">
+              <span class="field-label">รหัสพนักงาน</span>
+              <input
+                v-model="form.employeeCode"
+                type="text"
+                maxlength="32"
+                autocomplete="off"
+                :disabled="saving"
+              />
+              <span v-if="saveErrors.employeeCode" class="field-error">{{ saveErrors.employeeCode }}</span>
+            </label>
+
+            <label class="field">
+              <span class="field-label">ชื่อ</span>
+              <input
+                v-model="form.firstName"
+                type="text"
+                maxlength="60"
+                autocomplete="given-name"
+                :disabled="saving"
+              />
+              <span v-if="saveErrors.firstName" class="field-error">{{ saveErrors.firstName }}</span>
+            </label>
+
+            <label class="field">
+              <span class="field-label">นามสกุล</span>
+              <input
+                v-model="form.lastName"
+                type="text"
+                maxlength="60"
+                autocomplete="family-name"
+                :disabled="saving"
+              />
+              <span v-if="saveErrors.lastName" class="field-error">{{ saveErrors.lastName }}</span>
+            </label>
+
+            <label class="field">
+              <span class="field-label">เลขบัตรประชาชน</span>
+              <input
+                :value="form.nationalId"
+                type="text"
+                inputmode="numeric"
+                maxlength="13"
+                autocomplete="off"
+                :disabled="saving"
+                :placeholder="selected.nationalIdMasked ? `ปัจจุบัน ${selected.nationalIdMasked} — เว้นว่างหากไม่เปลี่ยน` : 'เลขบัตรประชาชน 13 หลัก'"
+                @input="onNationalIdInput"
+              />
+              <span class="field-hint">{{ NATIONAL_ID_HINT }}</span>
+              <span v-if="saveErrors.nationalId" class="field-error">{{ saveErrors.nationalId }}</span>
+            </label>
+
+            <label class="field">
+              <span class="field-label">อีเมล</span>
+              <input
+                v-model="form.email"
+                type="email"
+                inputmode="email"
+                autocomplete="email"
+                :disabled="saving"
+              />
+              <span v-if="saveErrors.email" class="field-error">{{ saveErrors.email }}</span>
+            </label>
+
+            <label class="field">
+              <span class="field-label">เบอร์โทร</span>
+              <input
+                v-model="form.phone"
+                type="tel"
+                inputmode="tel"
+                autocomplete="tel"
+                placeholder="08X-XXX-XXXX"
+                :disabled="saving"
+              />
+              <span v-if="saveErrors.phone" class="field-error">{{ saveErrors.phone }}</span>
+            </label>
+
+            <label class="field">
+              <span class="field-label">แผนก</span>
+              <select v-model="form.departmentId" :disabled="saving || !hasCatalog">
+                <option value="" disabled>เลือกแผนก</option>
+                <option v-for="dept in catalog.departments" :key="dept.id" :value="dept.id">
+                  {{ dept.name }}
+                </option>
+              </select>
+              <span v-if="saveErrors.departmentId" class="field-error">{{ saveErrors.departmentId }}</span>
+            </label>
+
+            <label class="field">
+              <span class="field-label">ตำแหน่ง <span class="field-hint">(ไม่บังคับ)</span></span>
+              <select v-model="form.positionId" :disabled="saving || !hasCatalog">
+                <option value="">— ไม่ระบุตำแหน่ง —</option>
+                <option v-for="pos in catalog.positions" :key="pos.id" :value="pos.id">
+                  {{ pos.name }}
+                </option>
+              </select>
+              <span v-if="saveErrors.positionId" class="field-error">{{ saveErrors.positionId }}</span>
+            </label>
+
+            <label class="field">
+              <span class="field-label">สถานะ</span>
+              <select v-model="form.isActive" :disabled="saving">
+                <option :value="true">ใช้งาน</option>
+                <option :value="false">ไม่ใช้งาน</option>
+              </select>
+              <span v-if="saveErrors.isActive" class="field-error">{{ saveErrors.isActive }}</span>
+            </label>
+          </div>
+
+          <div v-else-if="!props.full" class="form-grid">
             <label class="field">
               <span class="field-label">แผนก</span>
               <select v-model="form.departmentId" :disabled="saving || !hasCatalog">
@@ -534,7 +775,7 @@ onBeforeUnmount(() => {
             </label>
           </div>
 
-          <p class="note">ระบบบันทึกเฉพาะแผนกและตำแหน่งของพนักงานคนนี้ ไม่แตะข้อมูลอื่น</p>
+          <p class="note">{{ props.full ? FULL_SAVE_NOTE : LIMITED_SAVE_NOTE }}</p>
 
           <p v-if="saveError" class="inline-error" role="alert">{{ saveError }}</p>
         </div>
@@ -685,12 +926,17 @@ onBeforeUnmount(() => {
 .editor-card {
   width: 100%;
   max-width: 560px;
+  max-height: calc(100vh - 32px);
   border-radius: 14px;
   background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .dialog-head {
   display: flex;
+  flex: 0 0 auto;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
@@ -736,10 +982,13 @@ onBeforeUnmount(() => {
 
 .dialog-body {
   padding: 16px 20px 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .dialog-actions {
   display: flex;
+  flex: 0 0 auto;
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 10px;
@@ -798,9 +1047,11 @@ onBeforeUnmount(() => {
   color: #5c7176;
 }
 
+.field input,
 .field select {
   width: 100%;
   min-width: 0;
+  box-sizing: border-box;
   padding: 10px 12px;
   border: 1px solid #cfdcda;
   border-radius: 10px;
@@ -810,9 +1061,16 @@ onBeforeUnmount(() => {
   color: #12343b;
 }
 
+.field input:disabled,
 .field select:disabled {
   background: #f2f4f6;
   color: #8a9793;
+}
+
+.field-error {
+  font-size: 12px;
+  font-weight: 600;
+  color: #b3261e;
 }
 
 .btn {
@@ -957,6 +1215,7 @@ onBeforeUnmount(() => {
 @media (max-width: 600px) {
   .editor-card {
     max-width: calc(100vw - 24px);
+    max-height: calc(100vh - 24px);
   }
 
   .dialog-body,

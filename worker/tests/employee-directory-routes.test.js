@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import app from "../src/app.js";
 import { sha256Hex } from "../src/crypto.js";
+import { nationalIdHash } from "../src/national-id.js";
 
 const HR_TOKEN = "h".repeat(43);
 const CONTROLLER_TOKEN = "c".repeat(43);
@@ -24,7 +25,27 @@ const POS_B = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 const ENV = {
   SUPABASE_URL: "https://fake-project.supabase.co",
   SUPABASE_SERVICE_ROLE_KEY: "fake-service-role-key",
+  NATIONAL_ID_PEPPER: "test-national-id-pepper",
+  NATIONAL_ID_ENC_KEY: "test-national-id-encryption-key",
 };
+
+// A valid Thai national ID for the duplicate/update tests.
+const NATIONAL_ID = "1234567890121";
+
+function fullPayload(overrides = {}) {
+  return {
+    employeeCode: "ABC-00101",
+    firstName: "สมชาย",
+    lastName: "ทดสอบ",
+    nationalId: "",
+    email: null,
+    phone: null,
+    departmentId: DEPT_A,
+    positionId: POS_A,
+    isActive: true,
+    ...overrides,
+  };
+}
 
 const HR_BASE = "https://fake.local/api/hr/directory";
 const CONTROLLER_BASE = "https://fake.local/api/meeting/directory";
@@ -162,6 +183,7 @@ async function createFake(options = {}) {
       meeting_controller: options.controllerActive === false ? [] : [{ employee_id: CONTROLLER_ID }],
       employee: [],
     },
+    employee_credentials: options.credentials ?? [],
     audit: [],
     lonelyMeetingReads: 0,
   };
@@ -232,6 +254,12 @@ async function createFake(options = {}) {
         return jsonResponse(state.positions.filter((row) => matches(params, row)));
       }
 
+      if (table === "employee_credentials") {
+        return jsonResponse(
+          state.employee_credentials.filter((row) => matches(params, row))
+        );
+      }
+
       if (table === "leave_requests") return jsonResponse([]);
 
       return jsonResponse([]);
@@ -256,6 +284,16 @@ async function createFake(options = {}) {
       const rows = Array.isArray(body) ? body : [body];
       state.audit.push(...rows);
       return emptyResponse(201);
+    }
+
+    if (method === "POST" && table === "employee_credentials") {
+      const row = init.body ? JSON.parse(init.body) : {};
+      const existing = state.employee_credentials.find(
+        (item) => item.employee_id === row.employee_id
+      );
+      if (existing) Object.assign(existing, row);
+      else state.employee_credentials.push(row);
+      return jsonResponse([row]);
     }
 
     return emptyResponse(201);
@@ -399,13 +437,13 @@ test("the catalog lists departments and positions for both roles", async (t) => 
 
 // --- employee update -------------------------------------------------------
 
-test("changing an employee writes department_id and position_id only, with names in the audit", async (t) => {
+test("the HR editor writes all changed columns and one field-name-only audit row", async (t) => {
   const fake = await createFake();
   t.after(() => fake.restore());
 
   const response = await patchJson(
     `${HR_BASE}/employees/${TARGET_ID}`,
-    { departmentId: DEPT_B, positionId: POS_B },
+    fullPayload({ departmentId: DEPT_B, positionId: POS_B, email: "somchai@example.com", phone: "081-234-5678" }),
     HR_TOKEN
   );
   const body = await response.json();
@@ -415,33 +453,34 @@ test("changing an employee writes department_id and position_id only, with names
   assert.equal(body.changed, true);
   assert.equal(body.employee.departmentName, "ฝ่ายขาย");
   assert.equal(body.employee.positionName, "หัวหน้างาน");
+  assert.equal(body.employee.email, "somchai@example.com");
+  assert.equal(body.employee.phone, "0812345678");
 
   const patches = fake.calls.filter((call) => call.method === "PATCH" && call.url.includes("/rest/v1/employees"));
   assert.equal(patches.length, 1);
   assert.deepEqual(JSON.parse(patches[0].init.body), {
+    email: "somchai@example.com",
+    phone: "0812345678",
     department_id: DEPT_B,
     position_id: POS_B,
   });
 
-  assert.equal(fake.state.audit.length, 2);
-  const departmentAudit = fake.state.audit.find((row) => row.action === "employee_department_changed");
-  const positionAudit = fake.state.audit.find((row) => row.action === "employee_position_changed");
-  assert.equal(departmentAudit.actor_id, HR_ID);
-  assert.equal(departmentAudit.entity, "employee");
-  assert.equal(departmentAudit.entity_id, TARGET_ID);
-  assert.deepEqual(JSON.parse(departmentAudit.detail), {
-    before: { departmentName: "ฝ่ายบุคคล" },
-    after: { departmentName: "ฝ่ายขาย" },
-  });
-  assert.deepEqual(JSON.parse(positionAudit.detail), {
-    before: { positionName: "เจ้าหน้าที่" },
-    after: { positionName: "หัวหน้างาน" },
+  assert.equal(fake.state.audit.length, 1);
+  const audit = fake.state.audit[0];
+  assert.equal(audit.actor_id, HR_ID);
+  assert.equal(audit.entity, "employee");
+  assert.equal(audit.entity_id, TARGET_ID);
+  assert.equal(audit.action, "employee_profile_updated");
+  assert.deepEqual(JSON.parse(audit.detail), {
+    fields: ["email", "phone", "department_id", "position_id"],
   });
 
   const auditText = JSON.stringify(fake.state.audit);
   assert.equal(/national/i.test(auditText), false);
   assert.equal(/\d{13}/.test(auditText), false);
   assert.equal(auditText.includes(DEPT_B), false);
+  assert.equal(auditText.includes("somchai"), false);
+  assert.equal(auditText.includes("0812345678"), false);
 });
 
 test("an empty position is accepted and stored as null", async (t) => {
@@ -470,7 +509,7 @@ test("repeating the same employee change writes nothing a second time", async (t
   const fake = await createFake();
   t.after(() => fake.restore());
 
-  const payload = { departmentId: DEPT_B, positionId: POS_A };
+  const payload = fullPayload({ departmentId: DEPT_B, positionId: POS_A });
   const first = await patchJson(`${HR_BASE}/employees/${TARGET_ID}`, payload, HR_TOKEN);
   assert.equal(first.status, 200);
   const auditAfterFirst = fake.state.audit.length;
@@ -493,28 +532,28 @@ test("an unknown employee, an unknown department and a malformed body are refuse
 
   const missing = await patchJson(
     `${HR_BASE}/employees/${MISSING_ID}`,
-    { departmentId: DEPT_A, positionId: null },
+    fullPayload({ positionId: null }),
     HR_TOKEN
   );
   assert.equal(missing.status, 404);
 
   const badDepartment = await patchJson(
     `${HR_BASE}/employees/${TARGET_ID}`,
-    { departmentId: MISSING_ID, positionId: null },
+    fullPayload({ departmentId: MISSING_ID, positionId: null }),
     HR_TOKEN
   );
   assert.equal(badDepartment.status, 400);
 
   const extraKey = await patchJson(
     `${HR_BASE}/employees/${TARGET_ID}`,
-    { departmentId: DEPT_A, positionId: null, pin: "123456" },
+    { ...fullPayload({ positionId: null }), pin: "123456" },
     HR_TOKEN
   );
   assert.equal(extraKey.status, 400);
 
   const badUuid = await patchJson(
     `${HR_BASE}/employees/not-a-uuid`,
-    { departmentId: DEPT_A, positionId: null },
+    fullPayload({ positionId: null }),
     HR_TOKEN
   );
   assert.equal(badUuid.status, 400);
@@ -524,6 +563,97 @@ test("an unknown employee, an unknown department and a malformed body are refuse
     fake.calls.filter((call) => call.method === "PATCH" && call.url.includes("/rest/v1/employees")).length,
     0
   );
+});
+
+test("a duplicate employee code is rejected with a clear Thai message", async (t) => {
+  const fake = await createFake();
+  t.after(() => fake.restore());
+
+  const response = await patchJson(
+    `${HR_BASE}/employees/${TARGET_ID}`,
+    fullPayload({ employeeCode: "EMP-00001" }),
+    HR_TOKEN
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 409);
+  assert.equal(body.code, "duplicate_employee_code");
+  assert.equal(body.message, "รหัสพนักงานนี้มีอยู่ในระบบแล้ว กรุณาใช้รหัสอื่น");
+  assert.equal(body.errors.employeeCode, body.message);
+  assert.equal(fake.state.audit.length, 0);
+  assert.equal(
+    fake.calls.filter((call) => call.method === "PATCH" && call.url.includes("/rest/v1/employees")).length,
+    0
+  );
+});
+
+test("a duplicate national ID is rejected and never written", async (t) => {
+  const fake = await createFake({
+    credentials: [
+      {
+        employee_id: HR_ID,
+        national_id_hash: await nationalIdHash(NATIONAL_ID, ENV.NATIONAL_ID_PEPPER),
+      },
+    ],
+  });
+  t.after(() => fake.restore());
+
+  const response = await patchJson(
+    `${HR_BASE}/employees/${TARGET_ID}`,
+    fullPayload({ nationalId: NATIONAL_ID }),
+    HR_TOKEN
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 409);
+  assert.equal(body.code, "duplicate_national_id");
+  assert.equal(body.message, "เลขบัตรประชาชนนี้มีอยู่ในระบบแล้ว กรุณาตรวจสอบอีกครั้ง");
+  assert.equal(fake.state.audit.length, 0);
+  assert.equal(fake.state.employee_credentials.length, 1);
+  assert.equal(NATIONAL_ID.includes(body.message), false);
+});
+
+test("HR can replace a national ID and the audit stores only the field name", async (t) => {
+  const fake = await createFake();
+  t.after(() => fake.restore());
+
+  const response = await patchJson(
+    `${HR_BASE}/employees/${TARGET_ID}`,
+    fullPayload({ nationalId: NATIONAL_ID }),
+    HR_TOKEN
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.changed, true);
+  assert.ok(body.employee.nationalIdMasked.endsWith(NATIONAL_ID.slice(-4)));
+
+  const credentials = fake.state.employee_credentials;
+  assert.equal(credentials.length, 1);
+  assert.equal(credentials[0].employee_id, TARGET_ID);
+  assert.equal(credentials[0].national_id_enc.includes(NATIONAL_ID), false);
+  assert.equal(
+    fake.calls.filter((call) => call.method === "PATCH" && call.url.includes("/rest/v1/employees")).length,
+    0
+  );
+
+  assert.equal(fake.state.audit.length, 1);
+  assert.deepEqual(JSON.parse(fake.state.audit[0].detail), { fields: ["national_id"] });
+  assert.equal(JSON.stringify(fake.state.audit).includes(NATIONAL_ID), false);
+});
+
+test("an employee calling the HR edit endpoint directly gets 403", async (t) => {
+  const fake = await createFake();
+  t.after(() => fake.restore());
+
+  const response = await patchJson(
+    `${HR_BASE}/employees/${TARGET_ID}`,
+    fullPayload({ email: "should-not-save@example.com" }),
+    EMPLOYEE_TOKEN
+  );
+  assert.equal(response.status, 403);
+  assert.equal(fake.state.audit.length, 0);
+  assert.equal(fake.state.employees.find((row) => row.id === TARGET_ID).email, undefined);
 });
 
 // --- renames ---------------------------------------------------------------
