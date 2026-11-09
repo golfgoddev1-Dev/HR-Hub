@@ -2,16 +2,8 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
-// Fonts ship with the project (no CDN). Thai glyphs come from IBM Plex Sans Thai,
-// Latin/digits from IBM Plex Sans.
-import '@fontsource/ibm-plex-sans-thai/thai-400.css'
-import '@fontsource/ibm-plex-sans-thai/thai-500.css'
-import '@fontsource/ibm-plex-sans-thai/thai-600.css'
-import '@fontsource/ibm-plex-sans-thai/thai-700.css'
-import '@fontsource/ibm-plex-sans/latin-400.css'
-import '@fontsource/ibm-plex-sans/latin-500.css'
-import '@fontsource/ibm-plex-sans/latin-600.css'
-import '@fontsource/ibm-plex-sans/latin-700.css'
+// IBM Plex Sans Thai and IBM Plex Sans are supplied by the global Google
+// Fonts link in index.html, the same source every other page uses.
 
 const LINK_ERROR_MESSAGE = 'ลิงก์ไม่ถูกต้อง กรุณาสแกน QR ใหม่อีกครั้ง'
 const LOAD_ERROR_MESSAGE = 'โหลดข้อมูลการลงทะเบียนไม่สำเร็จ กรุณาลองใหม่'
