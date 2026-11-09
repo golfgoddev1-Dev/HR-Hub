@@ -8,6 +8,9 @@ const props = defineProps({
   modelValue: { type: Object, default: null },
   label: { type: String, default: 'พนักงาน' },
   placeholder: { type: String, default: 'พิมพ์ชื่อหรือรหัสพนักงาน' },
+  // When set, the search is narrowed to that department before the limit, so
+  // a small department still finds its own people.
+  departmentId: { type: String, default: '' },
 })
 
 const emit = defineEmits(['update:modelValue'])
@@ -31,7 +34,9 @@ async function search() {
 
   loading.value = true
   try {
-    const response = await fetch(`/api/hr/directory/employees?q=${encodeURIComponent(text)}`, {
+    const params = new URLSearchParams({ q: text })
+    if (props.departmentId) params.set('departmentId', props.departmentId)
+    const response = await fetch(`/api/hr/directory/employees?${params.toString()}`, {
       credentials: 'same-origin',
     })
     const data = await response.json().catch(() => ({}))
@@ -40,7 +45,11 @@ async function search() {
       message.value = typeof data.message === 'string' ? data.message : 'ค้นหาไม่สำเร็จ'
       return
     }
-    results.value = Array.isArray(data.results) ? data.results : []
+    const list = Array.isArray(data.results) ? data.results : []
+    // The server already filters; this keeps an older deployment honest.
+    results.value = props.departmentId
+      ? list.filter((item) => item.departmentId === props.departmentId)
+      : list
   } catch {
     results.value = []
     message.value = 'ค้นหาไม่สำเร็จ'

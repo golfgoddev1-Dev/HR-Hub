@@ -30,6 +30,7 @@ import {
 } from "../approval-token.js";
 import { createDb } from "../db.js";
 import { applyLeaveDecision } from "../leave-decision.js";
+import { notifyLeaveDecisionSafely } from "../decision-notify.js";
 import { NOTIFICATION_KINDS } from "../push/payload.js";
 import { enqueueNotificationSafely } from "../push/queue.js";
 import {
@@ -46,6 +47,15 @@ const RATE_LIMIT_TOKEN_BINDING = "RL_SUBMIT_TOKEN";
 
 const AUDIT_TABLE = "audit_logs";
 const ENTITY_REQUEST = "leave_request";
+
+/** The request's ExecutionContext, or null when the runtime has none. */
+function requestContext(c) {
+  try {
+    return c.executionCtx;
+  } catch {
+    return null;
+  }
+}
 
 const MAX_BODY_BYTES = 8 * 1024;
 const DECISION_KEYS = ["decision", "reason"];
@@ -284,6 +294,13 @@ approveLink.post("/:token/decision", async (c) => {
       leaveRequestId: context.request.id,
       kind: NOTIFICATION_KINDS.DECIDED,
       status,
+    });
+
+    // Shift-lead notices and the approved-leave report, queued after the
+    // decision; a failure here never changes the response.
+    await notifyLeaveDecisionSafely(c.env, db, requestContext(c), {
+      leaveRequestId: context.request.id,
+      decision: status,
     });
 
     return c.json({ ok: true, status }, 200);

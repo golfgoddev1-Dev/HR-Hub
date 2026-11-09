@@ -46,6 +46,7 @@ import {
 } from "../leave-storage.js";
 import { insertWithRequestCode } from "../leave-request-code.js";
 import { applyLeaveDecision } from "../leave-decision.js";
+import { notifyLeaveDecisionSafely } from "../decision-notify.js";
 import { createApprovalLinkEmail } from "../approval-link.js";
 import { dispatchApprovalEmails } from "../email/approval-queue.js";
 import { dispatchQueuedNotifications, enqueueNotificationSafely } from "../push/queue.js";
@@ -1343,6 +1344,14 @@ async function decide(c, status) {
       status,
     });
     await dispatchQueued(c, queued, new Date(nowIso));
+
+    // Shift-lead notices and the approved-leave report are queued after the
+    // decision. The helper swallows every failure, so this can never change
+    // the decision response.
+    await notifyLeaveDecisionSafely(c.env, db, requestContext(c), {
+      leaveRequestId: id,
+      decision: status,
+    });
 
     return c.json({ ok: true, id, status, decidedAt: nowIso }, 200);
   } catch (error) {

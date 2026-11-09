@@ -62,6 +62,22 @@ export async function postLogout() {
   }
 }
 
+export async function putJson(url, body) {
+  const response = await fetch(url, {
+    method: 'PUT',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  let data = {}
+  try {
+    data = await response.json()
+  } catch {
+    data = {}
+  }
+  return { status: response.status, data }
+}
+
 export async function postJson(url, body) {
   const response = await fetch(url, {
     method: 'POST',

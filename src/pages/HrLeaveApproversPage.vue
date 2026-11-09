@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import EmployeePicker from '../components/EmployeePicker.vue'
+import ShiftLeadsSection from '../components/ShiftLeadsSection.vue'
 import { postJson } from '../api.js'
 import {
   applyApproverToggle,
@@ -44,6 +45,9 @@ const departmentId = ref(null)
 const priority = ref(100)
 
 const isEmployeeScope = computed(() => scope.value === 'employee')
+const selectedDepartmentName = computed(
+  () => departments.value.find((item) => item.id === departmentId.value)?.name || ''
+)
 const canAdd = computed(() => {
   if (saving.value) return false
   if (!approver.value) return false
@@ -251,6 +255,18 @@ onMounted(async () => {
           {{ saving ? 'กำลังบันทึก…' : 'เพิ่มผู้อนุมัติ' }}
         </button>
       </section>
+
+      <!-- Per-department setup: who hears about every decision in this
+           department. The section owns its own read and save. -->
+      <ShiftLeadsSection
+        v-if="!isEmployeeScope && departmentId"
+        :key="departmentId"
+        :department-id="departmentId"
+        :department-name="selectedDepartmentName"
+      />
+      <p v-else-if="!isEmployeeScope" class="hint">
+        เลือกแผนกเพื่อตั้งหัวหน้ากะที่รับแจ้งทราบ
+      </p>
 
       <section class="card">
         <div class="card-head">

@@ -151,6 +151,9 @@ function publicEmployee(row) {
     fullName: row.full_name ?? null,
     departmentId: row.department_id ?? null,
     departmentName: firstEmbedded(row.departments)?.name ?? null,
+    // Presence only: a picker can warn that a person cannot receive mail
+    // without the address ever leaving the Worker.
+    hasEmail: typeof row.email === "string" && row.email.trim().length > 0,
     positionId: row.position_id ?? null,
     positionName: firstEmbedded(row.positions)?.name ?? null,
   };
@@ -206,16 +209,27 @@ export function createEmployeeDirectoryRoutes({ role, adminTable }) {
     const denied = await guard(c);
     if (denied) return denied;
 
-    const query = normalizeSearch(new URL(c.req.raw.url).searchParams.get("q"));
+    const params = new URL(c.req.raw.url).searchParams;
+    const query = normalizeSearch(params.get("q"));
     if (query.length < MIN_SEARCH_LENGTH) {
       return c.json({ ok: false, message: MESSAGE.searchTooShort }, 400);
+    }
+    // Optional narrowing for a picker that belongs to one department. It is a
+    // plain equality filter, applied before the limit, so a small department
+    // still finds its own people.
+    const departmentId = params.get("departmentId");
+    if (departmentId !== null && departmentId !== "" && !isUuid(departmentId)) {
+      return invalidBody(c);
     }
 
     try {
       const db = c.get("directoryDb");
+      const filters = [];
+      if (departmentId) filters.push(["department_id", "eq", departmentId]);
       const rows = await db.select(EMPLOYEES_TABLE, {
         columns:
-          "id,employee_code,name_prefix,full_name,department_id,position_id,departments(name),positions(name)",
+          "id,employee_code,name_prefix,full_name,email,department_id,position_id,departments(name),positions(name)",
+        filters,
         extra: [buildSearchFilter(`%${query}%`)],
         order: "employee_code.asc",
         limit: LIST_LIMIT,
@@ -296,7 +310,7 @@ export function createEmployeeDirectoryRoutes({ role, adminTable }) {
 
       const employee = await db.select(EMPLOYEES_TABLE, {
         columns:
-          "id,employee_code,name_prefix,full_name,department_id,position_id,departments(name),positions(name)",
+          "id,employee_code,name_prefix,full_name,email,department_id,position_id,departments(name),positions(name)",
         filters: [["id", "eq", employeeId]],
         single: true,
       });

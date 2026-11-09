@@ -21,6 +21,8 @@ export const CLEANUP_TIMEOUT_MS = 25_000;
 // Growing tables that used to have no retention at all. The leave window is an
 // environment value the owner sets; it is never written into a config file.
 export const NOTIFICATION_QUEUE_RETENTION_DAYS = 30;
+export const APPROVAL_TOKEN_RETENTION_DAYS = 30;
+export const APPROVAL_TOKENS_TABLE = "approval_tokens";
 export const NOTIFICATION_QUEUE_TABLE = "notification_queue";
 export const FINAL_NOTIFICATION_STATUSES = Object.freeze(["sent", "failed", "cancelled"]);
 export const LEAVE_REQUESTS_TABLE = "leave_requests";
@@ -200,6 +202,58 @@ export async function purgeOldNotificationQueue(db, now = new Date()) {
     logSummary(NOTIFICATION_QUEUE_TABLE, deleted, startedAt, cutoff);
   } catch (error) {
     logFailure(NOTIFICATION_QUEUE_TABLE, error);
+  }
+  return deleted;
+}
+
+/**
+ * Deletes approval tokens that are finished and older than 30 days:
+ * used, invalidated, or expired. A pending token inside its 72-hour window is
+ * never selected, at any created_at age. The three conditions are OR-ed by
+ * running them in sequence and share one CLEANUP_MAX_ROWS cap.
+ */
+export async function purgeOldApprovalTokens(
+  db,
+  now = new Date(),
+  { maxRows = CLEANUP_MAX_ROWS } = {}
+) {
+  const startedAt = Date.now();
+  let deleted = 0;
+  try {
+    const cutoff = retentionCutoff(now, APPROVAL_TOKEN_RETENTION_DAYS);
+    const nowIso = now.toISOString();
+    deleted = await purgeInBatches(
+      db,
+      APPROVAL_TOKENS_TABLE,
+      [
+        {
+          filters: (at) => [
+            ["created_at", "lt", at],
+            ["used_at", "not.is", null],
+          ],
+          order: "created_at.asc",
+        },
+        {
+          filters: (at) => [
+            ["created_at", "lt", at],
+            ["invalidated_at", "not.is", null],
+          ],
+          order: "created_at.asc",
+        },
+        {
+          filters: (at) => [
+            ["created_at", "lt", at],
+            ["expires_at", "lt", nowIso],
+          ],
+          order: "created_at.asc",
+        },
+      ],
+      cutoff,
+      maxRows
+    );
+    logSummary(APPROVAL_TOKENS_TABLE, deleted, startedAt, cutoff);
+  } catch (error) {
+    logFailure(APPROVAL_TOKENS_TABLE, error);
   }
   return deleted;
 }
@@ -414,15 +468,22 @@ export async function runDataCleanup(env, now = new Date()) {
     db = createDb(env);
   } catch (error) {
     logFailure("setup", error);
-    return { authSessions: 0, auditLogs: 0, notificationQueue: 0, leaveRetention: null };
+    return {
+      authSessions: 0,
+      auditLogs: 0,
+      notificationQueue: 0,
+      approvalTokens: 0,
+      leaveRetention: null,
+    };
   }
 
   const authSessions = await purgeOldAuthSessions(db, now);
   const auditLogs = await purgeOldAuditLogs(db, now);
   const notificationQueue = await purgeOldNotificationQueue(db, now);
+  const approvalTokens = await purgeOldApprovalTokens(db, now);
   const leaveRetention = await purgeOldLeaveData(db, now, {
     retentionDays: parseLeaveRetentionDays(env?.LEAVE_RETENTION_DAYS),
     env,
   });
-  return { authSessions, auditLogs, notificationQueue, leaveRetention };
+  return { authSessions, auditLogs, notificationQueue, approvalTokens, leaveRetention };
 }

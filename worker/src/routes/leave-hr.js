@@ -14,7 +14,7 @@
 import { Hono } from "hono";
 
 import { createDb } from "../db.js";
-import { requireRole } from "../require-role.js";
+import { requireHrAdmin } from "../hr-guard.js";
 import { isMissingTableError } from "../pg-errors.js";
 import {
   HOLIDAYS_TABLE,
@@ -232,29 +232,12 @@ function positiveInt(raw, fallback) {
 
 /** Role check plus a fresh hr_admins read; both must pass. */
 async function guard(c) {
-  const auth = await requireRole(c.env, c.req.raw, [ROLE]);
-  if (auth.status) {
-    return { response: c.json({ ok: false, message: auth.message }, auth.status) };
-  }
+  const auth = await requireHrAdmin(c);
+  if (auth.response) return { response: auth.response };
 
-  try {
-    const db = createDb(c.env);
-    const member = await db.select(HR_ADMINS_TABLE, {
-      columns: "employee_id",
-      filters: [["employee_id", "eq", auth.session.employeeId]],
-      single: true,
-    });
-    if (!member) {
-      return { response: c.json({ ok: false, message: MESSAGE.forbidden }, 403) };
-    }
-
-    c.set("hrLeaveDb", db);
-    c.set("hrLeaveSession", auth.session);
-    return null;
-  } catch (error) {
-    logError("hr leave guard failed", error);
-    return { response: c.json({ ok: false, message: MESSAGE.saveError }, 500) };
-  }
+  c.set("hrLeaveDb", auth.db);
+  c.set("hrLeaveSession", auth.session);
+  return null;
 }
 
 async function writeAudit(db, { actorId, action, entity, entityId = null, detail }) {

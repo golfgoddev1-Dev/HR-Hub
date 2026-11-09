@@ -321,12 +321,15 @@ test("the 0 2 * * * branch runs certificate retention and data cleanup", async (
   assert.equal(errors[0][0], "[maintenance-cleanup:auth_sessions:error]");
   assert.deepEqual(errors[0][1], { name: "Error", code: "XX000" });
 
-  // audit_logs, the new notification queue summary, and the opt-in leave job's
-  // "disabled" line: each job logs its own summary.
-  assert.equal(logs.length, 3);
+  // audit_logs, the notification queue, approval tokens and the opt-in leave
+  // job's "disabled" line: each job logs its own summary.
+  assert.equal(logs.length, 4);
   const auditSummary = logs.find((entry) => entry[1]?.table === "audit_logs");
   assert.ok(auditSummary);
   assert.equal(auditSummary[1].deleted, 0);
+  const tokenSummary = logs.find((entry) => entry[1]?.table === "approval_tokens");
+  assert.ok(tokenSummary);
+  assert.equal(tokenSummary[1].deleted, 0);
   assert.equal(
     logs.some((entry) => entry[1]?.disabled === "leave retention disabled"),
     true
