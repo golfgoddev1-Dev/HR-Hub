@@ -12,7 +12,11 @@ import {
   loaders,
   loadShared,
 } from '../lib/shared-data.js'
-import { CERTIFICATE_OPEN_LABEL, certificateStatus } from '../leave-certificate.js'
+import {
+  OWN_CERTIFICATE_OPEN_LABEL,
+  canOpenOwnCertificate,
+  certificateStatus,
+} from '../leave-certificate.js'
 import { approvalCount, setApprovalCount } from '../lib/approval-count.js'
 
 const LOAD_ERROR = 'โหลดรายการใบลาไม่สำเร็จ กรุณาลองใหม่'
@@ -95,23 +99,9 @@ async function loadPendingApprovals() {
   }
 }
 
-async function openAttachment(id) {
-  if (!id) return
-  errorMessage.value = ''
-  try {
-    const response = await fetch(
-      `/api/leave/requests/${encodeURIComponent(id)}/attachment`,
-      { credentials: 'same-origin' }
-    )
-    const data = await response.json().catch(() => ({}))
-    if (!response.ok || data.ok !== true || typeof data.url !== 'string') {
-      errorMessage.value = typeof data.message === 'string' ? data.message : LOAD_ERROR
-      return
-    }
-    window.open(data.url, '_blank', 'noopener')
-  } catch {
-    errorMessage.value = LOAD_ERROR
-  }
+// The Worker streams the certificate itself; this is never a signed URL.
+function attachmentUrl(id) {
+  return `/api/leave/requests/${encodeURIComponent(id)}/attachment`
 }
 
 onMounted(() => {
@@ -192,10 +182,11 @@ onMounted(() => {
 
           <p v-if="certificate(item).has" class="note">
             <a
-              v-if="certificate(item).canOpen"
-              href="#"
-              @click.prevent="openAttachment(item.id)"
-            >{{ CERTIFICATE_OPEN_LABEL }}</a>
+              v-if="canOpenOwnCertificate(item)"
+              :href="attachmentUrl(item.id)"
+              target="_blank"
+              rel="noopener noreferrer"
+            >{{ OWN_CERTIFICATE_OPEN_LABEL }}</a>
             <span v-else>{{ certificate(item).label }}</span>
             <span
               v-if="certificate(item).state === 'stored' && certificate(item).expiry"

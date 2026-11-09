@@ -13,7 +13,6 @@ import {
   loaders,
   loadShared,
 } from '../lib/shared-data.js'
-import { CERTIFICATE_OPEN_LABEL, certificateStatus } from '../leave-certificate.js'
 
 const LOAD_ERROR = 'โหลดรายการรออนุมัติไม่สำเร็จ กรุณาลองใหม่'
 const ACTION_ERROR = 'ดำเนินการไม่สำเร็จ กรุณาลองใหม่'
@@ -35,26 +34,6 @@ function daysText(item) {
   const days = Number(item.days)
   if (!Number.isFinite(days)) return '—'
   return Number.isInteger(days) ? `${days} วัน` : `${days} วัน (ครึ่งวัน)`
-}
-
-// The certificate is private: ask the Worker for a short-lived signed URL.
-async function openAttachment(id) {
-  if (!id) return
-  actionError.value = ''
-  try {
-    const response = await fetch(
-      `/api/leave/requests/${encodeURIComponent(id)}/attachment`,
-      { credentials: 'same-origin' }
-    )
-    const data = await response.json().catch(() => ({}))
-    if (!response.ok || data.ok !== true || typeof data.url !== 'string') {
-      actionError.value = typeof data.message === 'string' ? data.message : ACTION_ERROR
-      return
-    }
-    window.open(data.url, '_blank', 'noopener')
-  } catch {
-    actionError.value = ACTION_ERROR
-  }
 }
 
 async function load() {
@@ -175,15 +154,6 @@ onMounted(load)
 
             <p v-if="item.otherTypeDetail" class="note">ประเภทอื่น ๆ: {{ item.otherTypeDetail }}</p>
             <p v-if="item.reason" class="note">เหตุผล: {{ item.reason }}</p>
-            <p v-if="certificateStatus(item).has" class="note">
-              <a
-                v-if="certificateStatus(item).canOpen"
-                href="#"
-                @click.prevent="openAttachment(item.id)"
-              >{{ CERTIFICATE_OPEN_LABEL }}</a>
-              <span v-else>{{ certificateStatus(item).label }}</span>
-            </p>
-
             <div class="decision">
               <textarea
                 v-model="notes[item.id]"

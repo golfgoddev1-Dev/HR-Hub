@@ -25,7 +25,7 @@ create table if not exists public.decision_email_jobs (
   id uuid primary key default gen_random_uuid(),
   leave_request_id uuid not null references public.leave_requests(id) on delete cascade,
   recipient_employee_id uuid not null references public.employees(id) on delete cascade,
-  kind text not null check (kind in ('shift_lead_approved', 'shift_lead_rejected', 'employee_approved')),
+  kind text not null check (kind in ('shift_lead_approved', 'shift_lead_rejected', 'employee_approved', 'employee_rejected')),
   decision text not null check (decision in ('approved', 'rejected')),
   status text not null default 'pending' check (status in ('pending', 'sending', 'sent', 'failed')),
   attempts integer not null default 0,
@@ -44,3 +44,18 @@ create index if not exists approval_tokens_cleanup_idx
 
 alter table public.department_shift_leads enable row level security;
 alter table public.decision_email_jobs enable row level security;
+
+-- Phase 2b correction: the employee is also emailed on a rejection.
+alter table public.decision_email_jobs drop constraint if exists decision_email_jobs_kind_check;
+alter table public.decision_email_jobs add constraint decision_email_jobs_kind_check
+  check (kind in ('shift_lead_approved', 'shift_lead_rejected', 'employee_approved', 'employee_rejected'));
+
+-- One certificate-view audit row per viewer, request and Bangkok calendar day.
+-- The insert uses resolution=ignore-duplicates, so a repeat open is a no-op.
+create unique index if not exists audit_logs_medical_cert_day_key
+  on public.audit_logs (
+    actor_id,
+    entity_id,
+    ((created_at AT TIME ZONE 'Asia/Bangkok')::date)
+  )
+  where action = 'view_medical_cert';

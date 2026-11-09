@@ -33,6 +33,7 @@ export function hrNavItems() {
     { label: 'ใบลาทั้งหมด', to: '/hr/leave', icon: 'event_note' },
     { label: 'คีย์ใบลาย้อนหลัง', to: '/hr/leave/backdated', icon: 'edit_calendar' },
     { label: 'วันหยุด', to: '/hr/leave/holidays', icon: 'event_busy' },
+    { label: 'ใบรับรองแพทย์', to: '/hr/leave/certificates', icon: 'medical_information' },
     { label: 'ผู้อนุมัติ', to: '/hr/leave/approvers', icon: 'how_to_reg' },
     { label: 'ตั้งค่าใบลา', to: '/hr/leave/settings', icon: 'settings' },
   ]

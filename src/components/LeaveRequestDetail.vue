@@ -4,7 +4,6 @@
 // them from data already in memory; it never fetches.
 import { computed } from 'vue'
 import { formatThaiDate, formatThaiDateRange } from '../lib/thai-date.js'
-import { CERTIFICATE_OPEN_LABEL, certificateStatus } from '../leave-certificate.js'
 
 const props = defineProps({
   request: { type: Object, required: true },
@@ -22,11 +21,6 @@ const requesterLine = computed(() => {
     .filter((value) => typeof value === 'string' && value.length > 0)
     .join(' · ')
 })
-
-const certificate = computed(() => certificateStatus(props.request))
-const canOpenCertificate = computed(
-  () => certificate.value.has && certificate.value.canOpen
-)
 </script>
 
 <template>
@@ -66,9 +60,6 @@ const canOpenCertificate = computed(
       ประเภทอื่น ๆ: {{ request.otherTypeDetail }}
     </p>
     <p v-if="request.reason" class="request-note">เหตุผล: {{ request.reason }}</p>
-    <p v-if="certificate.has" class="request-note">
-      <span>{{ canOpenCertificate ? CERTIFICATE_OPEN_LABEL : certificate.label }}</span>
-    </p>
     <p v-if="request.decisionNote" class="request-note">
       หมายเหตุการตัดสินใจ: {{ request.decisionNote }}
     </p>

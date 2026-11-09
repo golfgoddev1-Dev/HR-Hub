@@ -9,7 +9,8 @@
 // - the approver is resolved employee_approvers -> department_approvers, skipping
 //   inactive employees and the applicant, and "no approver configured" is 409;
 // - the medical certificate is uploaded to the private bucket and only the object
-//   path is stored; a signed URL (60s) is issued per viewer;
+//   path is stored; the owning employee streams their own certificate, while HR
+//   and approvers use their own routes;
 // - a decision is a conditional update (status = 'pending'), so two approvers
 //   clicking at once cannot both win;
 // - every submit/approve/reject writes one audit_logs row.
@@ -33,17 +34,13 @@ import { HOLIDAYS_UNAVAILABLE, readHolidays } from "../leave-holidays.js";
 import {
   ATTACHMENT_MESSAGES,
   MAX_ATTACHMENT_BYTES,
-  SIGNED_URL_EXPIRES_IN,
   attachmentPath,
   isCertificatePath,
   safeAttachmentName,
   validateAttachment,
 } from "../leave-attachment.js";
-import {
-  createCertificateSignedUrl,
-  deleteCertificate,
-  uploadCertificate,
-} from "../leave-storage.js";
+import { deleteCertificate, uploadCertificate } from "../leave-storage.js";
+import { isSickLeaveName, sendCertificate } from "../medical-certificate.js";
 import { insertWithRequestCode } from "../leave-request-code.js";
 import { applyLeaveDecision } from "../leave-decision.js";
 import { notifyLeaveDecisionSafely } from "../decision-notify.js";
@@ -853,8 +850,11 @@ leave.get("/requests/:id", async (c) => {
 });
 
 // --- GET /api/leave/requests/:id/attachment ---------------------------------
-// The certificate is private: the viewer gets a signed URL that lives for 60
-// seconds. Allowed: the owner, the approver of that request, and HR.
+// A certificate is streamed to its owning employee only, and only when the
+// request is sick leave with a stored object path. Approvers, shift leads, HR
+// and everyone else use their own route (HR has /api/hr/...) or are refused.
+// A non-certificate legacy attachment keeps its old answer: the caller is
+// checked, then told it is not stored in this system.
 
 leave.get("/requests/:id/attachment", async (c) => {
   const denied = await guard(c);
@@ -869,43 +869,56 @@ leave.get("/requests/:id/attachment", async (c) => {
     const session = c.get("leaveSession");
 
     const row = await db.select(LEAVE_REQUESTS_TABLE, {
-      columns: "id,employee_id,approver_id,medical_certificate_url",
+      columns: "id,employee_id,approver_id,leave_type_id,medical_certificate_url",
       filters: [["id", "eq", id]],
       single: true,
     });
     if (!row) return c.json({ ok: false, message: MESSAGE.requestNotFound }, 404);
 
-    let allowed = row.employee_id === employee.id || row.approver_id === employee.id;
-
-    if (!allowed && session?.role === "hr") {
-      const member = await db.select(HR_ADMINS_TABLE, {
-        columns: "employee_id",
-        filters: [["employee_id", "eq", employee.id]],
-        single: true,
-      });
-      allowed = member !== null;
-    }
-
-    if (!allowed) return c.json({ ok: false, message: MESSAGE.forbidden }, 403);
-
     const stored = row.medical_certificate_url;
     if (typeof stored !== "string" || stored.trim().length === 0) {
       return c.json({ ok: false, message: ATTACHMENT_MESSAGES.notFound }, 404);
     }
+
+    // Only an object path this system wrote can be a certificate. Anything else
+    // keeps the old behaviour: an authorised caller still gets "not stored".
     if (isCertificatePath(stored) === false) {
+      let allowed = row.employee_id === employee.id || row.approver_id === employee.id;
+      if (!allowed && session?.role === "hr") {
+        const member = await db.select(HR_ADMINS_TABLE, {
+          columns: "employee_id",
+          filters: [["employee_id", "eq", employee.id]],
+          single: true,
+        });
+        allowed = member !== null;
+      }
+      if (!allowed) return c.json({ ok: false, message: MESSAGE.forbidden }, 403);
       return c.json({ ok: false, message: ATTACHMENT_MESSAGES.notStored }, 404);
     }
 
-    const signed = await createCertificateSignedUrl(c.env, stored.trim(), SIGNED_URL_EXPIRES_IN);
-    if (signed.ok !== true) {
-      console.error("[leave-cert-sign]", { status: signed.status });
-      return c.json({ ok: false, message: MESSAGE.saveError }, 500);
+    // A certificate belongs to the employee alone. An approver or HR member is
+    // refused here even though they may read the request itself.
+    if (row.employee_id !== employee.id) {
+      return c.json({ ok: false, message: MESSAGE.forbidden }, 403);
     }
 
-    return c.json(
-      { ok: true, url: signed.url, expiresIn: signed.expiresIn ?? SIGNED_URL_EXPIRES_IN },
-      200
-    );
+    const type = row.leave_type_id
+      ? await db.select(LEAVE_TYPES_TABLE, {
+          columns: "id,name",
+          filters: [["id", "eq", row.leave_type_id]],
+          single: true,
+        })
+      : null;
+    if (!isSickLeaveName(type?.name)) {
+      return c.json({ ok: false, message: MESSAGE.forbidden }, 403);
+    }
+
+    return sendCertificate(c, c.env, {
+      db,
+      path: stored.trim(),
+      viewerId: employee.id,
+      requestId: id,
+    });
   } catch (error) {
     logError("leave attachment failed", error);
     return c.json({ ok: false, message: MESSAGE.saveError }, 500);

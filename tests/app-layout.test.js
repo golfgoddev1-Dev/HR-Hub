@@ -183,6 +183,7 @@ describe('persistent shell route', () => {
       '/hr/employees/:id',
       '/hr/leave',
       '/hr/leave/backdated',
+      '/hr/leave/certificates',
       '/hr/leave/approvers',
       '/hr/leave/holidays',
       '/hr/leave/settings',

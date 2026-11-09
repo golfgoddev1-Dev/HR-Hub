@@ -25,6 +25,7 @@ export const allowedPathsByRole = {
     '/hr/leave',
     '/hr/leave/backdated',
     '/leave/approvals/history',
+    '/hr/leave/certificates',
     '/hr/leave/approvers',
     '/hr/leave/holidays',
     '/hr/leave/settings',

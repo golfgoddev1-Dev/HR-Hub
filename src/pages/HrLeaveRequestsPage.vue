@@ -2,11 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { postJson } from '../api.js'
 import { formatThaiDate, formatThaiDateRange } from '../lib/thai-date.js'
-import {
-  CERTIFICATE_OPEN_LABEL,
-  certificateStatus,
-  retentionNotice,
-} from '../leave-certificate.js'
+import { certificateStatus, retentionNotice } from '../leave-certificate.js'
 import { getCached, peekCached } from '../lib/data-cache.js'
 import {
   DATA_KEYS,
@@ -60,26 +56,6 @@ const detailLoading = ref(false)
 const resendBusy = ref(false)
 const resendMessage = ref('')
 const resendError = ref('')
-
-// The certificate is private: the Worker issues a signed URL for 60 seconds.
-async function openAttachment(id) {
-  if (!id) return
-  errorMessage.value = ''
-  try {
-    const response = await fetch(
-      `/api/leave/requests/${encodeURIComponent(id)}/attachment`,
-      { credentials: 'same-origin' }
-    )
-    const data = await response.json().catch(() => ({}))
-    if (!response.ok || data.ok !== true || typeof data.url !== 'string') {
-      errorMessage.value = typeof data.message === 'string' ? data.message : LOAD_ERROR
-      return
-    }
-    window.open(data.url, '_blank', 'noopener')
-  } catch {
-    errorMessage.value = LOAD_ERROR
-  }
-}
 
 function statusLabel(value) {
   return STATUS_LABELS[value] ?? value ?? '—'
@@ -390,12 +366,7 @@ onMounted(async () => {
           <p v-if="detail.reason" class="note">เหตุผล: {{ detail.reason }}</p>
           <p v-if="detail.decisionNote" class="note">หมายเหตุการตัดสิน: {{ detail.decisionNote }}</p>
           <p v-if="certificateOf(detail).has" class="note">
-            <a
-              v-if="certificateOf(detail).canOpen"
-              href="#"
-              @click.prevent="openAttachment(detail.id)"
-            >{{ CERTIFICATE_OPEN_LABEL }}</a>
-            <span v-else>{{ certificateOf(detail).label }}</span>
+            <span>{{ certificateOf(detail).label }}</span>
             <span
               v-if="certificateOf(detail).state === 'stored' && certificateOf(detail).expiry"
               class="note-sub"

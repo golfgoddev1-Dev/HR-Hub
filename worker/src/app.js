@@ -20,6 +20,7 @@ import leaveCalendar from "./routes/leave-calendar.js";
 import leaveHr from "./routes/leave-hr.js";
 import approveLink from "./routes/approve-link.js";
 import hrShiftLeads from "./routes/hr-shift-leads.js";
+import medicalCertificates from "./routes/medical-certificates.js";
 import admin from "./routes/admin.js";
 import profile from "./routes/profile.js";
 import notifications from "./routes/notifications.js";
@@ -65,6 +66,8 @@ app.route("/api/meeting/dashboard", dashboardReason);
 // Registered before /api/meeting so the backfill paths match first.
 app.route("/api/meeting/backfill", meetingBackfill);
 app.route("/api/meeting", meeting);
+// Mounted before /api/hr/employees so the certificate paths match first.
+app.route("/api/hr", medicalCertificates);
 app.route("/api/hr/employees", hrEmployees);
 // Shift leads are set per department; the HR guard is re-checked per request.
 app.route("/api/hr/departments", hrShiftLeads);

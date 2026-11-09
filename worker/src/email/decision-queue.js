@@ -15,12 +15,15 @@
 // Delivery runs in the request's background task (waitUntil) and is bounded to
 // three seconds when there is no ExecutionContext, exactly like Phase 2a.
 
+import { DECISION_EMAIL_KINDS } from "./decision-email.js";
 import { sendRelayEmail } from "./relay.js";
 
 export const DECISION_EMAIL_JOBS_TABLE = "decision_email_jobs";
 export const DECISION_EMAIL_RETRY_DELAYS_MS = Object.freeze([2000, 5000]);
 export const DECISION_EMAIL_RETRYABLE_REASONS = Object.freeze(["network", "upstream"]);
 export const DECISION_EMAIL_PERMANENT_REASONS = Object.freeze(["config", "invalid"]);
+
+const DECISION_EMAIL_JOB_KINDS = new Set(Object.values(DECISION_EMAIL_KINDS));
 
 export const DECISION_EMAIL_JOB_COLUMNS =
   "id,leave_request_id,recipient_employee_id,kind,decision,status,attempts,created_at,sent_at";
@@ -62,6 +65,7 @@ export async function enqueueDecisionEmails(db, jobs) {
       typeof job.recipientEmployeeId === "string" &&
       job.recipientEmployeeId.length > 0 &&
       typeof job.kind === "string" &&
+      DECISION_EMAIL_JOB_KINDS.has(job.kind) &&
       (job.decision === "approved" || job.decision === "rejected")
   );
   if (list.length === 0) return { ok: true, data: [] };

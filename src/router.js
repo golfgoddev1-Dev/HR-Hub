@@ -123,6 +123,11 @@ export const router = createRouter({
           meta: { requiresAuth: true },
         },
         {
+          path: '/hr/leave/certificates',
+          component: page(() => import('./pages/HrLeaveCertificatesPage.vue')),
+          meta: { requiresAuth: true },
+        },
+        {
           path: '/hr/leave/approvers',
           component: page(() => import('./pages/HrLeaveApproversPage.vue')),
           meta: { requiresAuth: true },

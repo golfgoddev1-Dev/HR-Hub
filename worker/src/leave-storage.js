@@ -52,6 +52,21 @@ export async function deleteCertificate(env, path) {
   return { ok: response.ok || response.status === 404, status: response.status };
 }
 
+/** Streams the stored bytes for the Worker, after its authorisation check. */
+export async function downloadCertificate(env, path) {
+  const response = await fetch(objectUrl(env, path), {
+    method: "GET",
+    headers: authHeaders(env),
+  });
+  if (!response.ok) return { ok: false, status: response.status };
+  return {
+    ok: true,
+    status: response.status,
+    body: response.body,
+    contentType: response.headers.get("Content-Type"),
+  };
+}
+
 /** Short-lived signed URL; never the public object URL. */
 export async function createCertificateSignedUrl(env, path, expiresIn = SIGNED_URL_EXPIRES_IN) {
   const response = await fetch(

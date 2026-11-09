@@ -32,6 +32,7 @@ const BASE = {
   decidedAt: "2026-11-09T03:00:00.000Z",
   decisionNote: "ช่วงนี้คนขาด",
   approverName: "ผู้อนุมัติ ทดสอบ",
+  requestCode: "LV-20261109-001",
   link: LINK,
 };
 
@@ -39,7 +40,7 @@ function message(overrides) {
   return buildDecisionEmailMessage({ ...BASE, ...overrides });
 }
 
-test("the three subjects are the fixed generic lines", () => {
+test("the four subjects are the fixed generic lines", () => {
   assert.equal(
     DECISION_EMAIL_SUBJECTS.shift_lead_approved,
     "HR Hub: แจ้งทราบการลาที่ได้รับการอนุมัติ"
@@ -51,6 +52,10 @@ test("the three subjects are the fixed generic lines", () => {
   assert.equal(
     DECISION_EMAIL_SUBJECTS.employee_approved,
     "HR Hub: ใบลาของคุณได้รับการอนุมัติแล้ว"
+  );
+  assert.equal(
+    DECISION_EMAIL_SUBJECTS.employee_rejected,
+    "HR Hub: ใบลาของคุณไม่ได้รับการอนุมัติ"
   );
 });
 
@@ -108,9 +113,40 @@ test("the employee report is the only one that names the approver", () => {
   });
 
   assert.equal(employee.subject, DECISION_EMAIL_SUBJECTS.employee_approved);
+  assert.equal(employee.text.includes("รหัสคำขอ: LV-20261109-001"), true);
   assert.equal(employee.text.includes("ผู้อนุมัติ: ผู้อนุมัติ ทดสอบ"), true);
   assert.equal(employee.text.includes("อนุมัติแล้ว"), true);
   assert.equal(employee.text.includes("/approve/"), false);
+  // No employee email mentions a certificate.
+  assert.equal(employee.text.includes("ใบรับรองแพทย์"), false);
+});
+
+test("the employee rejection report carries the reason and has no link", () => {
+  const built = message({
+    kind: DECISION_EMAIL_KINDS.EMPLOYEE_REJECTED,
+    decision: "rejected",
+  });
+
+  assert.equal(built.subject, DECISION_EMAIL_SUBJECTS.employee_rejected);
+  for (const value of [
+    "รหัสคำขอ: LV-20261109-001",
+    "ประเภทการลา: ลากิจ",
+    "ช่วงวันที่: 2026-11-10 ถึง 2026-11-11",
+    "จำนวนวัน: 2 วัน",
+    "กลับมาทำงาน: 2026-11-12 08:00",
+    "ผู้อนุมัติ: ผู้อนุมัติ ทดสอบ",
+    "วันที่พิจารณา: 2026-11-09",
+    "เหตุผลที่ไม่อนุมัติ: ช่วงนี้คนขาด",
+    "ไม่อนุมัติ",
+  ]) {
+    assert.equal(built.text.includes(value), true, value);
+  }
+
+  // No link, no certificate, no approval action.
+  assert.equal(built.text.includes("http"), false);
+  assert.equal(built.text.includes("ใบรับรองแพทย์"), false);
+  assert.equal(built.text.includes("/approve/"), false);
+  assert.deepEqual(Object.keys(built).sort(), ["subject", "text"]);
 });
 
 test("the body is plain text with no html, cc, bcc or attachment fields", () => {

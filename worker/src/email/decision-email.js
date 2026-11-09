@@ -3,11 +3,12 @@
 // Rules from the owner:
 // - plain text only: no HTML, no cc, no bcc, no attachments, and at most one
 //   link, which is the app's login page (never an approval link);
-// - shift-lead subjects and the employee subject are fixed generic lines;
+// - shift-lead subjects and both employee subjects are fixed generic lines;
 // - a shift lead receives the same detail fields as the approver's view plus the
 //   decision; the employee report also carries the approver's name;
-// - a rejection carries the rejection reason; the employee is only emailed when
-//   the leave was approved;
+// - an employee is emailed on approval and on rejection; the rejection report
+//   carries the rejection reason and no link, and no employee email mentions a
+//   medical certificate;
 // - if the reason would push the body past the relay's 4000-character limit,
 //   the reason becomes the first 1500 code points plus the "read it in the app"
 //   line, the same rule as the Phase 2a approval email.
@@ -19,12 +20,14 @@ export const DECISION_EMAIL_KINDS = Object.freeze({
   SHIFT_APPROVED: "shift_lead_approved",
   SHIFT_REJECTED: "shift_lead_rejected",
   EMPLOYEE_APPROVED: "employee_approved",
+  EMPLOYEE_REJECTED: "employee_rejected",
 });
 
 export const DECISION_EMAIL_SUBJECTS = Object.freeze({
   shift_lead_approved: "HR Hub: แจ้งทราบการลาที่ได้รับการอนุมัติ",
   shift_lead_rejected: "HR Hub: แจ้งทราบการลาที่ไม่ได้รับการอนุมัติ",
   employee_approved: "HR Hub: ใบลาของคุณได้รับการอนุมัติแล้ว",
+  employee_rejected: "HR Hub: ใบลาของคุณไม่ได้รับการอนุมัติ",
 });
 
 export const DECISION_EMAIL_REASON_PREVIEW_LENGTH = 1500;
@@ -67,12 +70,13 @@ function decisionLabel(decision) {
 
 /**
  * One message body. `kind` decides who the greeting is for and whether the
- * approver's name belongs in the body. Returns null for an unknown kind or an
- * input the relay would refuse.
+ * approver's name and request code belong in the body. Returns null for an
+ * unknown kind or an input the relay would refuse.
  */
 export function buildDecisionEmailText({
   kind,
   decision,
+  requestCode = null,
   employeeName,
   employeeCode = null,
   departmentName = null,
@@ -95,13 +99,16 @@ export function buildDecisionEmailText({
   if (!Object.prototype.hasOwnProperty.call(DECISION_EMAIL_SUBJECTS, kind)) return null;
   if (decision !== "approved" && decision !== "rejected") return null;
 
-  const isEmployee = kind === DECISION_EMAIL_KINDS.EMPLOYEE_APPROVED;
+  const isEmployee =
+    kind === DECISION_EMAIL_KINDS.EMPLOYEE_APPROVED ||
+    kind === DECISION_EMAIL_KINDS.EMPLOYEE_REJECTED;
   const name = textOf(employeeName) || DASH;
   const code = textOf(employeeCode);
   const nameLine = code.length > 0 ? `${name} (${code})` : name;
   const note = textOf(decisionNote);
   const approver = textOf(approverName);
   const decided = textOf(decidedAt).slice(0, 10);
+  const request = textOf(requestCode);
 
   const lines = [
     isEmployee ? "เรียน พนักงาน" : "เรียน หัวหน้ากะ",
@@ -109,6 +116,11 @@ export function buildDecisionEmailText({
     isEmployee
       ? "ใบลาของคุณได้รับการพิจารณาแล้ว"
       : "มีผลการพิจารณาใบลาของพนักงานในแผนกของคุณ",
+  ];
+
+  if (isEmployee && request.length > 0) lines.push(`รหัสคำขอ: ${request}`);
+
+  lines.push(
     `ชื่อพนักงาน: ${nameLine}`,
     `แผนก: ${textOf(departmentName) || DASH}`,
     `ประเภทการลา: ${typeLine(leaveTypeName, otherTypeDetail)}`,
@@ -116,10 +128,15 @@ export function buildDecisionEmailText({
     `จำนวนวัน: ${daysLine(days)}`,
     `กลับมาทำงาน: ${returnLine(returnDate, returnTime)}`,
     `กะ / OT: ${textOf(shiftCode) || DASH} · ${textOf(otOption) || DASH}`,
-    `เหตุผล: ${textOf(reason) || DASH}`,
-    `ใบรับรองแพทย์: ${hasMedicalCertificate === true ? "มี" : "ไม่มี"}`,
-    `ผลการพิจารณา: ${decisionLabel(decision)}`,
-  ];
+    `เหตุผล: ${textOf(reason) || DASH}`
+  );
+
+  // A certificate is a shift-lead detail only; no employee email mentions it.
+  if (!isEmployee) {
+    lines.push(`ใบรับรองแพทย์: ${hasMedicalCertificate === true ? "มี" : "ไม่มี"}`);
+  }
+
+  lines.push(`ผลการพิจารณา: ${decisionLabel(decision)}`);
 
   if (decided.length > 0) lines.push(`วันที่พิจารณา: ${decided}`);
   if (decision === "rejected" && note.length > 0) {
@@ -128,7 +145,10 @@ export function buildDecisionEmailText({
   // Only the employee report names the approver.
   if (isEmployee && approver.length > 0) lines.push(`ผู้อนุมัติ: ${approver}`);
 
-  if (typeof link === "string" && /^https?:\/\/[^\s]+$/.test(link)) {
+  // The rejection report carries no link at all; other reports get the login
+  // page, never an approval action.
+  const linkAllowed = kind !== DECISION_EMAIL_KINDS.EMPLOYEE_REJECTED;
+  if (linkAllowed && typeof link === "string" && /^https?:\/\/[^\s]+$/.test(link)) {
     lines.push("", link);
   }
 

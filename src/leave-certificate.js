@@ -9,6 +9,7 @@
 import { formatThaiDate } from './leave-print.js'
 
 export const CERTIFICATE_OPEN_LABEL = 'เปิดไฟล์แนบ (ต้องล็อกอิน)'
+export const OWN_CERTIFICATE_OPEN_LABEL = 'ดูใบรับรองแพทย์'
 export const CERTIFICATE_RECORDED_LABEL = 'มีใบรับรองแพทย์ (บันทึกโดย HR)'
 export const CERTIFICATE_EXPIRED_LABEL = 'ไฟล์หมดอายุแล้ว'
 export const CERTIFICATE_EXPIRES_TODAY_LABEL = 'จะหมดอายุในวันนี้'
@@ -71,6 +72,16 @@ export function retentionNotice(retentionDays) {
   const days = Number(retentionDays)
   if (!Number.isFinite(days) || days <= 0) return ''
   return `ไฟล์ใบรับรองแพทย์จะเก็บไว้ ${days} วันนับจากวันที่ยื่นใบลา หลังจากนั้นไฟล์จะหมดอายุและลบออกจากระบบ`
+}
+
+/** Only the configured sick-leave type can show a certificate. */
+export function isSickLeaveTypeName(value) {
+  return typeof value === 'string' && value.trim() === 'ลาป่วย'
+}
+
+/** The owning employee may open only a sick-leave request's own file. */
+export function canOpenOwnCertificate(request) {
+  return isSickLeaveTypeName(request?.leaveTypeName) && certificateStatus(request).canOpen
 }
 
 /**

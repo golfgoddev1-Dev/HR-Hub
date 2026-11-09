@@ -1,7 +1,7 @@
-// The decision hook: approve queues one email per active shift lead plus the
-// employee report; reject queues only the leads, with the rejection reason. The
-// table's unique key makes a repeat hook a no-op, and a queue failure is
-// swallowed so the decision response can never change.
+// The decision hook: approve and reject each queue one email per active shift
+// lead plus one employee report; the rejection report carries the reason and no
+// link. The table's unique key makes a repeat hook a no-op, and a queue failure
+// is swallowed so the decision response can never change.
 
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -268,7 +268,7 @@ test("approve queues two active shift leads and one employee report", async (t) 
   }
 });
 
-test("reject queues the shift leads with the reason and no employee email", async (t) => {
+test("reject queues the shift leads and one employee rejection report", async (t) => {
   const state = createState("rejected");
   const db = createDb(state);
   const sent = installRelay(t);
@@ -279,22 +279,64 @@ test("reject queues the shift leads with the reason and no employee email", asyn
   });
 
   assert.equal(result.ok, true);
-  assert.equal(result.queued, 2);
-  assert.equal(sent.length, 2);
-  assert.equal(
-    sent.some(
-      (message) => message.subject === DECISION_EMAIL_SUBJECTS.employee_approved
-    ),
-    false
+  assert.equal(result.queued, 3);
+  assert.equal(sent.length, 3);
+
+  const employee = sent.filter(
+    (message) => message.subject === DECISION_EMAIL_SUBJECTS.employee_rejected
   );
+  assert.equal(employee.length, 1);
+  assert.equal(employee[0].to, "requester@example.test");
+  assert.equal(employee[0].text.includes(`เหตุผลที่ไม่อนุมัติ: ${NOTE}`), true);
+  assert.equal(employee[0].text.includes("http"), false);
+  assert.equal(employee[0].text.includes("ใบรับรองแพทย์"), false);
+  assert.deepEqual(Object.keys(employee[0]).sort(), ["subject", "text", "to"]);
+
+  const leads = sent.filter(
+    (message) => message.subject === DECISION_EMAIL_SUBJECTS.shift_lead_rejected
+  );
+  assert.equal(leads.length, 2);
+  for (const message of leads) {
+    assert.equal(message.text.includes(`เหตุผลที่ไม่อนุมัติ: ${NOTE}`), true);
+    assert.equal(message.text.includes("/approve/"), false);
+  }
+
+  // Exactly one employee row, of the rejection kind.
+  const employeeRows = state.decision_email_jobs.filter(
+    (row) => row.recipient_employee_id === REQUESTER_ID
+  );
+  assert.equal(employeeRows.length, 1);
+  assert.equal(employeeRows[0].kind, "employee_rejected");
   assert.equal(
     state.decision_email_jobs.some((row) => row.kind === "employee_approved"),
     false
   );
-  for (const message of sent) {
-    assert.equal(message.subject, DECISION_EMAIL_SUBJECTS.shift_lead_rejected);
-    assert.equal(message.text.includes(`เหตุผลที่ไม่อนุมัติ: ${NOTE}`), true);
-  }
+});
+
+test("a repeated rejection hook sends the employee report once", async (t) => {
+  const state = createState("rejected");
+  const db = createDb(state);
+  const sent = installRelay(t);
+
+  const first = await notifyLeaveDecision(ENV, db, null, {
+    leaveRequestId: REQUEST_ID,
+    decision: "rejected",
+  });
+  const second = await notifyLeaveDecision(ENV, db, null, {
+    leaveRequestId: REQUEST_ID,
+    decision: "rejected",
+  });
+
+  assert.equal(first.queued, 3);
+  assert.equal(second.queued, 0);
+  assert.equal(second.duplicate, true);
+  assert.equal(sent.length, 3);
+  assert.equal(
+    sent.filter(
+      (message) => message.subject === DECISION_EMAIL_SUBJECTS.employee_rejected
+    ).length,
+    1
+  );
 });
 
 test("a repeated hook inserts nothing and sends nothing", async (t) => {

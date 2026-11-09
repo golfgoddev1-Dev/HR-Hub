@@ -1,6 +1,7 @@
 // The decision hook: after a leave is approved or rejected, queue one email per
 // active shift lead in the requester's department, plus one report email to the
-// employee when the leave was approved.
+// employee. The employee report exists for both decisions; the rejection one
+// carries the reason and no link.
 //
 // Rules kept here:
 // - the hook only enqueues; a slow or unconfigured relay never reaches the
@@ -9,7 +10,7 @@
 //   repeated hook for the same decision inserts nothing and sends nothing;
 // - shift leads never get an approve/reject action, and no decision email ever
 //   carries an approval link: the one optional link is the app's login page;
-// - a rejection has no employee email, only the shift-lead notices.
+// - a rejection reaches the employee too, but without any link.
 
 import { approvalLinkBase } from "./approval-token.js";
 import {
@@ -53,6 +54,7 @@ function messageFor({ row, kind, decision, request, requester, departmentName, l
   const input = {
     kind,
     decision,
+    requestCode: request.request_code ?? null,
     employeeName: displayName(requester?.name_prefix, requester?.full_name),
     employeeCode: requester?.employee_code ?? null,
     departmentName,
@@ -186,14 +188,18 @@ export async function notifyLeaveDecision(env, db, ctx, { leaveRequestId, decisi
     });
   }
 
-  // The employee hears about an approval only; a rejection is not emailed.
-  if (decision === "approved" && requester.is_active === true) {
+  // The employee hears about both decisions; the rejection report carries the
+  // reason and has no link.
+  if (requester.is_active === true) {
     const email = textOf(requester.email);
     if (email.length > 0) {
       jobs.push({
         leaveRequestId: request.id,
         recipientEmployeeId: requester.id,
-        kind: DECISION_EMAIL_KINDS.EMPLOYEE_APPROVED,
+        kind:
+          decision === "approved"
+            ? DECISION_EMAIL_KINDS.EMPLOYEE_APPROVED
+            : DECISION_EMAIL_KINDS.EMPLOYEE_REJECTED,
         decision,
         recipient_email: email,
       });

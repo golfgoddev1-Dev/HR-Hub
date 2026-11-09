@@ -28,6 +28,7 @@ const HR_TABLE = [
   ['ใบลาทั้งหมด', '/hr/leave', 'event_note'],
   ['คีย์ใบลาย้อนหลัง', '/hr/leave/backdated', 'edit_calendar'],
   ['วันหยุด', '/hr/leave/holidays', 'event_busy'],
+  ['ใบรับรองแพทย์', '/hr/leave/certificates', 'medical_information'],
   ['ผู้อนุมัติ', '/hr/leave/approvers', 'how_to_reg'],
   ['ตั้งค่าใบลา', '/hr/leave/settings', 'settings'],
 ]
@@ -51,7 +52,7 @@ describe('leaveNavItems', () => {
 })
 
 describe('hrNavItems', () => {
-  it('keeps the ten HR items in order, with unchanged routes and icons', () => {
+  it('keeps the eleven HR items in order, with unchanged routes and icons', () => {
     expect(table(hrNavItems())).toEqual(HR_TABLE)
   })
 
@@ -65,7 +66,7 @@ describe('hrNavItems', () => {
   it('returns a fresh array', () => {
     const first = hrNavItems()
     first.length = 0
-    expect(hrNavItems()).toHaveLength(10)
+    expect(hrNavItems()).toHaveLength(11)
   })
 })
 
