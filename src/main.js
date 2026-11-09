@@ -5,12 +5,10 @@ import { verifySession } from './api.js'
 import { clearAll } from './lib/data-cache.js'
 import { createVuetify } from 'vuetify'
 import 'vuetify/styles'
-import * as components from 'vuetify/components'
-import * as directives from 'vuetify/directives'
 import { defaults, theme } from './theme.js'
 import './styles.css'
 
-const vuetify = createVuetify({ components, directives, theme, defaults })
+const vuetify = createVuetify({ theme, defaults })
 const app = createApp(App)
 
 app.use(vuetify)
