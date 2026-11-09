@@ -616,6 +616,7 @@ test("a duplicate national ID is rejected and never written", async (t) => {
 test("HR can replace a national ID and the audit stores only the field name", async (t) => {
   const fake = await createFake();
   t.after(() => fake.restore());
+  const employeeCountBefore = fake.state.employees.length;
 
   const response = await patchJson(
     `${HR_BASE}/employees/${TARGET_ID}`,
@@ -627,6 +628,15 @@ test("HR can replace a national ID and the audit stores only the field name", as
   assert.equal(response.status, 200);
   assert.equal(body.changed, true);
   assert.ok(body.employee.nationalIdMasked.endsWith(NATIONAL_ID.slice(-4)));
+
+  // The employee row is untouched: same id, same single row, nothing inserted.
+  assert.equal(body.employee.id, TARGET_ID);
+  assert.equal(fake.state.employees.length, employeeCountBefore);
+  assert.equal(fake.state.employees.filter((row) => row.id === TARGET_ID).length, 1);
+  assert.equal(
+    fake.calls.filter((call) => call.method === "POST" && call.url.includes("/rest/v1/employees")).length,
+    0
+  );
 
   const credentials = fake.state.employee_credentials;
   assert.equal(credentials.length, 1);
@@ -640,6 +650,46 @@ test("HR can replace a national ID and the audit stores only the field name", as
   assert.equal(fake.state.audit.length, 1);
   assert.deepEqual(JSON.parse(fake.state.audit[0].detail), { fields: ["national_id"] });
   assert.equal(JSON.stringify(fake.state.audit).includes(NATIONAL_ID), false);
+});
+
+test("changing an employee code updates the same employee row and never inserts", async (t) => {
+  const fake = await createFake();
+  t.after(() => fake.restore());
+  const employeeCountBefore = fake.state.employees.length;
+
+  const response = await patchJson(
+    `${HR_BASE}/employees/${TARGET_ID}`,
+    fullPayload({ employeeCode: "ABC-99999" }),
+    HR_TOKEN
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.changed, true);
+  assert.equal(body.employee.id, TARGET_ID);
+  assert.equal(body.employee.employeeCode, "ABC-99999");
+
+  // One UPDATE by id, no INSERT, so the table keeps its row count and the id.
+  assert.equal(fake.state.employees.length, employeeCountBefore);
+  assert.equal(fake.state.employees.filter((row) => row.id === TARGET_ID).length, 1);
+  assert.equal(fake.state.employees.find((row) => row.id === TARGET_ID).employee_code, "ABC-99999");
+
+  // The old code is freed for a future import or edit.
+  assert.equal(fake.state.employees.some((row) => row.employee_code === "ABC-00101"), false);
+
+  assert.equal(
+    fake.calls.filter((call) => call.method === "POST" && call.url.includes("/rest/v1/employees")).length,
+    0
+  );
+  const patches = fake.calls.filter(
+    (call) => call.method === "PATCH" && call.url.includes("/rest/v1/employees")
+  );
+  assert.equal(patches.length, 1);
+  assert.match(patches[0].url, new RegExp(`id=eq\\.${TARGET_ID}`));
+
+  assert.equal(fake.state.audit.length, 1);
+  assert.equal(fake.state.audit[0].entity_id, TARGET_ID);
+  assert.deepEqual(JSON.parse(fake.state.audit[0].detail), { fields: ["employee_code"] });
 });
 
 test("an employee calling the HR edit endpoint directly gets 403", async (t) => {
