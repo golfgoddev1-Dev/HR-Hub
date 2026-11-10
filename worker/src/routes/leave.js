@@ -760,6 +760,39 @@ leave.get("/requests/mine", async (c) => {
   }
 });
 
+// --- GET /api/leave/requests/mine/counts ------------------------------------
+// The home cards count only the session employee's own requests. The approver
+// queue is a different scope and never contributes to these numbers.
+
+leave.get("/requests/mine/counts", async (c) => {
+  const denied = await guard(c);
+  if (denied) return denied.response;
+
+  try {
+    const db = c.get("leaveDb");
+    const employee = c.get("leaveEmployee");
+
+    const rows = await db.select(LEAVE_REQUESTS_TABLE, {
+      columns: "id,status",
+      filters: [
+        ["employee_id", "eq", employee.id],
+        ["status", "in", ["pending", "approved"]],
+      ],
+    });
+
+    const counts = { pending: 0, approved: 0 };
+    for (const row of rows) {
+      if (row.status === "pending") counts.pending += 1;
+      else if (row.status === "approved") counts.approved += 1;
+    }
+
+    return c.json({ ok: true, counts }, 200);
+  } catch (error) {
+    logError("leave mine counts failed", error);
+    return c.json({ ok: false, message: MESSAGE.saveError }, 500);
+  }
+});
+
 // --- GET /api/leave/requests/:id ---------------------------------------------
 // The read-only detail the approvals page shows. The scope is the one shared
 // rule (worker/src/leave-scope.js): HR, or the request's own active approver.

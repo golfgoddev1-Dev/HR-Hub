@@ -182,6 +182,41 @@ test("hr, meeting and system_admin sessions can read their own leave", async (t)
   );
 });
 
+test("own request counts include only the session employee's requests", async (t) => {
+  const fake = await createBackend();
+  t.after(() => fake.restore());
+
+  const request = (id, employeeId, status) => ({
+    id,
+    employee_id: employeeId,
+    status,
+  });
+  fake.state.leave_requests.push(
+    request("a1111111-1111-4111-8111-111111111111", EMPLOYEE_ID, "pending"),
+    request("a2222222-2222-4222-8222-222222222222", EMPLOYEE_ID, "approved"),
+    request("a3333333-3333-4333-8333-333333333333", EMPLOYEE_ID, "rejected"),
+    // Another employee's pending request must never enter this employee's count.
+    request("b1111111-1111-4111-8111-111111111111", HR_ID, "pending")
+  );
+
+  const response = await call("/api/leave/requests/mine/counts", EMPLOYEE_TOKEN);
+  assert.equal(response.status, 200);
+  const body = await response.json();
+
+  assert.equal(body.ok, true);
+  assert.deepEqual(body.counts, { pending: 1, approved: 1 });
+
+  const countCalls = fake.calls.filter((entry) => {
+    if (entry.table !== "leave_requests") return false;
+    return new URL(entry.url).searchParams.get("status") === "in.(pending,approved)";
+  });
+  assert.equal(countCalls.length, 1);
+  assert.equal(
+    new URL(countCalls[0].url).searchParams.get("employee_id"),
+    `eq.${EMPLOYEE_ID}`
+  );
+});
+
 test("an inactive employee is refused even with a valid session", async (t) => {
   const fake = await createBackend();
   t.after(() => fake.restore());

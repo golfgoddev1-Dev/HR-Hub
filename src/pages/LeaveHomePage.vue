@@ -18,7 +18,7 @@ import {
   canOpenOwnCertificate,
   certificateStatus,
 } from '../leave-certificate.js'
-import { approvalCount, setApprovalCount } from '../lib/approval-count.js'
+import { setApprovalCount } from '../lib/approval-count.js'
 
 const LOAD_ERROR = 'โหลดรายการใบลาไม่สำเร็จ กรุณาลองใหม่'
 const EMPTY = 'ยังไม่มีรายการใบลา'
@@ -40,14 +40,13 @@ const STATUS_CLASSES = {
 const loading = ref(true)
 const errorMessage = ref('')
 const results = ref([])
-// The same number the dock badge shows, so a decision repaints both.
-const pendingApprovals = approvalCount
+// Own request counts come from the Worker, scoped to this employee.
+const counts = ref({ pending: 0, approved: 0 })
 const retentionDays = ref(0)
 
 const route = useRoute()
 const focusId = computed(() => (typeof route.query.focus === 'string' ? route.query.focus : ''))
 // The in-app list is always the fallback source of truth, push or no push.
-const myPending = computed(() => results.value.filter((item) => item.status === 'pending').length)
 
 function statusLabel(value) {
   return STATUS_LABELS[value] ?? value ?? '—'
@@ -77,6 +76,10 @@ async function load() {
       onData: (data) => {
         results.value = Array.isArray(data.results) ? data.results : []
         retentionDays.value = Number(data.certificateRetentionDays) || 0
+        counts.value = {
+          pending: Number(data.counts?.pending) || 0,
+          approved: Number(data.counts?.approved) || 0,
+        }
       },
     })
   } catch (error) {
@@ -125,15 +128,12 @@ onMounted(async () => {
 
       <section class="summary">
         <div class="summary-item">
-          <span class="summary-label">ใบลาของฉันที่รอดำเนินการ</span>
-          <span class="summary-value">{{ myPending }}</span>
+          <span class="summary-label">ใบลารออนุมัติ</span>
+          <span class="summary-value">{{ counts.pending }}</span>
         </div>
         <div class="summary-item">
-          <span class="summary-label">ใบลารอฉันอนุมัติ</span>
-          <RouterLink v-if="pendingApprovals > 0" to="/leave/approvals" class="summary-link">
-            {{ pendingApprovals }} รายการ →
-          </RouterLink>
-          <span v-else class="summary-value">0</span>
+          <span class="summary-label">ใบลาอนุมัติแล้ว</span>
+          <span class="summary-value">{{ counts.approved }}</span>
         </div>
       </section>
 
