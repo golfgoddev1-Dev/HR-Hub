@@ -111,9 +111,11 @@ describe('role shell routing', () => {
       expect(mine, role).toHaveLength(1)
       expect(mine[0].label).toBe(NAV_SECTION_LABELS.mine)
       const expected =
-        role === 'system_admin'
-          ? ['/leave', '/leave/new', '/profile']
-          : ['/leave', '/leave/new', '/leave/calendar', '/profile']
+        role === 'employee'
+          ? ['/leave', '/leave/new', '/leave/calendar', '/leave/my-approvers', '/profile']
+          : role === 'system_admin'
+            ? ['/leave', '/leave/new', '/profile']
+            : ['/leave', '/leave/new', '/leave/calendar', '/profile']
       expect(mine[0].items.map((item) => item.to), role).toEqual(expected)
     }
   })

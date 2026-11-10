@@ -11,6 +11,7 @@ export const allowedPathsByRole = {
     '/leave',
     '/leave/new',
     '/leave/approvals',
+    '/leave/my-approvers',
     '/profile',
   ],
   // HR landing plus every leave tool; all of them are linked from hrNavItems().

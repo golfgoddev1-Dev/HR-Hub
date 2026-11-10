@@ -171,6 +171,7 @@ describe('persistent shell route', () => {
       '/change-pin',
       '/leave',
       '/leave/new',
+      '/leave/my-approvers',
       '/leave/approvals',
       '/leave/approvals/history',
       '/leave/calendar',

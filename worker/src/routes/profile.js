@@ -9,6 +9,8 @@ import { Hono } from "hono";
 
 import { createDb } from "../db.js";
 import { requireRole } from "../require-role.js";
+import { DEPARTMENT_APPROVERS_TABLE, EMPLOYEE_APPROVERS_TABLE } from "../leave-approvers.js";
+import { SHIFT_LEADS_TABLE } from "../shift-leads.js";
 
 const profile = new Hono();
 
@@ -18,6 +20,8 @@ const EMPLOYEES_TABLE = "employees";
 const DEPARTMENTS_TABLE = "departments";
 const POSITIONS_TABLE = "positions";
 const PREFIXES_TABLE = "name_prefixes";
+const DEPARTMENT_APPROVER_LABEL = "ผู้อนุมัติ";
+const SHIFT_LEAD_LABEL = "หัวหน้ากะ";
 
 const MESSAGE = {
   forbidden: "ไม่มีสิทธิ์เข้าถึงส่วนนี้",
@@ -42,6 +46,33 @@ function textOrNull(value) {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+/** The stored name is one full_name; split it the way the HR form edits it. */
+function splitEmployeeName(row) {
+  let name = typeof row?.full_name === "string" ? row.full_name.replace(/\s+/g, " ").trim() : "";
+  const prefix = typeof row?.name_prefix === "string" ? row.name_prefix.trim() : "";
+  if (prefix && name.startsWith(prefix)) name = name.slice(prefix.length).trim();
+  if (name.length === 0) return { firstName: "", lastName: "" };
+  const space = name.indexOf(" ");
+  if (space === -1) return { firstName: name, lastName: "" };
+  return { firstName: name.slice(0, space), lastName: name.slice(space + 1).trim() };
+}
+
+/**
+ * A contact card fields only: name, department, position, phone, role label.
+ * No employee code, email or national id is ever part of this shape.
+ */
+function publicContact(person, { departmentName, positionName, roleLabel }) {
+  const name = splitEmployeeName(person);
+  return {
+    firstName: name.firstName,
+    lastName: name.lastName,
+    departmentName: departmentName ?? null,
+    positionName: positionName ?? null,
+    phone: textOrNull(person.phone),
+    roleLabel,
+  };
 }
 
 function publicProfile({ employee, department, position }) {
@@ -130,6 +161,137 @@ profile.get("/me", async (c) => {
     return c.json({ ok: true, profile: publicProfile(loaded) }, 200);
   } catch (error) {
     logError("profile read failed", error);
+    return c.json({ ok: false, message: MESSAGE.saveError }, 500);
+  }
+});
+
+// --- GET /api/profile/my-approvers ------------------------------------------
+// The caller's own approval route, read-only. The employee id always comes from
+// the session: a query or body id is never read, so one employee cannot ask for
+// another employee's contacts. Allowed for any active signed-in employee record,
+// matching the own-profile and own-leave reads.
+
+profile.get("/my-approvers", async (c) => {
+  const denied = await guard(c);
+  if (denied) return denied.response;
+
+  try {
+    const db = c.get("profileDb");
+    const employeeId = c.get("profileSession").employeeId;
+
+    const me = await db.select(EMPLOYEES_TABLE, {
+      columns: "id,department_id",
+      filters: [["id", "eq", employeeId]],
+      single: true,
+    });
+    if (!me) return c.json({ ok: false, message: MESSAGE.forbidden }, 403);
+
+    const departmentId = me.department_id ?? null;
+
+    const [departmentGrants, personalGrants, shiftRows] = await Promise.all([
+      departmentId
+        ? db.select(DEPARTMENT_APPROVERS_TABLE, {
+            columns: "employee_id,priority",
+            filters: [
+              ["department_id", "eq", departmentId],
+              ["is_active", "eq", true],
+            ],
+            order: "priority.asc",
+            limit: 200,
+          })
+        : [],
+      db.select(EMPLOYEE_APPROVERS_TABLE, {
+        columns: "approver_id,priority",
+        filters: [
+          ["employee_id", "eq", employeeId],
+          ["is_active", "eq", true],
+        ],
+        order: "priority.asc",
+        limit: 200,
+      }),
+      departmentId
+        ? db.select(SHIFT_LEADS_TABLE, {
+            columns: "employee_id,shift_label",
+            filters: [["department_id", "eq", departmentId]],
+            order: "created_at.asc",
+            limit: 2,
+          })
+        : [],
+    ]);
+
+    // Department grants and named grants are both shown, once per person. The
+    // department column holds the approver, while a named row holds the employee
+    // in employee_id and the approver in approver_id.
+    const approverIds = [];
+    const seenApprovers = new Set();
+    const addApprover = (id) => {
+      if (typeof id !== "string" || id.length === 0 || seenApprovers.has(id)) return;
+      seenApprovers.add(id);
+      approverIds.push(id);
+    };
+    for (const row of departmentGrants) addApprover(row.employee_id);
+    for (const row of personalGrants) addApprover(row.approver_id);
+
+    const shiftLeadIds = [];
+    const seenLeads = new Set();
+    for (const row of shiftRows) {
+      const id = row.employee_id;
+      if (typeof id !== "string" || id.length === 0 || seenLeads.has(id)) continue;
+      seenLeads.add(id);
+      shiftLeadIds.push(id);
+    }
+
+    const peopleIds = [...new Set([...approverIds, ...shiftLeadIds])];
+    const people = peopleIds.length
+      ? await db.select(EMPLOYEES_TABLE, {
+          columns: "id,name_prefix,full_name,phone,department_id,position_id",
+          filters: [["id", "in", peopleIds]],
+        })
+      : [];
+    const personById = new Map(people.map((person) => [person.id, person]));
+
+    const departmentIds = [...new Set(people.map((person) => person.department_id).filter(Boolean))];
+    const positionIds = [...new Set(people.map((person) => person.position_id).filter(Boolean))];
+
+    const [departments, positions] = await Promise.all([
+      departmentIds.length
+        ? db.select(DEPARTMENTS_TABLE, {
+            columns: "id,name",
+            filters: [["id", "in", departmentIds]],
+          })
+        : [],
+      positionIds.length
+        ? db.select(POSITIONS_TABLE, {
+            columns: "id,name",
+            filters: [["id", "in", positionIds]],
+          })
+        : [],
+    ]);
+    const departmentById = new Map(departments.map((row) => [row.id, row.name ?? null]));
+    const positionById = new Map(positions.map((row) => [row.id, row.name ?? null]));
+
+    const contactOf = (id, roleLabel) => {
+      const person = personById.get(id);
+      if (!person) return null;
+      return publicContact(person, {
+        departmentName: person.department_id
+          ? departmentById.get(person.department_id) ?? null
+          : null,
+        positionName: person.position_id ? positionById.get(person.position_id) ?? null : null,
+        roleLabel,
+      });
+    };
+
+    const approvers = approverIds
+      .map((id) => contactOf(id, DEPARTMENT_APPROVER_LABEL))
+      .filter(Boolean);
+    const shiftLeads = shiftLeadIds
+      .map((id) => contactOf(id, SHIFT_LEAD_LABEL))
+      .filter(Boolean);
+
+    return c.json({ ok: true, approvers, shiftLeads }, 200);
+  } catch (error) {
+    logError("profile my-approvers failed", error);
     return c.json({ ok: false, message: MESSAGE.saveError }, 500);
   }
 });

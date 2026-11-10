@@ -93,6 +93,16 @@ export function navSections({ role, isApprover = false, pendingCount = 0 } = {})
   const mine = leaveNavItems().filter(
     (item) => item.to !== '/leave/calendar' || canSeeLeaveCalendar({ role, isApprover }),
   )
+  // Only the employee role gets this read-only contact page; other shells keep
+  // exactly the menu they had.
+  if (role === 'employee') {
+    const profileIndex = mine.findIndex((item) => item.to === '/profile')
+    mine.splice(profileIndex === -1 ? mine.length : profileIndex, 0, {
+      label: 'ผู้อนุมัติของฉัน',
+      to: '/leave/my-approvers',
+      icon: 'support_agent',
+    })
+  }
   const sections = [
     { id: 'mine', label: NAV_SECTION_LABELS.mine, items: mine },
   ]

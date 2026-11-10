@@ -67,6 +67,7 @@ export const DATA_KEYS = {
   hrHolidays: 'leave:hr:holidays',
   directoryCatalog: 'directory:catalog',
   profile: 'profile:me',
+  myApprovers: 'profile:my-approvers',
   notificationStatus: 'notifications:status',
   profileDepartments: 'profile:departments',
   profilePrefixes: 'profile:name-prefixes',
@@ -122,6 +123,7 @@ export const loaders = {
     requestJson(queryString ? `/api/leave/hr/requests?${queryString}` : '/api/leave/hr/requests'),
   directoryCatalog: (base) => () => requestJson(`${base}/catalog`),
   profile: () => requestJson('/api/profile/me'),
+  myApprovers: () => requestJson('/api/profile/my-approvers'),
   // Cached for a minute by the switch's background verification.
   notificationStatus: () => fetchNotificationStatus(),
   profileDepartments: () => requestJson('/api/profile/departments'),

@@ -114,11 +114,17 @@ describe('navSections', () => {
     const minePaths = (options) =>
       navSections(options).find((section) => section.id === 'mine').items.map((item) => item.to)
 
-    expect(minePaths({ role: 'employee' })).toEqual(['/leave', '/leave/new', '/profile'])
+    expect(minePaths({ role: 'employee' })).toEqual([
+      '/leave',
+      '/leave/new',
+      '/leave/my-approvers',
+      '/profile',
+    ])
     expect(minePaths({ role: 'employee', isApprover: true })).toEqual([
       '/leave',
       '/leave/new',
       '/leave/calendar',
+      '/leave/my-approvers',
       '/profile',
     ])
     for (const role of ['hr', 'meeting_controller']) {
@@ -130,6 +136,19 @@ describe('navSections', () => {
       ])
     }
     expect(minePaths({ role: 'system_admin' })).toEqual(['/leave', '/leave/new', '/profile'])
+  })
+
+  it('offers my approvers to the employee menu only', () => {
+    const items = (role) => navSections({ role }).flatMap((section) => section.items)
+
+    expect(items('employee')).toContainEqual({
+      label: 'ผู้อนุมัติของฉัน',
+      to: '/leave/my-approvers',
+      icon: 'support_agent',
+    })
+    for (const role of ['hr', 'meeting_controller', 'system_admin']) {
+      expect(items(role).some((item) => item.to === '/leave/my-approvers'), role).toBe(false)
+    }
   })
 
   it('never offers the change-PIN page to a non-admin menu', () => {

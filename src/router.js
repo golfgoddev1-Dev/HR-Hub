@@ -60,6 +60,11 @@ export const router = createRouter({
           meta: { requiresAuth: true },
         },
         {
+          path: '/leave/my-approvers',
+          component: page(() => import('./pages/MyApproversPage.vue')),
+          meta: { requiresAuth: true },
+        },
+        {
           path: '/leave/approvals',
           component: page(() => import('./pages/LeaveApprovalsPage.vue')),
           meta: { requiresAuth: true },

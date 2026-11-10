@@ -22,6 +22,7 @@ describe('canOpenPath', () => {
   it('gives an employee the leave pages, but no calendar or PIN page', () => {
     expect(canOpenPath('employee', '/leave')).toBe(true)
     expect(canOpenPath('employee', '/leave/new')).toBe(true)
+    expect(canOpenPath('employee', '/leave/my-approvers')).toBe(true)
     expect(canOpenPath('employee', '/leave/calendar')).toBe(false)
     expect(canOpenPath('employee', '/change-pin')).toBe(false)
     expect(canOpenPath('employee', '/hr')).toBe(false)
@@ -73,6 +74,11 @@ describe('canOpenPath', () => {
 
     const admin = { role: 'system_admin', hasEmployee: true }
     expect(canOpenPath('system_admin', '/hr/leave', admin)).toBe(false)
+
+    // The contact page is employee-only, even for another role with an employee row.
+    for (const role of ['hr', 'meeting_controller', 'system_admin']) {
+      expect(canOpenPath(role, '/leave/my-approvers', { role, hasEmployee: true })).toBe(false)
+    }
   })
 
   it('opens the approvals queue from the approver flag, not the role', () => {
