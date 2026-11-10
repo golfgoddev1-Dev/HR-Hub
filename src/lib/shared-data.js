@@ -94,7 +94,15 @@ const holidayUrl = (from, to) => {
 
 export const loaders = {
   approvals: () => requestJson('/api/leave/approvals'),
-  myRequests: () => requestJson('/api/leave/requests/mine'),
+  myRequests: async () => {
+    // The page needs both the list and the employee's own per-status counts, so
+    // one cache entry carries them and a refresh updates the cards with the list.
+    const [requests, counts] = await Promise.all([
+      requestJson('/api/leave/requests/mine'),
+      requestJson('/api/leave/requests/mine/counts'),
+    ])
+    return { ...requests, counts: counts.counts }
+  },
   leaveTypes: () => requestJson('/api/leave/types'),
   leaveShifts: () => requestJson('/api/leave/shifts'),
   leaveHolidays: (from, to) => () => requestJson(holidayUrl(from, to)),
