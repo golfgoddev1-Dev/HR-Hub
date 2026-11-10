@@ -26,9 +26,10 @@
 - **ปิดเมนู** — ทุกหน้า — พนักงานทั่วไป, ผู้ดูแล HR — มือถือ — src/components/AppDock.vue
 - **ใบลาของฉัน** (เมนู) — /leave — ทุกบทบาทที่มีประวัติพนักงาน — ทั้งสอง — src/lib/nav-config.js
 - **ยื่นใบลา** (เมนู) — /leave/new — ทุกบทบาทที่มีประวัติพนักงาน — ทั้งสอง — src/lib/nav-config.js
-- **ปฏิทินการลา** (เมนู) — /leave/calendar — ทุกบทบาทที่มีประวัติพนักงาน — ทั้งสอง — src/lib/nav-config.js
+- **ปฏิทินการลา** (เมนู) — /leave/calendar — ผู้อนุมัติ, ผู้ดูแล HR, หัวหน้าคุมประชุม — ทั้งสอง — src/lib/nav-config.js
+- **ผู้อนุมัติของฉัน** (เมนู) — /leave/my-approvers — พนักงานทั่วไป — ทั้งสอง — src/lib/nav-config.js
 - **ข้อมูลส่วนตัว** (เมนู) — /profile — ทุกบทบาทที่มีประวัติพนักงาน — ทั้งสอง — src/lib/nav-config.js
-- **เปลี่ยน PIN** (เมนู) — /change-pin — ทุกบทบาทที่มีประวัติพนักงาน — ทั้งสอง — src/lib/nav-config.js
+- **เปลี่ยน PIN** (เมนู) — /change-pin — ผู้ดูแลระบบ — คอมพิวเตอร์ — src/lib/nav-config.js
 - **อนุมัติใบลา** (เมนู) — /leave/approvals — ผู้อนุมัติ — ทั้งสอง — src/lib/leave-nav-items.js
 - **ประวัติการอนุมัติ** (เมนู) — /leave/approvals/history — ผู้อนุมัติ, ผู้ดูแล HR — ทั้งสอง — src/lib/leave-nav-items.js
 - **หน้าหลัก** (เมนู HR) — /hr — ผู้ดูแล HR — ทั้งสอง — src/lib/nav-config.js
@@ -100,8 +101,8 @@
 
 - **ใบลาของฉัน** (ชื่อหน้า) — /leave — ทุกบทบาทที่มีประวัติพนักงาน — ทั้งสอง — src/pages/LeaveHomePage.vue
 - **ยื่นใบลาใหม่ →** — /leave — ทุกบทบาทที่มีประวัติพนักงาน — ทั้งสอง — src/pages/LeaveHomePage.vue
-- **ใบลาของฉันที่รอดำเนินการ** — /leave — ทุกบทบาทที่มีประวัติพนักงาน — ทั้งสอง — src/pages/LeaveHomePage.vue
-- **ใบลารอฉันอนุมัติ** — /leave — ทุกบทบาทที่มีประวัติพนักงาน — ทั้งสอง — src/pages/LeaveHomePage.vue
+- **ใบลารออนุมัติ** — /leave — ทุกบทบาทที่มีประวัติพนักงาน — ทั้งสอง — src/pages/LeaveHomePage.vue
+- **ใบลาอนุมัติแล้ว** — /leave — ทุกบทบาทที่มีประวัติพนักงาน — ทั้งสอง — src/pages/LeaveHomePage.vue
 - **รออนุมัติ** (สถานะ) — /leave — ทุกบทบาทที่มีประวัติพนักงาน — ทั้งสอง — src/pages/LeaveHomePage.vue
 - **อนุมัติแล้ว** (สถานะ) — /leave — ทุกบทบาทที่มีประวัติพนักงาน — ทั้งสอง — src/pages/LeaveHomePage.vue
 - **ไม่อนุมัติ** (สถานะ) — /leave — ทุกบทบาทที่มีประวัติพนักงาน — ทั้งสอง — src/pages/LeaveHomePage.vue
@@ -172,7 +173,8 @@
 ## ข้อมูลส่วนตัว (/profile)
 
 - **ข้อมูลส่วนตัว** (ชื่อหน้า) — /profile — ทุกบทบาทที่มีประวัติพนักงาน — ทั้งสอง — src/pages/ProfilePage.vue
-- **แก้ไขข้อมูล** — /profile — ทุกบทบาทที่มีประวัติพนักงาน — ทั้งสอง — src/pages/ProfilePage.vue
+- **อ่านอย่างเดียว** — /profile — ทุกบทบาทที่มีประวัติพนักงาน — ทั้งสอง — src/pages/ProfilePage.vue
+- **หากต้องการแก้ไขข้อมูล กรุณาติดต่อฝ่ายบุคคล (HR) เท่านั้น** — /profile — ทุกบทบาทที่มีประวัติพนักงาน — ทั้งสอง — src/pages/ProfilePage.vue
 - **คำนำหน้า** — /profile — ทุกบทบาทที่มีประวัติพนักงาน — ทั้งสอง — src/pages/ProfilePage.vue
 - **ชื่อ-นามสกุล** — /profile — ทุกบทบาทที่มีประวัติพนักงาน — ทั้งสอง — src/pages/ProfilePage.vue
 - **อีเมล** — /profile — ทุกบทบาทที่มีประวัติพนักงาน — ทั้งสอง — src/pages/ProfilePage.vue
@@ -180,8 +182,6 @@
 - **แผนก** — /profile — ทุกบทบาทที่มีประวัติพนักงาน — ทั้งสอง — src/pages/ProfilePage.vue
 - **รหัสพนักงาน** — /profile — ทุกบทบาทที่มีประวัติพนักงาน — ทั้งสอง — src/pages/ProfilePage.vue
 - **ตำแหน่ง** — /profile — ทุกบทบาทที่มีประวัติพนักงาน — ทั้งสอง — src/pages/ProfilePage.vue
-- **บันทึก** — /profile — ทุกบทบาทที่มีประวัติพนักงาน — ทั้งสอง — src/pages/ProfilePage.vue
-- **ยกเลิก** — /profile — ทุกบทบาทที่มีประวัติพนักงาน — ทั้งสอง — src/pages/ProfilePage.vue
 - **ยังไม่ได้ระบุอีเมล** — /profile — ทุกบทบาทที่มีประวัติพนักงาน — ทั้งสอง — src/pages/ProfilePage.vue
 - **แผนกปัจจุบันปิดใช้งาน กรุณาเลือกแผนกที่ใช้งานอยู่เพื่อบันทึกการเปลี่ยนแปลง** — /profile — ทุกบทบาทที่มีประวัติพนักงาน — ทั้งสอง — src/pages/ProfilePage.vue
 - **(ปิดใช้งาน)** (ต่อท้ายชื่อแผนกที่ปิดแล้ว) — /profile — ทุกบทบาทที่มีประวัติพนักงาน — ทั้งสอง — src/pages/ProfilePage.vue
