@@ -24,9 +24,9 @@ const limits = ref({ min: 30, max: 365, default: 90 })
 const days = ref(90)
 
 const leaveEnabled = ref(false)
-const leaveDays = ref(1825)
-const savedLeaveDays = ref(1825)
-const leaveLimits = ref({ min: 730, max: 3650, default: 1825 })
+const leaveDays = ref(730)
+const savedLeaveDays = ref(730)
+const leaveLimits = ref({ min: 730, max: 3650, default: 730 })
 const leaveSaving = ref(false)
 
 // Preview + confirmation before enabling, or before changing the window while
@@ -35,7 +35,7 @@ const dialogOpen = ref(false)
 const previewLoading = ref(false)
 const previewError = ref('')
 const preview = ref({ leaveRequests: 0, certificateFiles: 0 })
-const pending = ref({ mode: 'enable', enabled: true, days: 1825 })
+const pending = ref({ mode: 'enable', enabled: true, days: 730 })
 
 const valid = computed(() => {
   const value = Number(days.value)

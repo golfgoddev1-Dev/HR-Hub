@@ -242,7 +242,12 @@ router.beforeEach(async (to) => {
   // A HR-issued PIN must be replaced before any other page is reachable. The
   // server enforces the same rule for every API call; this only avoids showing a
   // screen that would fail.
-  if (to.path === '/change-pin') return true
+  // The change-PIN page belongs to the system admin, plus the one-time setup a
+  // HR-issued initial PIN still requires. Every other role is sent home.
+  if (to.path === '/change-pin') {
+    if (session.role === 'system_admin' || session.mustChangePin === true) return true
+    return homePathByRole[session.role] ?? '/login'
+  }
   if (session.mustChangePin === true) return '/change-pin'
 
   // The printed leave form is HR-only; another role is sent to its own home.

@@ -16,7 +16,6 @@ const LEAVE_TABLE = [
   ['ยื่นใบลา', '/leave/new', 'edit_calendar'],
   ['ปฏิทินการลา', '/leave/calendar', 'calendar_month'],
   ['ข้อมูลส่วนตัว', '/profile', 'person'],
-  ['เปลี่ยน PIN', '/change-pin', 'password'],
 ]
 
 const HR_TABLE = [
@@ -36,14 +35,14 @@ const HR_TABLE = [
 const table = (items) => items.map((item) => [item.label, item.to, item.icon])
 
 describe('leaveNavItems', () => {
-  it('keeps the five employee items in order, with unchanged routes and icons', () => {
+  it('keeps the four employee items in order, with unchanged routes and icons', () => {
     expect(table(leaveNavItems())).toEqual(LEAVE_TABLE)
   })
 
   it('returns a fresh array, so a caller cannot mutate the menu', () => {
     const first = leaveNavItems()
     first.push({ label: 'x', to: '/x', icon: 'x' })
-    expect(leaveNavItems()).toHaveLength(5)
+    expect(leaveNavItems()).toHaveLength(4)
   })
 
   it('never carries the approvals entry: that needs the session', () => {
@@ -111,17 +110,35 @@ describe('navSections', () => {
     })
   })
 
-  it('gives every shell the same five my-work items, calendar included', () => {
-    for (const role of ['employee', 'hr', 'meeting_controller', 'system_admin']) {
-      const mine = navSections({ role }).find((section) => section.id === 'mine')
-      expect(mine.items.map((item) => item.to), role).toEqual([
+  it('offers the calendar only to an approver, HR and the meeting controller', () => {
+    const minePaths = (options) =>
+      navSections(options).find((section) => section.id === 'mine').items.map((item) => item.to)
+
+    expect(minePaths({ role: 'employee' })).toEqual(['/leave', '/leave/new', '/profile'])
+    expect(minePaths({ role: 'employee', isApprover: true })).toEqual([
+      '/leave',
+      '/leave/new',
+      '/leave/calendar',
+      '/profile',
+    ])
+    for (const role of ['hr', 'meeting_controller']) {
+      expect(minePaths({ role }), role).toEqual([
         '/leave',
         '/leave/new',
         '/leave/calendar',
         '/profile',
-        '/change-pin',
       ])
     }
+    expect(minePaths({ role: 'system_admin' })).toEqual(['/leave', '/leave/new', '/profile'])
+  })
+
+  it('never offers the change-PIN page to a non-admin menu', () => {
+    for (const role of ['employee', 'hr', 'meeting_controller']) {
+      const items = navSections({ role, isApprover: true }).flatMap((section) => section.items)
+      expect(items.some((item) => item.to === '/change-pin'), role).toBe(false)
+    }
+    const admin = navSections({ role: 'system_admin' }).flatMap((section) => section.items)
+    expect(admin.some((item) => item.to === '/change-pin')).toBe(true)
   })
 
   it('shows /leave/calendar exactly once in the HR shell', () => {

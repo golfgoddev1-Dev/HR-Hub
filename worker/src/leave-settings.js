@@ -17,7 +17,7 @@ export const MAX_CERTIFICATE_RETENTION_DAYS = 365;
 
 // Leave data retention is off until HR turns it on from the settings page.
 export const DEFAULT_LEAVE_RETENTION_ENABLED = false;
-export const DEFAULT_LEAVE_RETENTION_DAYS = 1825;
+export const DEFAULT_LEAVE_RETENTION_DAYS = 730;
 export const MIN_LEAVE_RETENTION_DAYS = 730;
 export const MAX_LEAVE_RETENTION_DAYS = 3650;
 

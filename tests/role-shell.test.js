@@ -102,13 +102,19 @@ describe('role shell routing', () => {
     }
   })
 
-  it('shows the my-work section once in every shell, with the same five items', () => {
+  it('shows the my-work section once in every shell with that role\'s items', () => {
     for (const role of ROLES) {
-      const mine = navSections({ role }).filter((section) => section.id === 'mine')
+      const mine = navSections({ role, isApprover: role === 'employee' }).filter(
+        (section) => section.id === 'mine'
+      )
 
       expect(mine, role).toHaveLength(1)
       expect(mine[0].label).toBe(NAV_SECTION_LABELS.mine)
-      expect(mine[0].items, role).toEqual(leaveNavItems())
+      const expected =
+        role === 'system_admin'
+          ? ['/leave', '/leave/new', '/profile']
+          : ['/leave', '/leave/new', '/leave/calendar', '/profile']
+      expect(mine[0].items.map((item) => item.to), role).toEqual(expected)
     }
   })
 

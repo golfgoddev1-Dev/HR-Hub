@@ -206,8 +206,16 @@ describe('persistent shell route', () => {
 
   it('keeps every child reachable for the role the shell serves', () => {
     for (const path of LEAVE_PATHS) {
+      // The calendar follows the approver flag and the PIN page the admin role.
+      if (path === '/leave/calendar' || path === '/change-pin') {
+        expect(canOpenPath('employee', path), path).toBe(false)
+        continue
+      }
       expect(canOpenPath('employee', path), path).toBe(true)
     }
+    expect(
+      canOpenPath('employee', '/leave/calendar', { role: 'employee', isApprover: true })
+    ).toBe(true)
 
     for (const path of HR_PATHS) {
       const concrete = path.replace(':id', 'emp-1')
@@ -221,7 +229,7 @@ describe('persistent shell route', () => {
     // A meeting session reaches the shared leave pages through its employee row.
     const meeting = { role: 'meeting_controller', hasEmployee: true }
     for (const path of LEAVE_PATHS) {
-      if (path === '/leave/approvals') continue
+      if (path === '/leave/approvals' || path === '/change-pin') continue
       expect(canOpenPath('meeting_controller', path, meeting), path).toBe(true)
     }
     // The queue itself follows the approver row.

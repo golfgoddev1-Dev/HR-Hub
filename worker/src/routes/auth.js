@@ -57,7 +57,7 @@ const LOGOUT_FAILED_MESSAGE = "ระบบขัดข้องชั่วค�
 const SET_PIN_INVALID_MESSAGE = "เลขบัตรประชาชนหรือรหัสจาก HR ไม่ถูกต้อง";
 const PIN_CONFIRM_MESSAGE = "PIN ทั้งสองช่องไม่ตรงกัน";
 const SET_PIN_FAILED_MESSAGE = "ไม่สามารถตั้ง PIN ได้ กรุณาลองใหม่";
-const PIN_CHANGE_NOT_REQUIRED_MESSAGE = "บัญชีนี้ตั้ง PIN ของตัวเองแล้ว กรุณาใช้ขั้นตอนตั้ง PIN ปกติ";
+const CHANGE_PIN_FORBIDDEN_MESSAGE = "เฉพาะผู้ดูแลระบบเท่านั้นที่เปลี่ยน PIN ได้";
 const CHANGE_PIN_PATH = "/change-pin";
 
 function isPlainObject(value) {
@@ -472,11 +472,11 @@ auth.post("/change-pin", async (c) => {
     if (!credential) {
       return c.json({ ok: false, message: UNAUTHENTICATED_MESSAGE }, 401);
     }
-    if (credential.must_change_pin !== true) {
-      return c.json(
-        { ok: false, code: "pin_change_not_required", message: PIN_CHANGE_NOT_REQUIRED_MESSAGE },
-        409
-      );
+    // Only the system admin may change a PIN voluntarily. A non-admin session
+    // is allowed through only while the HR-issued initial PIN is still unused,
+    // because that one-time setup is the only way such an account can get in.
+    if (session.role !== "system_admin" && credential.must_change_pin !== true) {
+      return c.json({ ok: false, message: CHANGE_PIN_FORBIDDEN_MESSAGE }, 403);
     }
 
     const nowIso = new Date().toISOString();

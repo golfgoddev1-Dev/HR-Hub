@@ -11,8 +11,6 @@ export const allowedPathsByRole = {
     '/leave',
     '/leave/new',
     '/leave/approvals',
-    '/leave/calendar',
-    '/change-pin',
     '/profile',
   ],
   // HR landing plus every leave tool; all of them are linked from hrNavItems().
@@ -40,21 +38,16 @@ export const allowedPathsByRole = {
     '/meeting/controller/employees',
     '/meeting/controller/backfill',
     '/meeting/controller/backfill/import',
+    '/leave/calendar',
   ],
   // The overview and the permission screen; both are system_admin only.
-  system_admin: ['/admin', '/admin/permissions'],
+  system_admin: ['/admin', '/admin/permissions', '/change-pin'],
 }
 
 // Pages any active employee may open with any login role, so the "งานของฉัน"
 // section is the same in every shell and no item leads to a page the role is
 // refused. The calendar is the employee's own leave view.
-export const employeeSelfPaths = [
-  '/leave',
-  '/leave/new',
-  '/leave/calendar',
-  '/change-pin',
-  '/profile',
-]
+export const employeeSelfPaths = ['/leave', '/leave/new', '/profile']
 
 // Detail pages carry an id in the path, so exact-path matching is not enough.
 export const allowedPrefixesByRole = {
@@ -88,7 +81,9 @@ export function canOpenPath(role, path, session = null) {
     // The approvals queue follows the approver row, not the role.
     if (
       session.isApprover === true &&
-      (path === '/leave/approvals' || path === '/leave/approvals/history')
+      (path === '/leave/approvals' ||
+        path === '/leave/approvals/history' ||
+        path === '/leave/calendar')
     ) {
       return true
     }

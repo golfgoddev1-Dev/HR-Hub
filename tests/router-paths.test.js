@@ -151,30 +151,25 @@ describe('employee leave landing', () => {
   })
 })
 
-describe('employee change-PIN menu', () => {
-  it('allows the employee role to reach /change-pin', () => {
-    expect(allowListFor('employee')).toContain('/change-pin')
+describe('change-PIN screen', () => {
+  it('keeps the screen for the system admin only', () => {
+    expect(allowListFor('system_admin')).toContain('/change-pin')
     // The route spans lines now (async page + meta), so the guard check allows
     // whitespace between the path and its meta instead of one line.
     expect(ROUTER).toMatch(/path: '\/change-pin',[\s\S]{0,160}requiresAuth: true/)
-  })
-
-  it('links it from the employee menu', () => {
-    expect(NAV_CONFIG).toContain("to: '/change-pin'")
     expect(NAV_CONFIG).toContain("label: 'เปลี่ยน PIN'")
   })
 
-  it('shows the employee menu on the change-PIN page through the layout route', () => {
-    // Content only: the leave layout route mounts the dock around this page.
+  it('removes it from every non-admin menu and allow-list', () => {
+    for (const role of ['employee', 'hr', 'meeting_controller']) {
+      expect(allowListFor(role), role).not.toContain('/change-pin')
+    }
+  })
+
+  it('keeps the page content only, mounted inside the role shell', () => {
     expect(CHANGE_PIN_PAGE).not.toContain('LeaveLayout')
     expect(CHANGE_PIN_PAGE).not.toContain('<AppDock')
     expect(CHANGE_PIN_PAGE).toContain('<main class="content">')
-  })
-
-  it('is not offered to any other role', () => {
-    for (const role of ['hr', 'meeting_controller', 'system_admin']) {
-      expect(allowListFor(role), role).not.toContain('/change-pin')
-    }
   })
 })
 

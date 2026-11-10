@@ -116,10 +116,13 @@ describe('event presentation', () => {
 })
 
 describe('access and wiring', () => {
-  it('is reachable by employee (approver included) and HR only', () => {
-    expect(canOpenPath('employee', '/leave/calendar')).toBe(true)
+  it('is reachable by an approver, HR and the meeting controller only', () => {
+    expect(canOpenPath('employee', '/leave/calendar')).toBe(false)
+    expect(
+      canOpenPath('employee', '/leave/calendar', { role: 'employee', isApprover: true })
+    ).toBe(true)
     expect(canOpenPath('hr', '/leave/calendar')).toBe(true)
-    expect(canOpenPath('meeting_controller', '/leave/calendar')).toBe(false)
+    expect(canOpenPath('meeting_controller', '/leave/calendar')).toBe(true)
     expect(canOpenPath('system_admin', '/leave/calendar')).toBe(false)
   })
 

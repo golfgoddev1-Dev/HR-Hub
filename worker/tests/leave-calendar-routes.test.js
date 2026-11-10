@@ -256,29 +256,23 @@ function calendarPath(query = NOVEMBER) {
   return `/api/leave/calendar?${query}`;
 }
 
-test("an employee sees only their own department, without the other department", async (t) => {
+test("a plain employee is refused the calendar", async (t) => {
   const fake = await createBackend();
   t.after(() => fake.restore());
 
   const response = await call(calendarPath(), TOKENS.employee);
   const body = await response.json();
 
-  assert.equal(response.status, 200);
-  assert.equal(body.ok, true);
-  assert.equal(body.scope, "department");
-  assert.equal(body.departmentId, DEPT_A);
-  assert.equal(body.count, 2);
-
-  const employees = body.events.map((event) => event.employeeName);
-  assert.deepEqual(employees.sort(), ["นาง สมหญิง รักงาน", "นาง สมหญิง รักงาน"].sort());
-  assert.equal(body.events.some((event) => event.departmentName === "ฝ่ายขาย"), false);
+  assert.equal(response.status, 403);
+  assert.equal(body.ok, false);
+  assert.equal(body.message, "ไม่มีสิทธิ์เข้าถึงส่วนนี้");
 });
 
 test("rejected and cancelled requests never reach the calendar", async (t) => {
   const fake = await createBackend();
   t.after(() => fake.restore());
 
-  const body = await (await call(calendarPath(), TOKENS.employee)).json();
+  const body = await (await call(calendarPath(), TOKENS.approver)).json();
   const statuses = body.events.map((event) => event.status).sort();
 
   assert.deepEqual(statuses, ["approved", "pending"]);
@@ -314,12 +308,12 @@ test("an employee's departmentId is ignored instead of obeyed", async (t) => {
 
   const response = await call(
     calendarPath(`${NOVEMBER}&departmentId=${DEPT_B}`),
-    TOKENS.employee
+    TOKENS.approver
   );
   const body = await response.json();
 
   assert.equal(response.status, 200);
-  assert.equal(body.departmentId, DEPT_A);
+  assert.equal(body.departmentId, null);
   assert.equal(body.count, 2);
   assert.equal(body.events.some((event) => event.departmentName === "ฝ่ายขาย"), false);
 });
@@ -360,12 +354,14 @@ test("the response exposes display keys only", async (t) => {
   const fake = await createBackend();
   t.after(() => fake.restore());
 
-  const response = await call(calendarPath(), TOKENS.employee);
+  const response = await call(calendarPath(), TOKENS.approver);
   const text = await response.text();
   const body = JSON.parse(text);
 
+  // An approver also receives the review detail for rows inside their scope.
   assert.deepEqual(Object.keys(body.events[0]).sort(), [
     "departmentName",
+    "detail",
     "employeeName",
     "endDate",
     "id",
@@ -377,7 +373,6 @@ test("the response exposes display keys only", async (t) => {
   for (const forbidden of [
     "national_id",
     "national",
-    "reason",
     "attachment",
     "certificate",
     "approver",
@@ -392,7 +387,7 @@ test("a range longer than 62 days is refused", async (t) => {
   const fake = await createBackend();
   t.after(() => fake.restore());
 
-  const response = await call(calendarPath("from=2026-01-01&to=2026-03-04"), TOKENS.employee);
+  const response = await call(calendarPath("from=2026-01-01&to=2026-03-04"), TOKENS.approver);
   const body = await response.json();
 
   assert.equal(response.status, 400);
@@ -403,7 +398,7 @@ test("a 62-day range is accepted", async (t) => {
   const fake = await createBackend();
   t.after(() => fake.restore());
 
-  const response = await call(calendarPath("from=2026-11-01&to=2027-01-01"), TOKENS.employee);
+  const response = await call(calendarPath("from=2026-11-01&to=2027-01-01"), TOKENS.approver);
   assert.equal(response.status, 200);
 });
 
@@ -417,7 +412,7 @@ test("invalid or unordered dates are refused", async (t) => {
     "from=2026-11-01",
     "to=2026-11-30",
   ]) {
-    const response = await call(calendarPath(query), TOKENS.employee);
+    const response = await call(calendarPath(query), TOKENS.approver);
     assert.equal(response.status, 400, query);
     assert.equal((await response.json()).ok, false, query);
   }
@@ -435,7 +430,7 @@ test("the holidays read returns only date and name", async (t) => {
   const fake = await createBackend();
   t.after(() => fake.restore());
 
-  const response = await call("/api/leave/holidays?from=2026-11-01&to=2026-11-30", TOKENS.employee);
+  const response = await call("/api/leave/holidays?from=2026-11-01&to=2026-11-30", TOKENS.approver);
   const body = await response.json();
 
   assert.equal(response.status, 200);

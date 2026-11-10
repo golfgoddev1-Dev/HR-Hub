@@ -350,7 +350,7 @@ test("detail follows the same grants, and the requester is still refused", async
   assert.equal(fin.request.reason.startsWith("เหตุผล"), true);
 });
 
-test("HR sees everything, and a plain employee keeps department visibility without the reason", async (t) => {
+test("HR sees everything, and a plain employee is refused the calendar", async (t) => {
   const fake = await createBackend();
   t.after(() => fake.restore());
 
@@ -362,11 +362,11 @@ test("HR sees everything, and a plain employee keeps department visibility witho
     true
   );
 
-  const employee = await (await call(NOVEMBER, TOKENS.employee)).json();
-  // EMP_F1 is a plain employee in Finance: the department rows, no review fields.
-  assert.deepEqual(eventIds(employee), [R_F1, R_F2, R_F3].sort());
-  assert.equal(employee.events.every((event) => !event.detail), true);
-  assert.equal(JSON.stringify(employee).includes("เหตุผลของ"), false);
+  const employeeResponse = await call(NOVEMBER, TOKENS.employee);
+  assert.equal(employeeResponse.status, 403);
+  const employee = await employeeResponse.json();
+  assert.equal(employee.ok, false);
+  assert.equal(employee.message, "ไม่มีสิทธิ์เข้าถึงส่วนนี้");
 });
 
 test("signed-out reads are 401 on every path", async (t) => {

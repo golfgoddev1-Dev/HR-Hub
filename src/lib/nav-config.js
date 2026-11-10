@@ -19,7 +19,6 @@ export function leaveNavItems() {
     { label: 'ยื่นใบลา', to: '/leave/new', icon: 'edit_calendar' },
     { label: 'ปฏิทินการลา', to: '/leave/calendar', icon: 'calendar_month' },
     { label: 'ข้อมูลส่วนตัว', to: '/profile', icon: 'person' },
-    { label: 'เปลี่ยน PIN', to: '/change-pin', icon: 'password' },
   ]
 }
 
@@ -56,6 +55,7 @@ export function adminNavItems() {
   return [
     { label: 'ภาพรวมผู้ดูแล', to: '/admin', icon: 'space_dashboard' },
     { label: 'สิทธิ์ผู้ใช้', to: '/admin/permissions', icon: 'manage_accounts' },
+    { label: 'เปลี่ยน PIN', to: '/change-pin', icon: 'password' },
     // Not built yet: labels only, never a target.
     { label: 'จัดการผู้ใช้', icon: 'manage_accounts', disabled: true },
     { label: 'ตั้งค่าระบบ', icon: 'settings', disabled: true },
@@ -83,9 +83,18 @@ export function dockPrimaryItems(role, sections = []) {
  * role signs in), then that shell's own work, then the approvals queue.
  * A section with no item is omitted, so a role never sees an empty heading.
  */
+/** The calendar is only offered to approvers, HR and meeting controllers. */
+export function canSeeLeaveCalendar({ role, isApprover = false } = {}) {
+  if (role === 'hr' || role === 'meeting_controller') return true
+  return role === 'employee' && isApprover === true
+}
+
 export function navSections({ role, isApprover = false, pendingCount = 0 } = {}) {
+  const mine = leaveNavItems().filter(
+    (item) => item.to !== '/leave/calendar' || canSeeLeaveCalendar({ role, isApprover }),
+  )
   const sections = [
-    { id: 'mine', label: NAV_SECTION_LABELS.mine, items: leaveNavItems() },
+    { id: 'mine', label: NAV_SECTION_LABELS.mine, items: mine },
   ]
 
   if (role === 'meeting_controller') {

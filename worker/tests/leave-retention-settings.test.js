@@ -176,10 +176,10 @@ function call(path, { method = "GET", body, role = "hr" } = {}) {
   );
 }
 
-test("defaults are off and 1825 days, and only 730..3650 is accepted", () => {
+test("defaults are off and 730 days, and only 730..3650 is accepted", () => {
   const defaults = settingsFromRow(null);
   assert.equal(defaults.leaveRetentionEnabled, false);
-  assert.equal(defaults.leaveRetentionDays, 1825);
+  assert.equal(defaults.leaveRetentionDays, 730);
 
   assert.equal(normalizeLeaveRetentionDays(729), null);
   assert.equal(normalizeLeaveRetentionDays(3651), null);
@@ -203,7 +203,7 @@ test("a value below 730 days is refused with a Thai message and no audit row", a
   assert.match(data.message, /730/);
   assert.match(data.message, /3650/);
   assert.equal(fake.state.audits.length, 0);
-  assert.equal(fake.state.settings.leave_retention_days, 1825);
+  assert.equal(fake.state.settings.leave_retention_days, 730);
 });
 
 test("a value above 3650 days is refused", async (t) => {
@@ -267,7 +267,7 @@ test("enabling, changing days and disabling each write one audit row", async (t)
   }
   assert.deepEqual(JSON.parse(fake.state.audits[0].detail), {
     leaveRetentionEnabled: { before: false, after: true },
-    leaveRetentionDays: { before: 1825, after: 730 },
+    leaveRetentionDays: { before: 730, after: 730 },
   });
   assert.deepEqual(JSON.parse(fake.state.audits[2].detail), {
     leaveRetentionEnabled: { before: true, after: false },

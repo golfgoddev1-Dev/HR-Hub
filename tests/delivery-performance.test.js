@@ -73,7 +73,8 @@ describe('route-level splitting', () => {
     expect(ROUTER).toContain('const session = await getSession()')
     expect(ROUTER).toContain('canOpenPath(session.role, to.path, session)')
     expect(ROUTER).toContain("meta: { requiresAuth: true, role: 'system_admin' }")
-    expect(ROUTER).toContain("if (to.path === '/change-pin') return true")
+    expect(ROUTER).toContain("if (to.path === '/change-pin') {")
+    expect(ROUTER).toContain("session.role === 'system_admin' || session.mustChangePin === true")
   })
 })
 

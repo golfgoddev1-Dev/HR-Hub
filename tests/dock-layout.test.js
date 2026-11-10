@@ -81,17 +81,22 @@ describe('phone tab bar', () => {
 
   it('takes the primary items from that role\'s own menu, in order', () => {
     const employee = dockPrimaryItems('employee', navSections({ role: 'employee' }))
-    expect(employee.map((item) => item.to)).toEqual([
+    expect(employee.map((item) => item.to)).toEqual(['/leave', '/leave/new', '/profile'])
+    expect(employee.map((item) => item.label)).toEqual([
+      'ใบลาของฉัน',
+      'ยื่นใบลา',
+      'ข้อมูลส่วนตัว',
+    ])
+
+    const approver = dockPrimaryItems(
+      'employee',
+      navSections({ role: 'employee', isApprover: true })
+    )
+    expect(approver.map((item) => item.to)).toEqual([
       '/leave',
       '/leave/new',
       '/leave/calendar',
       '/profile',
-    ])
-    expect(employee.map((item) => item.label)).toEqual([
-      'ใบลาของฉัน',
-      'ยื่นใบลา',
-      'ปฏิทินการลา',
-      'ข้อมูลส่วนตัว',
     ])
 
     const hr = dockPrimaryItems('hr', navSections({ role: 'hr' }))

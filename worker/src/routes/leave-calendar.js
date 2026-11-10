@@ -36,7 +36,7 @@ import { requireRole } from "../require-role.js";
 
 const leaveCalendar = new Hono();
 
-const ROLES = ["employee", "hr"];
+const ROLES = ["employee", "hr", "meeting_controller"];
 const EMPLOYEES_TABLE = "employees";
 const LEAVE_REQUESTS_TABLE = "leave_requests";
 const LEAVE_TYPES_TABLE = "leave_types";
@@ -103,6 +103,12 @@ leaveCalendar.get("/", async (c) => {
       employeeId: employee.id,
       departmentId: employee.department_id ?? null,
     });
+
+    // A plain employee no longer has a calendar; only an active approver in the
+    // employee role keeps the responsibility-scoped feed.
+    if (auth.session.role === "employee" && scope.grants?.isApprover !== true) {
+      return c.json({ ok: false, message: MESSAGE.forbidden }, 403);
+    }
     const scopedByResponsibility = isHr === false && scope.grants?.isApprover === true;
 
     // HR may choose a department; nobody else can widen their scope with the

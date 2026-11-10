@@ -279,19 +279,32 @@ test("after the change the API is reachable and the initial PIN no longer logs i
   assert.equal(reused.status, 401);
 });
 
-test("a PIN the employee chose cannot be replaced through this endpoint", async (t) => {
+test("a non-admin cannot change a PIN it already set", async (t) => {
   const fake = await createFake({ mustChangePin: false });
   t.after(() => fake.restore());
 
   const response = await changePin();
   const body = await response.json();
 
-  assert.equal(response.status, 409);
-  assert.equal(body.code, "pin_change_not_required");
+  assert.equal(response.status, 403);
+  assert.equal(body.ok, false);
   assert.equal(
     fake.writes.filter((write) => write.table === "employee_credentials").length,
     0
   );
+});
+
+test("the system admin can change its own PIN without the first-time flag", async (t) => {
+  const fake = await createFake({ mustChangePin: false, role: "system_admin" });
+  t.after(() => fake.restore());
+
+  const response = await changePin();
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.ok, true);
+  assert.equal(body.mustChangePin, false);
+  assert.equal(fake.credential().pin_hash, await pinHash(PIN_PEPPER, HR_ID, NEW_PIN));
 });
 
 test("change-pin needs a session", async (t) => {

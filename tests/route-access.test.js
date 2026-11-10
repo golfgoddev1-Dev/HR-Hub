@@ -19,9 +19,11 @@ describe('canOpenPath', () => {
     expect(canOpenPath('hr', '/admin')).toBe(false)
   })
 
-  it('gives an employee only the leave pages and the PIN page', () => {
+  it('gives an employee the leave pages, but no calendar or PIN page', () => {
     expect(canOpenPath('employee', '/leave')).toBe(true)
-    expect(canOpenPath('employee', '/change-pin')).toBe(true)
+    expect(canOpenPath('employee', '/leave/new')).toBe(true)
+    expect(canOpenPath('employee', '/leave/calendar')).toBe(false)
+    expect(canOpenPath('employee', '/change-pin')).toBe(false)
     expect(canOpenPath('employee', '/hr')).toBe(false)
     expect(canOpenPath('employee', '/admin')).toBe(false)
   })
@@ -44,22 +46,23 @@ describe('canOpenPath', () => {
     expect(canOpenPath('hr', null)).toBe(false)
   })
 
-  it('opens the five self pages for another role only with an employee record', () => {
+  it('opens only the simple self pages for another role with an employee record', () => {
     for (const role of ['hr', 'meeting_controller', 'system_admin']) {
-      for (const path of ['/leave', '/leave/new', '/leave/calendar', '/change-pin', '/profile']) {
-        const withEmployee = { role, hasEmployee: true }
-        expect(canOpenPath(role, path, withEmployee), `${role} ${path}`).toBe(true)
-
-        // HR already carries the calendar in its own allow-list; the other roles
-        // reach it through the employee record only.
-        const ownRule = role === 'hr' && path === '/leave/calendar'
-        expect(
-          canOpenPath(role, path, { role, hasEmployee: false }),
-          `${role} ${path}`
-        ).toBe(ownRule)
-        // No session handed in means no employee proof either.
-        expect(canOpenPath(role, path), `${role} ${path}`).toBe(ownRule)
+      for (const path of ['/leave', '/leave/new', '/profile']) {
+        expect(canOpenPath(role, path, { role, hasEmployee: true }), `${role} ${path}`).toBe(true)
+        expect(canOpenPath(role, path, { role, hasEmployee: false }), `${role} ${path}`).toBe(
+          false
+        )
+        expect(canOpenPath(role, path), `${role} ${path}`).toBe(false)
       }
+
+      const calendarOwn = role === 'hr' || role === 'meeting_controller'
+      expect(canOpenPath(role, '/leave/calendar', { role, hasEmployee: true }), role).toBe(
+        calendarOwn
+      )
+      expect(canOpenPath(role, '/change-pin', { role, hasEmployee: true }), role).toBe(
+        role === 'system_admin'
+      )
     }
   })
 
@@ -87,11 +90,17 @@ describe('canOpenPath', () => {
     expect(canOpenPath('meeting_controller', '/leave/approvals', plainMeeting)).toBe(false)
   })
 
-  it('leaves the employee role exactly as it was', () => {
-    for (const path of ['/leave', '/leave/new', '/leave/approvals', '/leave/calendar', '/change-pin', '/profile']) {
+  it('gives an approver the calendar but never the change-PIN page', () => {
+    for (const path of ['/leave', '/leave/new', '/leave/approvals', '/profile']) {
       expect(canOpenPath('employee', path), path).toBe(true)
     }
-    expect(canOpenPath('employee', '/leave/approvals', { role: 'employee' })).toBe(true)
+    expect(canOpenPath('employee', '/leave/calendar', { role: 'employee' })).toBe(false)
+    expect(
+      canOpenPath('employee', '/leave/calendar', { role: 'employee', isApprover: true })
+    ).toBe(true)
+    expect(
+      canOpenPath('employee', '/change-pin', { role: 'employee', mustChangePin: true })
+    ).toBe(false)
   })
 })
 

@@ -319,11 +319,11 @@ test("the requester gets no review fields, and a named approver only sees the na
   const fake = await createBackend();
   t.after(() => fake.restore());
 
-  // The requester sees the department's rows but none of their reasons.
-  const requesterBody = await (await call(CALENDAR, TOKENS.employee)).json();
-  for (const event of requesterBody.events) {
-    assert.equal(Object.prototype.hasOwnProperty.call(event, "detail"), false);
-  }
+  // A plain employee has no calendar any more, so no reason can reach one.
+  const requester = await call(CALENDAR, TOKENS.employee);
+  assert.equal(requester.status, 403);
+  const requesterBody = await requester.json();
+  assert.equal(requesterBody.ok, false);
   assert.equal(JSON.stringify(requesterBody).includes("ปวดหัว"), false);
 
   // OTHER_APPROVER_ID is named for EMPLOYEE_ID only: they see that person's
