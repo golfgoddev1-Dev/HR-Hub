@@ -214,6 +214,12 @@ async function submitSetPin() {
                     </div>
                   </div>
 
+                  <!-- Notice: the 8-digit code is issued by HR -->
+                  <div class="code-notice" role="note">
+                    <span class="material-symbols-outlined code-notice-icon">info</span>
+                    <span>ช่องรหัส 8 หลัก ให้ติดต่อฝ่ายบุคคล (HR) เพื่อขอรหัสไปรีเซ็ต PIN</span>
+                  </div>
+
                   <!-- รหัสจาก HR -->
                   <div class="field">
                     <div class="field-head">
@@ -917,6 +923,26 @@ async function submitSetPin() {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+.code-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: #eff4ff;
+  border: 1px solid rgba(49, 107, 243, 0.25);
+  color: #0b1c30;
+  font-size: 14px;
+  line-height: 21px;
+  font-weight: 500;
+}
+
+.code-notice-icon {
+  font-size: 20px;
+  color: #316bf3;
+  flex-shrink: 0;
 }
 
 .field-head {
