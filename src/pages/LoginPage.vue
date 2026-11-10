@@ -6,6 +6,7 @@ import { clearAll } from '../lib/data-cache.js'
 import { currentPushEndpoint } from '../lib/logout.js'
 import { autoEnablePush } from '../lib/push.js'
 import { safeLoginTarget } from '../lib/notification-routes.js'
+import { landingPathFromRedirect } from '../lib/landing-path.js'
 import LockoutDialog from '../components/LockoutDialog.vue'
 
 const router = useRouter()
@@ -75,7 +76,9 @@ async function submitLogin() {
       // A forced PIN change always wins. Otherwise a validated notification
       // target takes priority over the server's ordinary landing path.
       const destination =
-        data.mustChangePin === true ? data.redirectTo : loginTarget.value ?? data.redirectTo
+        data.mustChangePin === true
+          ? data.redirectTo
+          : loginTarget.value ?? landingPathFromRedirect(data.redirectTo) ?? data.redirectTo
       await router.replace(destination)
       // This account may already have opted in and granted permission. The
       // helper never prompts; it only re-creates the missing browser endpoint.

@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 const route = useRoute()
@@ -18,16 +18,19 @@ function hasPage(path) {
   }
 }
 
+const forwarding = computed(() => {
+  if (!destination.startsWith('/')) return false
+  if (destination.startsWith('/pending')) return false
+  return hasPage(destination)
+})
+
 onMounted(() => {
-  if (!destination.startsWith('/')) return
-  if (destination.startsWith('/pending')) return
-  if (!hasPage(destination)) return
-  router.replace(destination)
+  if (forwarding.value) router.replace(destination)
 })
 </script>
 
 <template>
-  <main class="pending-page">
+  <main v-if="!forwarding" class="pending-page">
     <section class="pending-card">
       <h1>หน้านี้กำลังพัฒนา</h1>
       <p>ปลายทางของคุณ: {{ destination }}</p>
