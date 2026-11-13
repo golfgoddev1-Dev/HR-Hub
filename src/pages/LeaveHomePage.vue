@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import PushToggle from '../components/PushToggle.vue'
 import { getSession } from '../api.js'
@@ -19,7 +19,7 @@ import {
   certificateStatus,
 } from '../leave-certificate.js'
 import { setApprovalCount } from '../lib/approval-count.js'
-import { useCountUp } from '../lib/use-count-up.js'
+import { countUp } from '../lib/motion.js'
 
 const LOAD_ERROR = 'โหลดรายการใบลาไม่สำเร็จ กรุณาลองใหม่'
 const EMPTY = 'ยังไม่มีรายการใบลา'
@@ -43,10 +43,19 @@ const errorMessage = ref('')
 const results = ref([])
 // Own request counts come from the Worker, scoped to this employee.
 const counts = ref({ pending: 0, approved: 0 })
-// The two totals count up to the Worker's numbers; the labels above them never
-// move, so the row keeps its height while the digits climb.
-const pendingShown = useCountUp(computed(() => counts.value.pending))
-const approvedShown = useCountUp(computed(() => counts.value.approved))
+// The two totals count up to the Worker's numbers through the shared GSAP helper;
+// only their text changes, so the row keeps its height while the digits climb.
+// The DOM already holds the real numbers, so the page is correct with no motion.
+const pendingValue = ref(null)
+const approvedValue = ref(null)
+
+function paintCounts() {
+  countUp(pendingValue.value, counts.value.pending)
+  countUp(approvedValue.value, counts.value.approved)
+}
+
+onMounted(paintCounts)
+watch(() => [counts.value.pending, counts.value.approved], paintCounts, { flush: 'post' })
 const retentionDays = ref(0)
 
 const route = useRoute()
@@ -134,11 +143,11 @@ onMounted(async () => {
       <section class="summary">
         <div class="summary-item">
           <span class="summary-label">ใบลารออนุมัติ</span>
-          <span class="summary-value">{{ pendingShown }}</span>
+          <span ref="pendingValue" class="summary-value">{{ counts.pending }}</span>
         </div>
         <div class="summary-item">
           <span class="summary-label">ใบลาอนุมัติแล้ว</span>
-          <span class="summary-value">{{ approvedShown }}</span>
+          <span ref="approvedValue" class="summary-value">{{ counts.approved }}</span>
         </div>
       </section>
 

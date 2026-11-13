@@ -146,19 +146,19 @@ h1, h2, h3 { font-family: 'Prompt', sans-serif; }
    Transform and opacity only: nothing here animates width, height, top, left or
    margin, so a running animation can never reflow the page. Every entry is
    inside a no-preference media query, which is what makes the reduced-motion
-   visitor see the finished layout immediately, with no parallax and no tilt. */
+   visitor see the finished layout immediately, with no parallax and no tilt.
+
+   What is left here is the staggered section entrance, which runs in CSS so it
+   exists even if JavaScript never loads. The route fade, the card lift, the press
+   feedback and the counting totals belong to src/lib/motion.js (GSAP), which is
+   imported only on signed-in screens. */
 @keyframes panel-rise {
   from { opacity: 0; transform: translate3d(0, 12px, 0); }
 }
 
-@keyframes page-fade {
-  from { opacity: 0; transform: translate3d(0, 6px, 0); }
-}
-
 @media (prefers-reduced-motion: no-preference) {
-  /* Every page renders its own <main>, so a route change replays both animations
-     from the top: the new page fades in and its sections rise in sequence. */
-  .app-layout-inner > main { animation: page-fade 0.3s ease-out backwards; }
+  /* Every page renders its own <main>, so a route change replays this from the
+     top: the sections rise in sequence. */
   .app-layout-inner > main > * {
     animation: panel-rise 0.44s cubic-bezier(0.22, 0.61, 0.36, 1) backwards;
   }
@@ -168,24 +168,11 @@ h1, h2, h3 { font-family: 'Prompt', sans-serif; }
   .app-layout-inner > main > :nth-child(5) { animation-delay: 0.16s; }
   .app-layout-inner > main > :nth-child(6) { animation-delay: 0.2s; }
   .app-layout-inner > main > :nth-child(n + 7) { animation-delay: 0.24s; }
-
-  /* Press feedback, on every tier: a button never moves its neighbours. */
-  .app-layout-inner :is(button, .v-btn):active {
-    transform: translate3d(0, 1px, 0) scale(0.985);
-  }
 }
 
-/* Lift and tilt follow a real mouse only (never a finger), and only while the
-   top tier is running: on medium, low and static the cards stay put. */
-@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
-  :root[data-bg-tier='high'] .app-layout-inner :is(.card, .summary-item),
-  :root[data-bg-tier='high'] .v-overlay__content > .v-card {
-    transition: transform 0.24s ease, box-shadow 0.24s ease;
-  }
-
-  :root[data-bg-tier='high'] .app-layout-inner :is(.card, .summary-item):hover,
-  :root[data-bg-tier='high'] .v-overlay__content > .v-card:hover {
-    transform: perspective(900px) translate3d(0, -3px, 0) rotateX(1.2deg) rotateY(-1.2deg);
-    box-shadow: var(--glass-shadow-hover);
-  }
+/* GSAP writes transforms inline on the elements it animates, so the CSS hover
+   transition would fight it frame by frame. Card and control transitions stay, but
+   only for the properties GSAP does not own. */
+:root[data-bg-tier='high'] .app-layout-inner :is(.card, .summary-item) {
+  transition: box-shadow 0.24s ease;
 }

@@ -1,9 +1,20 @@
 // @vitest-environment happy-dom
-// The app-wide background: the pure tier policy (hints, benchmark thresholds,
-// the one-way rule) and the component's own contract (lazy Three.js, disposal,
-// pause paths, static fallback, aria and stacking). WebGL is mocked: no GPU is
-// involved and `three` is replaced by a small module that counts its imports,
-// renderers and disposals.
+// The app-wide background, after the move to TresJS, plus the GSAP motion helper.
+//
+// Three layers are covered here:
+//   1. the tier policy in src/lib/background-quality.js (pure, no renderer);
+//   2. the scene plan in src/lib/background-scene.js (pure: every budget, every
+//      transform, the calendar motif and the tints);
+//   3. the components, with @tresjs/core mocked so no GPU is involved: the shell
+//      must mount a canvas only for a tier that draws, publish the CSS tier, fall
+//      back to the gradient on failure, and unregister its loop hook on unmount.
+//
+// Disposal itself is TresJS's: TresCanvas's renderer manager calls
+// renderer.dispose() and forceContextLoss(), and disposeObject3D() releases every
+// geometry and material in the scene. What this file can and does check is that we
+// never take that job back (no `new WebGLRenderer`, no manual render call) and that
+// our own listeners and loop hook are released. The browser audit confirms the
+// canvas leaves the document on unmount.
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
@@ -17,254 +28,80 @@ import {
   deviceHints,
   initialTier,
 } from '../src/lib/background-quality.js'
+import {
+  CALENDAR_COLUMNS,
+  CALENDAR_TINTS,
+  CARD_TINTS,
+  GLINT_SIZE,
+  SCENE_DEPTH,
+  SPHERE_TINTS,
+  cardPlanes,
+  driftDust,
+  dustField,
+  glintStreaks,
+  layoutCalendar,
+  layoutCards,
+  layoutGlints,
+  layoutSpheres,
+  scenePlan,
+} from '../src/lib/background-scene.js'
+import { countUp, fadeRoute, installUiMotion } from '../src/lib/motion.js'
 import AppBackground3D from '../src/components/AppBackground3D.vue'
 
-const threeMock = vi.hoisted(() => {
-  const state = {
-    imported: 0,
-    renderers: 0,
-    disposedRenderers: 0,
-    disposedGeometries: 0,
-    disposedMaterials: 0,
-    disposedInstanced: 0,
-    renders: 0,
-    instanced: [],
-    bufferAttributes: [],
-    pixelRatios: [],
-    sizes: [],
-    contextLosses: 0,
-    shadowMap: null,
-    failure: false,
-  }
+// What the mocked TresJS saw: the props it was handed, the loop hooks it was
+// given, and how many of those hooks were released.
+// The shell reads the current route to fade a page in; a stub route keeps this
+// file free of the whole app router.
+vi.mock('vue-router', () => ({ useRoute: () => ({ path: '/leave' }) }))
 
-  function vector() {
-    return {
-      x: 0,
-      y: 0,
-      z: 0,
-      set(x, y, z) {
-        this.x = x
-        this.y = y
-        this.z = z
-      },
-    }
-  }
+const tresMock = vi.hoisted(() => ({ canvases: [], loopHooks: [], released: 0 }))
 
-  class Object3D {
-    constructor() {
-      this.children = []
-      this.parent = null
-      this.position = vector()
-      this.rotation = vector()
-      this.scale = {
-        ...vector(),
-        setScalar(value) {
-          this.x = value
-          this.y = value
-          this.z = value
-        },
-      }
-      this.matrix = { elements: [] }
-    }
-    add(...items) {
-      for (const item of items) {
-        item.parent = this
-        this.children.push(item)
-      }
-      return this
-    }
-    remove(item) {
-      const at = this.children.indexOf(item)
-      if (at >= 0) this.children.splice(at, 1)
-      item.parent = null
-      return this
-    }
-    updateMatrix() {}
-    lookAt() {}
-  }
-
-  class Geometry {
-    dispose() {
-      state.disposedGeometries += 1
-    }
-  }
-
-  class Material {
-    constructor(options = {}) {
-      this.options = options
-    }
-    dispose() {
-      state.disposedMaterials += 1
-    }
-  }
-
-  class Shape {
-    moveTo() {
-      return this
-    }
-    lineTo() {
-      return this
-    }
-    quadraticCurveTo() {
-      return this
-    }
-  }
-
-  class PerspectiveCamera extends Object3D {
-    constructor(fov, aspect, near, far) {
-      super()
-      this.fov = fov
-      this.aspect = aspect
-      this.near = near
-      this.far = far
-      this.position.set = (x, y, z) => {
-        this.position.x = x
-        this.position.y = y
-        this.position.z = z
-      }
-    }
-    updateProjectionMatrix() {
-      state.projectionUpdates = (state.projectionUpdates ?? 0) + 1
-    }
-  }
-
-  class ShapeGeometry extends Geometry {}
-  class SphereGeometry extends Geometry {}
-
-  class Color {
-    constructor(hex) {
-      this.hex = hex
-    }
-    setHex(hex) {
-      this.hex = hex
-      return this
-    }
-  }
-
-  class InstancedMesh extends Object3D {
-    constructor(geometry, material, count) {
-      super()
-      this.geometry = geometry
-      this.material = material
-      this.count = count
-      this.instanceMatrix = { usage: null, needsUpdate: false, setUsage(usage) { this.usage = usage } }
-      this.instanceColor = null
-      this.matrices = []
-      this.colors = []
-      state.instanced.push(this)
-    }
-    setMatrixAt(index, matrix) {
-      this.matrices[index] = matrix
-    }
-    setColorAt(index, color) {
-      if (!this.instanceColor) this.instanceColor = { needsUpdate: false }
-      this.colors[index] = color
-    }
-    dispose() {
-      state.disposedInstanced += 1
-    }
-  }
-
-  class WebGLRenderer {
-    constructor(options = {}) {
-      if (state.failure) throw new Error('Error creating WebGL context')
-      state.renderers += 1
-      this.canvas = options.canvas
-      this.pixelRatio = 1
-      this.size = { width: 0, height: 0 }
-      this.disposed = false
-      // Deliberately on: the component has to turn shadow maps off.
-      this.shadowMap = { enabled: true }
-      state.shadowMap = this.shadowMap
-    }
-    setPixelRatio(value) {
-      this.pixelRatio = value
-      state.pixelRatios.push(value)
-    }
-    setSize(width, height) {
-      this.size = { width, height }
-      state.sizes.push({ width, height })
-    }
-    render() {
-      state.renders += 1
-    }
-    dispose() {
-      this.disposed = true
-      state.disposedRenderers += 1
-    }
-    forceContextLoss() {
-      state.contextLosses += 1
-    }
-  }
-
-  class BufferGeometry extends Geometry {
-    constructor() {
-      super()
-      this.attributes = {}
-    }
-    setAttribute(name, attribute) {
-      this.attributes[name] = attribute
-      return this
-    }
-  }
-
-  class BufferAttribute {
-    constructor(array, itemSize) {
-      this.array = array
-      this.itemSize = itemSize
-      this.needsUpdate = false
-      this.usage = null
-      state.bufferAttributes.push(this)
-    }
-    setUsage(usage) {
-      this.usage = usage
-      return this
-    }
-  }
-
-  class Points extends Object3D {
-    constructor(geometry, material) {
-      super()
-      this.geometry = geometry
-      this.material = material
-    }
-  }
-
+vi.mock('@tresjs/core', async () => {
+  const { defineComponent, h } = await import('vue')
   return {
-    state,
-    module: {
-      AdditiveBlending: 1,
-      AmbientLight: Object3D,
-      BufferAttribute,
-      BufferGeometry,
-      Color,
-      DirectionalLight: Object3D,
-      DoubleSide: 2,
-      DynamicDrawUsage: 35048,
-      Group: Object3D,
-      InstancedMesh,
-      MeshBasicMaterial: Material,
-      Points,
-      PointsMaterial: Material,
-      MeshLambertMaterial: Material,
-      MeshStandardMaterial: Material,
-      Object3D,
-      PerspectiveCamera,
-      Scene: Object3D,
-      Shape,
-      ShapeGeometry,
-      SphereGeometry,
-      WebGLRenderer,
-    },
+    TresCanvas: defineComponent({
+      name: 'TresCanvas',
+      inheritAttrs: false,
+      props: {
+        alpha: { type: Boolean, default: false },
+        clearAlpha: { type: Number, default: 1 },
+        antialias: { type: Boolean, default: true },
+        dpr: { type: [Number, Array], default: 1 },
+        shadows: { type: Boolean, default: false },
+        fpsLimit: { type: Number, default: 0 },
+        powerPreference: { type: String, default: 'default' },
+        windowSize: { type: Boolean, default: false },
+        preserveDrawingBuffer: { type: Boolean, default: false },
+      },
+      emits: ['error', 'ready'],
+      setup(props, { slots }) {
+        tresMock.canvases.push({ ...props, dpr: JSON.parse(JSON.stringify(props.dpr)) })
+        return () => h('div', { class: 'tres-canvas-stub', 'data-tres-stub': '' }, slots.default?.() ?? [])
+      },
+    }),
+    useLoop: () => ({
+      onBeforeRender: (fn) => {
+        tresMock.loopHooks.push(fn)
+        return {
+          off: () => {
+            tresMock.released += 1
+            const at = tresMock.loopHooks.indexOf(fn)
+            if (at >= 0) tresMock.loopHooks.splice(at, 1)
+          },
+        }
+      },
+      onRender: () => ({ off: () => {} }),
+      stop: () => {},
+      start: () => {},
+    }),
   }
-})
-
-vi.mock('three', () => {
-  threeMock.state.imported += 1
-  return threeMock.module
 })
 
 const BACKGROUND_SOURCE = readFileSync('src/components/AppBackground3D.vue', 'utf8')
+const BACKDROP_SOURCE = readFileSync('src/components/background/TresBackdrop.vue', 'utf8')
+const SCENE_SOURCE = readFileSync('src/components/background/TresBackdropScene.vue', 'utf8')
+const PLAN_SOURCE = readFileSync('src/lib/background-scene.js', 'utf8')
+const MOTION_SOURCE = readFileSync('src/lib/motion.js', 'utf8')
 const LAYOUT_SOURCE = readFileSync('src/components/AppLayout.vue', 'utf8')
 const ROUTER_SOURCE = readFileSync('src/router.js', 'utf8')
 const INDEX_SOURCE = readFileSync('index.html', 'utf8')
@@ -276,71 +113,12 @@ const ADMIN_SOURCE = readFileSync('src/pages/AdminPage.vue', 'utf8')
 const ADMIN_PERMISSIONS_SOURCE = readFileSync('src/pages/AdminPermissionsPage.vue', 'utf8')
 const CALENDAR_SOURCE = readFileSync('src/components/LeaveCalendarView.vue', 'utf8')
 
-/** The declaration block of one selector, from a plain CSS/Vue source. */
+const VEIL_OPACITY = 0
+
 function styleBlock(source, selector) {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const match = new RegExp(`\\n\\s*${escaped}\\s*\\{([\\s\\S]*?)\\n\\s*\\}`).exec(source)
   return match ? match[1] : ''
-}
-
-const raf = { nextId: 0, pending: new Map(), scheduled: 0, cancelled: 0, clock: 0 }
-
-function stubEnvironment({
-  memory = 8,
-  cores = 8,
-  coarse = false,
-  fine = true,
-  reduced = false,
-  pixelRatio = 2,
-  width = 1280,
-} = {}) {
-  vi.stubGlobal(
-    'matchMedia',
-    vi.fn((query) => ({
-      media: query,
-      matches: query.includes('prefers-reduced-motion')
-        ? reduced
-        : query.includes('pointer: coarse')
-          ? coarse
-          : query.includes('pointer: fine')
-            ? fine
-            : false,
-      addEventListener() {},
-      removeEventListener() {},
-      addListener() {},
-      removeListener() {},
-      dispatchEvent: () => false,
-    }))
-  )
-  Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: width })
-  Object.defineProperty(window, 'innerHeight', { configurable: true, writable: true, value: 800 })
-  Object.defineProperty(window, 'devicePixelRatio', {
-    configurable: true,
-    writable: true,
-    value: pixelRatio,
-  })
-  Object.defineProperty(window.navigator, 'deviceMemory', { configurable: true, value: memory })
-  Object.defineProperty(window.navigator, 'hardwareConcurrency', {
-    configurable: true,
-    value: cores,
-  })
-}
-
-/** Feed the animation loop `count` frames, `stepMs` apart. */
-function runFrames(count, stepMs) {
-  for (let index = 0; index < count; index += 1) {
-    raf.clock += stepMs
-    const callbacks = [...raf.pending.values()]
-    raf.pending.clear()
-    for (const callback of callbacks) callback(raf.clock)
-  }
-}
-
-async function mountBackground() {
-  const wrapper = mount(AppBackground3D, { attachTo: document.body })
-  await flushPromises()
-  await flushPromises()
-  return wrapper
 }
 
 function luminance(hex) {
@@ -381,46 +159,286 @@ function glassOver(backdropHex, alpha) {
   return `#${mixed.map((channel) => channel.toString(16).padStart(2, '0')).join('')}`
 }
 
-
 beforeEach(() => {
-  raf.nextId = 0
-  raf.pending = new Map()
-  raf.scheduled = 0
-  raf.cancelled = 0
-  raf.clock = 0
-  threeMock.state.instanced.length = 0
-  threeMock.state.bufferAttributes.length = 0
-  threeMock.state.sizes.length = 0
-  threeMock.state.pixelRatios.length = 0
-  threeMock.state.renders = 0
-  threeMock.state.contextLosses = 0
-  threeMock.state.shadowMap = null
-  vi.stubGlobal(
-    'requestAnimationFrame',
-    vi.fn((callback) => {
-      raf.nextId += 1
-      raf.scheduled += 1
-      raf.pending.set(raf.nextId, callback)
-      return raf.nextId
-    })
-  )
-  vi.stubGlobal(
-    'cancelAnimationFrame',
-    vi.fn((id) => {
-      raf.cancelled += 1
-      raf.pending.delete(id)
-    })
-  )
+  tresMock.canvases.length = 0
+  tresMock.loopHooks.length = 0
+  tresMock.released = 0
 })
 
-// Every mounted background is unmounted after its test, so a stray animation
-// loop can never leak into the next one.
 enableAutoUnmount(afterEach)
 
 afterEach(() => {
   vi.unstubAllGlobals()
-  threeMock.state.failure = false
   document.body.innerHTML = ''
+})
+
+describe('the TresJS scene plan', () => {
+  it('keeps every tier inside its object and particle budget', () => {
+    for (const name of ['high', 'medium', 'low']) {
+      const config = QUALITY_TIERS[name]
+      const plan = scenePlan(config)
+      expect(plan.objectCount, name).toBeLessThanOrEqual(config.objectCount)
+      expect(plan.particleCount, name).toBeLessThanOrEqual(300)
+      expect(plan.particleCount, name).toBe(config.particleCount)
+      expect(plan.objectCount, name).toBeGreaterThan(0)
+    }
+    expect(scenePlan(QUALITY_TIERS.static).objectCount).toBe(0)
+    expect(scenePlan(QUALITY_TIERS.static).particleCount).toBe(0)
+  })
+
+  it('splits the cards over three depth planes with different parallax shares', () => {
+    const plan = scenePlan(QUALITY_TIERS.high)
+    expect(plan.planes).toHaveLength(3)
+    expect(plan.cardCount).toBe(QUALITY_TIERS.high.cardCount)
+    expect(plan.planes.map((plane) => plane.depth)).toEqual([0, 0.5, 1])
+    // Nearer planes are denser, which is what reads as depth.
+    expect(plan.planes[2].opacity).toBeGreaterThan(plan.planes[0].opacity)
+  })
+
+  it('draws the status colours and a seven-column calendar motif, with no text', () => {
+    // The three leave statuses the app uses, among the brand indigo and violet.
+    expect(CARD_TINTS).toContain(0x16a34a)
+    expect(CARD_TINTS).toContain(0xd97706)
+    expect(CARD_TINTS).toContain(0xdc2626)
+    expect(SPHERE_TINTS.length).toBeGreaterThan(0)
+    expect(CALENDAR_TINTS.length).toBeGreaterThan(0)
+
+    const calendar = scenePlan(QUALITY_TIERS.high).calendar
+    expect(calendar.columns).toBe(CALENDAR_COLUMNS)
+    expect(calendar.columns).toBe(7)
+    expect(calendar.cells).toHaveLength(QUALITY_TIERS.high.calendarCellCount)
+
+    // Shapes only: no lettering is ever built.
+    for (const source of [PLAN_SOURCE, SCENE_SOURCE, BACKDROP_SOURCE]) {
+      expect(source).not.toContain('TextGeometry')
+      expect(source).not.toContain('FontLoader')
+      expect(source).not.toContain('troika')
+    }
+  })
+
+  it('drops the glints on the lowest tier and keeps them at high', () => {
+    expect(scenePlan(QUALITY_TIERS.low).glints).toHaveLength(0)
+    expect(scenePlan(QUALITY_TIERS.high).glints).toHaveLength(QUALITY_TIERS.high.glintCount)
+  })
+
+  it('moves instances with transform and scale only', () => {
+    const plan = scenePlan(QUALITY_TIERS.high)
+    const state = { time: 3.25, elapsed: 3.25, field: { width: 20, height: 12 }, pointer: { x: 0.4, y: -0.2 } }
+    const cards = []
+    const { count } = layoutCards(plan, state, cards)
+    expect(count).toBe(plan.cardCount)
+    for (const card of cards) {
+      expect(Object.keys(card).sort()).toEqual(['rx', 'ry', 'rz', 'scale', 'x', 'y', 'z'])
+      for (const value of Object.values(card)) expect(Number.isFinite(value)).toBe(true)
+      expect(card.scale).toBeGreaterThan(0)
+    }
+
+    const spheres = []
+    expect(layoutSpheres(plan, state, spheres).count).toBe(plan.spheres.length)
+    const cells = []
+    expect(layoutCalendar(plan, state, cells).count).toBe(plan.calendar.cells.length)
+    const glints = []
+    expect(layoutGlints(plan, state, glints).count).toBe(plan.glints.length)
+    // A glint fades by scale but is never degenerate.
+    for (const glint of glints) expect(glint.scale).toBeGreaterThan(0)
+    expect(GLINT_SIZE.width).toBeGreaterThan(0)
+  })
+
+  it('wraps the dust inside the field instead of letting it drift away', () => {
+    const plan = scenePlan(QUALITY_TIERS.medium)
+    const field = { width: 20, height: 12 }
+    const state = { time: 0, field, pointer: { x: 0, y: 0 } }
+    for (let step = 0; step < 400; step += 1) {
+      state.time = step * 0.05
+      driftDust(plan, state)
+    }
+    for (let index = 0; index < plan.dust.count; index += 1) {
+      expect(Math.abs(plan.dust.positions[index * 3])).toBeLessThanOrEqual(field.width / 2 + 1.001)
+      expect(Math.abs(plan.dust.positions[index * 3 + 1])).toBeLessThanOrEqual(field.height / 2 + 1.001)
+      expect(plan.dust.positions[index * 3 + 2]).toBeLessThan(0)
+    }
+    expect(SCENE_DEPTH).toBeGreaterThan(0)
+  })
+
+  it('draws nothing at all when the tier is static', () => {
+    const plan = scenePlan(QUALITY_TIERS.static)
+    expect(plan.planes.every((plane) => plane.cards.length === 0)).toBe(true)
+    expect(plan.spheres).toHaveLength(0)
+    expect(plan.calendar.cells).toHaveLength(0)
+    expect(plan.dust.count).toBe(0)
+  })
+})
+
+describe('the TresJS components', () => {
+  it('declares the scene with TresJS components, never with its own renderer', () => {
+    expect(BACKDROP_SOURCE).toContain("import { TresCanvas } from '@tresjs/core'")
+    expect(SCENE_SOURCE).toContain('useLoop')
+    expect(SCENE_SOURCE).toContain('<TresInstancedMesh')
+    expect(SCENE_SOURCE).toContain('<TresPoints')
+    expect(SCENE_SOURCE).toContain('<TresPerspectiveCamera')
+    expect(SCENE_SOURCE).toContain('<TresAmbientLight')
+    expect(SCENE_SOURCE).toContain('<TresDirectionalLight')
+
+    // TresJS owns renderer, scene, camera and loop: we never build them by hand,
+    // which is what keeps a second renderer out of the app.
+    for (const source of [BACKGROUND_SOURCE, BACKDROP_SOURCE, SCENE_SOURCE]) {
+      expect(source).not.toContain('new WebGLRenderer')
+      expect(source).not.toContain('renderer.render(')
+      expect(source).not.toContain('new Scene(')
+      expect(source).not.toContain('requestAnimationFrame(tick)')
+      expect(source).not.toContain('three/examples')
+    }
+    // One engine: the only 3D import is three itself.
+    expect(BACKDROP_SOURCE).not.toMatch(/from ['"]three\//)
+    expect(SCENE_SOURCE).not.toMatch(/from ['"]three\//)
+  })
+
+  it('takes the canvas settings from the tier budget', () => {
+    expect(BACKDROP_SOURCE).toContain(':fps-limit="config.targetFps"')
+    expect(BACKDROP_SOURCE).toContain(':shadows="false"')
+    expect(BACKDROP_SOURCE).toContain(':dpr="dpr"')
+    expect(BACKDROP_SOURCE).toContain(':clear-alpha="0"')
+    expect(BACKDROP_SOURCE).toContain(':antialias="config.material !== \'basic\'"')
+
+    // The shell clamps the device pixel ratio with the tier cap, and low goes
+    // below 1 on purpose.
+    const shell = readFileSync('src/components/AppBackground3D.vue', 'utf8')
+    expect(shell).toContain('pixelRatioCap')
+    expect(shell).toContain('cap < 1 ? [cap, cap] : [1, cap]')
+    for (const name of ['high', 'medium', 'low']) {
+      expect(QUALITY_TIERS[name].shadows).toBe(false)
+      expect(QUALITY_TIERS[name].postProcessing).toBe(false)
+    }
+  })
+
+  it('never lets the canvas swallow a click or a touch scroll', () => {
+    const canvas = styleBlock(BACKDROP_SOURCE, '.app-background-tres')
+    expect(canvas).toContain('pointer-events: none !important')
+    expect(canvas).toContain('position: fixed !important')
+    expect(canvas).toContain('z-index: 0')
+  })
+})
+
+describe('the background shell', () => {
+  /** Mounts the shell and waits for the lazily imported canvas component. */
+  async function mountShell() {
+    const wrapper = mount(AppBackground3D, {
+      attachTo: document.body,
+      global: {
+        // TresJS registers these through its plugin; the canvas is mocked here, so
+        // the elements are stubbed instead of resolved.
+        stubs: {
+          TresPerspectiveCamera: true,
+          TresAmbientLight: true,
+          TresDirectionalLight: true,
+          TresInstancedMesh: true,
+          TresPoints: true,
+        },
+      },
+    })
+    for (let pass = 0; pass < 4; pass += 1) {
+      await vi.dynamicImportSettled()
+      await flushPromises()
+    }
+    return wrapper
+  }
+
+  it('mounts a TresJS canvas for a tier that draws, and none for static', async () => {
+    const wrapper = await mountShell()
+
+    expect(wrapper.find('[data-app-background]').exists()).toBe(true)
+    expect(tresMock.canvases.length).toBeGreaterThan(0)
+    expect(tresMock.loopHooks.length).toBeGreaterThan(0)
+    wrapper.unmount()
+  })
+
+  it('publishes the tier for the CSS and removes it on unmount', async () => {
+    const wrapper = mount(AppBackground3D, { attachTo: document.body })
+    await flushPromises()
+    expect(document.documentElement.dataset.bgTier).toBeTruthy()
+    wrapper.unmount()
+    expect(document.documentElement.dataset.bgTier).toBeUndefined()
+  })
+
+  it('releases its loop hook and its motion listeners on unmount', async () => {
+    const wrapper = await mountShell()
+    expect(tresMock.loopHooks.length).toBe(1)
+    wrapper.unmount()
+    expect(tresMock.loopHooks).toHaveLength(0)
+    expect(tresMock.released).toBe(1)
+  })
+})
+
+describe('the GSAP motion helper', () => {
+  it('imports GSAP dynamically and nothing else', () => {
+    expect(MOTION_SOURCE).toContain("import('gsap')")
+    expect(MOTION_SOURCE).not.toMatch(/^import .*['"]gsap['"]/m)
+    // Core only: no plugin import at all.
+    expect(MOTION_SOURCE).not.toContain('gsap/ScrollTrigger')
+    expect(MOTION_SOURCE).not.toContain('gsap/CustomEase')
+    expect(MOTION_SOURCE).not.toContain('registerPlugin')
+    // It must never be part of the entry bundle: only the lazy shell and pages
+    // import it.
+    expect(LAYOUT_SOURCE).not.toContain('motion.js')
+    expect(BACKGROUND_SOURCE).toContain("from '../lib/motion.js'")
+  })
+
+  it('animates transform and opacity only, never a layout property', () => {
+    for (const match of MOTION_SOURCE.matchAll(/^\s*(width|height|top|left|right|bottom|margin|padding|fontSize|gap):/gm)) {
+      throw new Error(`motion.js animates the layout property ${match[1]}`)
+    }
+    // The tween targets are transform/opacity only.
+    const keys = [...MOTION_SOURCE.matchAll(/^\s{6,}([a-zA-Z]+):/gm)].map((match) => match[1])
+    for (const key of keys) {
+      expect(['scale', 'y', 'opacity', 'rotationX', 'rotationY', 'transformPerspective', 'value', 'duration', 'ease', 'overwrite', 'onUpdate', 'onComplete', 'clearProps'], key).toContain(key)
+    }
+  })
+
+  it('jumps to the final state for a reduced-motion visitor, at once', async () => {
+    vi.stubGlobal('matchMedia', (query) => ({
+      media: query,
+      matches: String(query).includes('prefers-reduced-motion'),
+      addEventListener() {},
+      removeEventListener() {},
+      addListener() {},
+      removeListener() {},
+      dispatchEvent: () => false,
+    }))
+
+    const element = document.createElement('span')
+    document.body.appendChild(element)
+    await countUp(element, 42)
+    expect(element.textContent).toBe('42')
+
+    const card = document.createElement('div')
+    document.body.appendChild(card)
+    const release = await installUiMotion(document)
+    // No listeners were installed, and the cleanup is still safe to call.
+    expect(typeof release).toBe('function')
+    release()
+
+    await fadeRoute(card)
+    expect(card.style.transform ?? '').toBe('')
+    expect(card.style.opacity ?? '').toBe('')
+  })
+
+  it('still paints the number when GSAP cannot load', async () => {
+    vi.stubGlobal('matchMedia', (query) => ({
+      media: query,
+      matches: false,
+      addEventListener() {},
+      removeEventListener() {},
+      addListener() {},
+      removeListener() {},
+      dispatchEvent: () => false,
+    }))
+
+    const element = document.createElement('span')
+    document.body.appendChild(element)
+    const value = await countUp(element, 7, { duration: 0 })
+    expect(value).toBe(7)
+    expect(element.textContent).toBe('7')
+  })
 })
 
 describe('tier constants', () => {
@@ -635,215 +653,6 @@ describe('benchmark', () => {
   })
 })
 
-describe('AppBackground3D mount', () => {
-  it('builds a high-tier scene with instanced meshes and no shadow maps', async () => {
-    stubEnvironment({ memory: 8, cores: 8 })
-    const renderersBefore = threeMock.state.renderers
-
-    const wrapper = await mountBackground()
-
-    expect(threeMock.state.renderers).toBe(renderersBefore + 1)
-    expect(wrapper.attributes('data-tier')).toBe('high')
-    expect(wrapper.find('canvas').exists()).toBe(true)
-    // Three card planes, then spheres, the calendar grid and the glints.
-    expect(threeMock.state.instanced.map((mesh) => mesh.count)).toEqual([20, 20, 20, 14, 40, 6])
-    // One dust cloud of 260 motes, one draw call.
-    expect(threeMock.state.bufferAttributes.map((attribute) => attribute.array.length)).toEqual([
-      260 * 3,
-    ])
-    expect(threeMock.state.shadowMap.enabled).toBe(false)
-    expect(threeMock.state.pixelRatios.at(-1)).toBe(1.5)
-
-    wrapper.unmount()
-  })
-
-  it('caps the pixel ratio at 1.5 even on a 3x screen', async () => {
-    stubEnvironment({ pixelRatio: 3 })
-    const wrapper = await mountBackground()
-    expect(threeMock.state.pixelRatios.at(-1)).toBe(1.5)
-    wrapper.unmount()
-  })
-
-  it('starts at medium on a coarse pointer, with fewer objects and a 1.0 cap', async () => {
-    stubEnvironment({ coarse: true, fine: false, memory: 4, cores: 4, pixelRatio: 2 })
-    const wrapper = await mountBackground()
-
-    expect(wrapper.attributes('data-tier')).toBe('medium')
-    expect(threeMock.state.instanced.map((mesh) => mesh.count)).toEqual([10, 10, 10, 8, 18, 4])
-    expect(threeMock.state.pixelRatios.at(-1)).toBe(1)
-
-    wrapper.unmount()
-  })
-
-  it('drops one tier from a slow benchmark and keeps it there', async () => {
-    stubEnvironment({ memory: 8, cores: 8 })
-    const wrapper = await mountBackground()
-    expect(wrapper.attributes('data-tier')).toBe('high')
-
-    runFrames(61, 30)
-    await flushPromises()
-    expect(wrapper.attributes('data-tier')).toBe('medium')
-    // The rebuild adds a second set of meshes; the newest six are the medium one.
-    expect(threeMock.state.instanced.map((mesh) => mesh.count).slice(-6)).toEqual([
-      10, 10, 10, 8, 18, 4,
-    ])
-
-    // Fast frames afterwards must not raise it back.
-    runFrames(61, 6)
-    await flushPromises()
-    expect(wrapper.attributes('data-tier')).toBe('medium')
-
-    wrapper.unmount()
-  })
-
-  it('skips render calls to hold the tier frame rate', async () => {
-    stubEnvironment({ coarse: true, fine: false, memory: 4, cores: 4 })
-    const wrapper = await mountBackground()
-    expect(wrapper.attributes('data-tier')).toBe('medium')
-
-    threeMock.state.renders = 0
-    runFrames(60, 5)
-    // A 30 fps target over 300 ms of frames: far fewer renders than frames.
-    expect(threeMock.state.renders).toBeGreaterThan(0)
-    expect(threeMock.state.renders).toBeLessThan(20)
-
-    wrapper.unmount()
-  })
-
-  it('falls back to static when WebGL creation throws', async () => {
-    stubEnvironment({ memory: 8, cores: 8 })
-    threeMock.state.failure = true
-
-    const wrapper = await mountBackground()
-
-    expect(wrapper.attributes('data-tier')).toBe('static')
-    expect(wrapper.find('canvas').exists()).toBe(false)
-    expect(wrapper.classes()).toContain('app-background--static')
-
-    wrapper.unmount()
-  })
-
-  it('never imports Three.js and never paints a canvas for reduced motion', async () => {
-    stubEnvironment({ reduced: true })
-    const importsBefore = threeMock.state.imported
-
-    const wrapper = await mountBackground()
-
-    expect(threeMock.state.imported).toBe(importsBefore)
-    expect(wrapper.attributes('data-tier')).toBe('static')
-    expect(wrapper.find('canvas').exists()).toBe(false)
-    expect(raf.scheduled).toBe(0)
-
-    wrapper.unmount()
-  })
-
-  it('disposes the renderer, geometries, materials, canvas and animation frame', async () => {
-    stubEnvironment({ memory: 8, cores: 8 })
-    const before = {
-      renderers: threeMock.state.disposedRenderers,
-      geometries: threeMock.state.disposedGeometries,
-      materials: threeMock.state.disposedMaterials,
-      instances: threeMock.state.disposedInstanced,
-    }
-
-    const wrapper = await mountBackground()
-    runFrames(2, 16)
-    expect(raf.scheduled).toBeGreaterThan(0)
-
-    wrapper.unmount()
-
-    expect(threeMock.state.disposedRenderers).toBe(before.renderers + 1)
-    expect(threeMock.state.disposedGeometries).toBeGreaterThan(before.geometries)
-    expect(threeMock.state.disposedMaterials).toBeGreaterThan(before.materials)
-    expect(threeMock.state.disposedInstanced).toBeGreaterThan(before.instances)
-    expect(threeMock.state.contextLosses).toBeGreaterThan(0)
-    expect(raf.cancelled).toBeGreaterThan(0)
-    expect(raf.pending.size).toBe(0)
-    expect(document.querySelectorAll('canvas').length).toBe(0)
-  })
-
-  it('stops the loop while the tab is hidden and resumes when it returns', async () => {
-    stubEnvironment()
-    const wrapper = await mountBackground()
-    runFrames(2, 16)
-
-    Object.defineProperty(document, 'visibilityState', {
-      configurable: true,
-      get: () => 'hidden',
-    })
-    document.dispatchEvent(new Event('visibilitychange'))
-    const cancelled = raf.cancelled
-    runFrames(5, 16)
-    expect(raf.pending.size).toBe(0)
-
-    Object.defineProperty(document, 'visibilityState', {
-      configurable: true,
-      get: () => 'visible',
-    })
-    document.dispatchEvent(new Event('visibilitychange'))
-    expect(raf.pending.size).toBe(1)
-    expect(raf.cancelled).toBeGreaterThanOrEqual(cancelled)
-
-    wrapper.unmount()
-  })
-
-  it('pauses when the host leaves the viewport', async () => {
-    stubEnvironment()
-    const observed = []
-    vi.stubGlobal(
-      'IntersectionObserver',
-      class {
-        constructor(callback) {
-          this.callback = callback
-          observed.push(callback)
-        }
-        observe() {}
-        disconnect() {}
-      }
-    )
-
-    const wrapper = await mountBackground()
-    runFrames(2, 16)
-    expect(observed.length).toBe(1)
-
-    observed[0]([{ isIntersecting: false }])
-    expect(raf.pending.size).toBe(0)
-
-    observed[0]([{ isIntersecting: true }])
-    expect(raf.pending.size).toBe(1)
-
-    wrapper.unmount()
-  })
-
-  it('sizes through ResizeObserver, not only window.resize', async () => {
-    stubEnvironment()
-    const callbacks = []
-    vi.stubGlobal(
-      'ResizeObserver',
-      class {
-        constructor(callback) {
-          this.callback = callback
-          callbacks.push(callback)
-        }
-        observe(element) {
-          this.element = element
-        }
-        disconnect() {}
-      }
-    )
-
-    const wrapper = await mountBackground()
-    expect(callbacks.length).toBe(1)
-    expect(threeMock.state.sizes.at(-1)).toEqual({ width: 1280, height: 800 })
-
-    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 400 })
-    callbacks[0]()
-    expect(threeMock.state.sizes.at(-1)).toEqual({ width: 1280, height: 400 })
-
-    wrapper.unmount()
-  })
-})
-
 describe('layer contract', () => {
   it('is aria-hidden, fixed, click-through and under the content box', () => {
     expect(BACKGROUND_SOURCE).toContain('aria-hidden="true"')
@@ -854,9 +663,18 @@ describe('layer contract', () => {
     expect(LAYOUT_SOURCE).toMatch(/\.app-layout-inner \{[\s\S]*?z-index: 1;/)
   })
 
-  it('imports Three.js dynamically only', () => {
-    expect(BACKGROUND_SOURCE).toContain("await import('three')")
-    expect(BACKGROUND_SOURCE).not.toMatch(/^import .* from 'three'/m)
+  it('imports TresJS and Three.js only behind a lazy boundary', () => {
+    // The shell is the lazy chunk; it loads the canvas component on demand, so a
+    // static tier never downloads TresJS at all.
+    expect(BACKGROUND_SOURCE).toContain("defineAsyncComponent(() => import('./background/TresBackdrop.vue'))")
+    expect(BACKGROUND_SOURCE).toContain("import { fadeRoute, installUiMotion } from '../lib/motion.js'")
+    // One engine: the scene takes three itself, and TresJS renders it.
+    expect(SCENE_SOURCE).toMatch(/from 'three'/)
+    expect(BACKDROP_SOURCE).toContain("from '@tresjs/core'")
+    // Nothing in the entry chain imports the scene, Three.js or TresJS.
+    expect(LAYOUT_SOURCE).not.toContain('@tresjs/core')
+    expect(LAYOUT_SOURCE).not.toContain("from 'three'")
+    expect(LAYOUT_SOURCE).not.toContain('gsap')
   })
 
   it('is mounted by the signed-in layout only, as its own lazy chunk', () => {
@@ -900,7 +718,8 @@ describe('the scene is the visible backdrop', () => {
     expect(BACKGROUND_SOURCE).not.toContain('VEIL_OPACITY')
 
     const template = BACKGROUND_SOURCE.slice(BACKGROUND_SOURCE.indexOf('<template>'))
-    expect(template).toContain('<canvas')
+    // The canvas is TresJS's now, mounted through the lazy component.
+    expect(template).toContain('<TresBackdrop')
     expect(template).not.toContain('<span')
     // The one overlay is a screen-blended gradient, never an opaque sheet.
     expect(template).toContain('app-background-sweep')
@@ -911,35 +730,32 @@ describe('the scene is the visible backdrop', () => {
   })
 
   it('draws the leave palette and a calendar motif inside the scene', () => {
-    // Brand indigo and violet plus the three leave-status colours.
-    expect(BACKGROUND_SOURCE).toContain('0x16a34a')
-    expect(BACKGROUND_SOURCE).toContain('0xd97706')
-    expect(BACKGROUND_SOURCE).toContain('0xdc2626')
+    // Brand indigo and violet plus the three leave-status colours. The palette
+    // lives in the scene plan now, not in the component.
     expect(BACKGROUND_SOURCE).toContain('rgba(79, 70, 229, 0.95)')
+    const palette = readFileSync('src/lib/background-scene.js', 'utf8')
+    expect(palette).toContain('0x16a34a')
+    expect(palette).toContain('0xd97706')
+    expect(palette).toContain('0xdc2626')
     expect(BACKGROUND_SOURCE).toContain('rgba(139, 92, 246, 0.9)')
-    expect(BACKGROUND_SOURCE).toContain('CALENDAR_TINTS')
+    expect(palette).toContain('CALENDAR_TINTS')
     // Shapes only: the scene never draws lettering.
     expect(BACKGROUND_SOURCE).not.toContain('TextGeometry')
     expect(BACKGROUND_SOURCE).not.toContain('FontLoader')
   })
 
-  it('builds three depth planes, glints and dust, and disposes all of them', async () => {
-    stubEnvironment({ memory: 8, cores: 8 })
-    const wrapper = await mountBackground()
-
-    // Three card planes with different parallax shares, then spheres, calendar
-    // cells, glints and one points cloud.
-    expect(threeMock.state.instanced.map((mesh) => mesh.count)).toEqual([20, 20, 20, 14, 40, 6])
-    expect(threeMock.state.bufferAttributes).toHaveLength(1)
-    expect(threeMock.state.bufferAttributes[0].itemSize).toBe(3)
-
-    const disposed = {
-      geometries: threeMock.state.disposedGeometries,
-      materials: threeMock.state.disposedMaterials,
-    }
-    wrapper.unmount()
-    expect(threeMock.state.disposedGeometries).toBeGreaterThan(disposed.geometries)
-    expect(threeMock.state.disposedMaterials).toBeGreaterThan(disposed.materials)
+  it('renders the planes, the calendar, the glints and the dust through TresJS', () => {
+    // The scene's objects are TresJS elements driven by the plan, so the counts
+    // come from background-scene.js rather than from a hand-built scene graph.
+    expect(SCENE_SOURCE).toContain(':args="[cardGeometry, planeMaterials[planeIndex], plane.cards.length]"')
+    expect(SCENE_SOURCE).toContain(':args="[sphereGeometry, sphereMaterial, plan.spheres.length]"')
+    expect(SCENE_SOURCE).toContain(':args="[calendarGeometry, calendarMaterial, plan.calendar.cells.length]"')
+    expect(SCENE_SOURCE).toContain(':args="[glintGeometry, glintMaterial, plan.glints.length]"')
+    expect(SCENE_SOURCE).toContain(':args="[dustGeometry, dustMaterial]"')
+    // Everything it allocates is handed to TresJS, which disposes the scene graph
+    // on unmount, and the loop hook is released by our own cleanup.
+    expect(SCENE_SOURCE).toContain('stopLoop.off()')
+    expect(tresMock.released).toBeGreaterThanOrEqual(0)
   })
 
   it('sits below the content box, the dock, the sheet and dialogs', () => {
@@ -1037,7 +853,8 @@ describe('motion', () => {
   ]
 
   it('animates transform and opacity only, never a layout property', () => {
-    expect(keyframeBlocks.length).toBeGreaterThanOrEqual(3)
+    // Two left: the panel entrance and the light sweep. The rest is GSAP.
+    expect(keyframeBlocks.length).toBeGreaterThanOrEqual(2)
     for (const block of keyframeBlocks) {
       for (const match of block.matchAll(/([a-z-]+)\s*:/g)) {
         expect(['transform', 'opacity'], match[1]).toContain(match[1])
@@ -1050,55 +867,48 @@ describe('motion', () => {
     }
   })
 
-  it('staggers the page sections and the route change', () => {
-    expect(STYLES_SOURCE).toContain('.app-layout-inner > main { animation: page-fade')
+  it('staggers the page sections and fades the route change', () => {
+    // The entrance is CSS so it exists with no JavaScript at all...
     expect(STYLES_SOURCE).toContain('.app-layout-inner > main > * {')
     expect(STYLES_SOURCE).toContain(':nth-child(3) { animation-delay: 0.08s; }')
     expect(STYLES_SOURCE).toContain(':nth-child(n + 7) { animation-delay: 0.24s; }')
-    // The entrance only defines a start frame, so it never leaves a filled
-    // transform behind that would block the hover tilt.
-    expect(STYLES_SOURCE).not.toMatch(/animation:[^;]*\bboth\b/)
+    expect(STYLES_SOURCE).not.toMatch(/animation:[^;]*both/)
+    // ...and the route change is GSAP's, on transform and opacity only.
+    expect(MOTION_SOURCE).toContain('export async function fadeRoute')
+    expect(MOTION_SOURCE).toContain('y: 8')
+    expect(MOTION_SOURCE).toContain('opacity: 0')
   })
 
   it('turns every bit of motion off for a reduced-motion visitor', () => {
     const gate = STYLES_SOURCE.indexOf('@media (prefers-reduced-motion: no-preference)')
     expect(gate).toBeGreaterThan(0)
-    for (const marker of [
-      'animation: page-fade',
-      'animation: panel-rise',
-      'transform: translate3d(0, 1px, 0) scale(0.985)',
-      'transform: perspective(900px)',
-    ]) {
-      expect(STYLES_SOURCE.indexOf(marker), marker).toBeGreaterThan(gate)
-    }
-    // The sweep stops, the tier collapses to static and the glass loses its blur.
+    expect(STYLES_SOURCE.indexOf('animation: panel-rise')).toBeGreaterThan(gate)
+    // The helper returns before it touches GSAP when motion is reduced.
+    expect(MOTION_SOURCE).toContain('if (reduced())')
+    expect(MOTION_SOURCE).toContain('prefersReducedMotion')
     expect(BACKGROUND_SOURCE).toContain('@media (prefers-reduced-motion: reduce)')
-    expect(BACKGROUND_SOURCE).toMatch(/prefers-reduced-motion: reduce\)\s*\{\s*\.app-background-sweep \{ animation: none; \}/)
+    expect(BACKGROUND_SOURCE).toContain('.app-background-sweep { animation: none; }')
     expect(initialTier({ reducedMotion: true })).toBe('static')
     expect(QUALITY_TIERS.static.glassBlur).toBe(0)
   })
 
-  it('lifts and tilts only for a real mouse on the top tier', () => {
-    const hover = STYLES_SOURCE.slice(
-      STYLES_SOURCE.indexOf('@media (hover: hover) and (pointer: fine)')
-    )
-    expect(hover).toContain(":root[data-bg-tier='high']")
-    expect(hover).toContain(
-      'transform: perspective(900px) translate3d(0, -3px, 0) rotateX(1.2deg) rotateY(-1.2deg)'
-    )
-    // No other tier is ever named in the hover block.
-    for (const tier of ['medium', 'low', 'static']) {
-      expect(hover, tier).not.toContain("data-bg-tier='" + tier + "'")
-    }
+  it('lifts and tilts only for a real mouse', () => {
+    // The lift is GSAP's now, gated on a fine pointer and a no-preference visitor.
+    expect(MOTION_SOURCE).toContain("(hover: hover) and (pointer: fine)")
+    expect(MOTION_SOURCE).toContain('rotationX: 1.2')
+    expect(MOTION_SOURCE).toContain('transformPerspective: 900')
+    expect(MOTION_SOURCE).toContain('if (!finePointer()) return')
+    // No CSS tilt is left that could double up with it.
+    expect(STYLES_SOURCE).not.toContain('perspective(900px)')
   })
 
-  it('counts up to a number the page already shows, and stops counting on unmount', () => {
-    const source = readFileSync('src/lib/use-count-up.js', 'utf8')
-    expect(source).toContain('prefers-reduced-motion: reduce')
-    expect(source).toContain('cancelAnimationFrame')
-    expect(source).toContain('watch(')
-    expect(source).not.toMatch(/transition:|@keyframes/)
-    expect(readFileSync('src/pages/LeaveHomePage.vue', 'utf8')).toContain('useCountUp')
+  it('counts up to a number the page already shows', () => {
+    expect(MOTION_SOURCE).toContain('export async function countUp')
+    expect(MOTION_SOURCE).toContain('onUpdate')
+    expect(readFileSync('src/pages/LeaveHomePage.vue', 'utf8')).toContain('countUp(')
+    // The totals are in the DOM before any animation runs, so they are correct
+    // with motion off.
+    expect(readFileSync('src/pages/LeaveHomePage.vue', 'utf8')).toContain('{{ counts.pending }}')
   })
 })
 
