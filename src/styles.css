@@ -75,3 +75,25 @@ h1, h2, h3 { font-family: 'Prompt', sans-serif; }
   .login-card { padding: 28px 22px; }
   .option-grid { grid-template-columns: 1fr; }
 }
+
+/* ---- Signed-in surfaces ----------------------------------------------------
+   The 3D background is a backdrop, never a text surface. Every top-level block
+   of a signed-in page that carries text sits on a near-solid panel, so the
+   scene shows around the panels, in the gaps between them and in the header and
+   phone margins without any body text ever landing on the canvas. 0.98 with no
+   backdrop blur keeps contrast independent of what the scene is doing. */
+.app-layout-inner :is(main.content, main.page-main) > :is(.head, .page-head, .tabs, .hint, .empty),
+.app-layout-inner .block > :is(.section-title, .hint, .empty),
+.app-layout-inner .section-head {
+  padding: 16px 18px;
+  border: 1px solid rgba(224, 232, 230, 0.9);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 1px 3px rgba(18, 52, 59, 0.04);
+}
+
+@media (max-width: 720px) {
+  .app-layout-inner :is(main.content, main.page-main) > :is(.head, .page-head) {
+    padding: 14px 14px;
+  }
+}

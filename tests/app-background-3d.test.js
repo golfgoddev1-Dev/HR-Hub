@@ -11,11 +11,10 @@ import { readFileSync } from 'node:fs'
 import {
   BENCHMARK,
   QUALITY_TIERS,
-  VEIL_OPACITY,
+  SURFACE_OPACITY,
   createBenchmark,
   deviceHints,
   initialTier,
-  veilBackground,
 } from '../src/lib/background-quality.js'
 import AppBackground3D from '../src/components/AppBackground3D.vue'
 
@@ -229,6 +228,20 @@ const BACKGROUND_SOURCE = readFileSync('src/components/AppBackground3D.vue', 'ut
 const LAYOUT_SOURCE = readFileSync('src/components/AppLayout.vue', 'utf8')
 const ROUTER_SOURCE = readFileSync('src/router.js', 'utf8')
 const INDEX_SOURCE = readFileSync('index.html', 'utf8')
+const STYLES_SOURCE = readFileSync('src/styles.css', 'utf8')
+const DOCK_SOURCE = readFileSync('src/components/AppDock.vue', 'utf8')
+const PROFILE_SOURCE = readFileSync('src/pages/ProfilePage.vue', 'utf8')
+const MY_APPROVERS_SOURCE = readFileSync('src/pages/MyApproversPage.vue', 'utf8')
+const ADMIN_SOURCE = readFileSync('src/pages/AdminPage.vue', 'utf8')
+const ADMIN_PERMISSIONS_SOURCE = readFileSync('src/pages/AdminPermissionsPage.vue', 'utf8')
+const CALENDAR_SOURCE = readFileSync('src/components/LeaveCalendarView.vue', 'utf8')
+
+/** The declaration block of one selector, from a plain CSS/Vue source. */
+function styleBlock(source, selector) {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const match = new RegExp(`\\n\\s*${escaped}\\s*\\{([\\s\\S]*?)\\n\\s*\\}`).exec(source)
+  return match ? match[1] : ''
+}
 
 const raf = { nextId: 0, pending: new Map(), scheduled: 0, cancelled: 0, clock: 0 }
 
@@ -306,17 +319,6 @@ function contrast(foreground, background) {
   return (lighter + 0.05) / (darker + 0.05)
 }
 
-/** The slate-50 veil composited over an opaque scene colour. */
-function veilOver(hex, alpha = VEIL_OPACITY) {
-  const veil = 'f8fafc'.match(/.{2}/g).map((part) => parseInt(part, 16))
-  const base = hex.replace('#', '').match(/.{2}/g).map((part) => parseInt(part, 16))
-  const mixed = veil.map((channel, index) =>
-    Math.round(channel * alpha + base[index] * (1 - alpha))
-      .toString(16)
-      .padStart(2, '0')
-  )
-  return `#${mixed.join('')}`
-}
 
 beforeEach(() => {
   raf.nextId = 0
@@ -789,24 +791,146 @@ describe('layer contract', () => {
   })
 })
 
-describe('text contrast over the veil', () => {
-  it('keeps every text token at AA over the darkest scene tone', () => {
-    const veil = veilBackground()
-    expect(veil).toBe(`rgba(248, 250, 252, ${VEIL_OPACITY})`)
+describe('the scene is the visible backdrop', () => {
+  it('paints no veil or full-page overlay over the canvas', () => {
+    // The old slate-50 veil hid the scene; readability now comes from panels.
+    expect(BACKGROUND_SOURCE).not.toContain('app-background-veil')
+    expect(BACKGROUND_SOURCE).not.toContain('veilStyle')
+    expect(BACKGROUND_SOURCE).not.toContain('VEIL_OPACITY')
 
-    const worst = veilOver('#c7d2fe')
-    for (const text of ['#0b1c30', '#12343b', '#444651', '#5c7176']) {
-      expect(contrast(text, worst), `${text} on ${worst}`).toBeGreaterThanOrEqual(4.5)
+    const template = BACKGROUND_SOURCE.slice(BACKGROUND_SOURCE.indexOf('<template>'))
+    expect(template).toContain('<canvas')
+    // The canvas is the only thing inside the host: nothing is painted over it.
+    expect(template).not.toContain('<span')
+    expect(template).not.toContain('<div class="app-background-')
+  })
+
+  it('keeps the canvas at full strength behind the content', () => {
+    // The scene's own background is a gradient, not a washed-out slate veil.
+    expect(BACKGROUND_SOURCE).toContain('rgba(79, 70, 229, 0.95)')
+    expect(BACKGROUND_SOURCE).toContain('rgba(139, 92, 246, 0.9)')
+    // Vivid brand tints inside the scene, not pale greys.
+    expect(BACKGROUND_SOURCE).toContain('const CARD_TINTS = [0x3730a3, 0x6d28d9, 0x818cf8]')
+    expect(BACKGROUND_SOURCE).toContain('const SPHERE_TINTS = [0x8b5cf6, 0x818cf8]')
+  })
+
+  it('sits below the content box, the dock, the sheet and dialogs', () => {
+    const host = styleBlock(BACKGROUND_SOURCE, '.app-background')
+    expect(host).toContain('position: fixed')
+    expect(host).toContain('z-index: 0')
+    expect(host).toContain('pointer-events: none')
+
+    expect(styleBlock(LAYOUT_SOURCE, '.app-layout-inner')).toContain('z-index: 1')
+    expect(LAYOUT_SOURCE).toMatch(/position: relative;\s*\n\s*z-index: 1;/)
+    // The dock is above the content box, and the phone sheet above the dock.
+    expect(Number(styleBlock(DOCK_SOURCE, '.dock').match(/z-index: (\d+)/)[1])).toBeGreaterThan(1)
+    expect(
+      Number(styleBlock(DOCK_SOURCE, '.dock-sheet-layer').match(/z-index: (\d+)/)[1])
+    ).toBeGreaterThan(40)
+    // Dialogs are teleported out of the shell by Vuetify, so no page z-index
+    // can put one under the canvas.
+    expect(BACKGROUND_SOURCE).not.toContain('v-overlay')
+  })
+})
+
+describe('panel surfaces', () => {
+  it('gives every text block a near-solid panel', () => {
+    expect(STYLES_SOURCE).toContain(
+      '.app-layout-inner :is(main.content, main.page-main) > :is(.head, .page-head, .tabs, .hint, .empty)'
+    )
+    expect(STYLES_SOURCE).toContain('.app-layout-inner .section-head')
+    expect(STYLES_SOURCE).toContain(`background: rgba(255, 255, 255, 0.98)`)
+  })
+
+  it('never depends on a backdrop blur for contrast', () => {
+    expect(DOCK_SOURCE).not.toContain('backdrop-filter')
+    expect(LAYOUT_SOURCE).not.toContain('backdrop-filter')
+    expect(STYLES_SOURCE).not.toContain('backdrop-filter')
+  })
+
+  it('keeps the dock, the tab bar and the sheet at or above the surface opacity', () => {
+    expect(SURFACE_OPACITY).toBe(0.97)
+
+    const dock = styleBlock(DOCK_SOURCE, '.dock')
+    const dockAlpha = Number(dock.match(/background: rgba\(255, 255, 255, ([\d.]+)\)/)[1])
+    expect(dockAlpha).toBeGreaterThanOrEqual(SURFACE_OPACITY)
+
+    // `.dock-tabs` is declared twice: base (hidden) and inside the phone query.
+    const tabsBlocks = [...DOCK_SOURCE.matchAll(/\n\s*\.dock-tabs\s*\{([\s\S]*?)\n\s*\}/g)].map(
+      (match) => match[1]
+    )
+    const tabs = tabsBlocks.find((block) => block.includes('background: rgba('))
+    expect(tabs, 'tab bar surface').toBeTruthy()
+    expect(Number(tabs.match(/background: rgba\(255, 255, 255, ([\d.]+)\)/)[1])).toBeGreaterThanOrEqual(
+      SURFACE_OPACITY
+    )
+
+    expect(styleBlock(DOCK_SOURCE, '.dock-sheet')).toContain('background: #ffffff')
+
+    const panel = STYLES_SOURCE.slice(STYLES_SOURCE.indexOf('---- Signed-in surfaces'))
+    expect(Number(panel.match(/background: rgba\(255, 255, 255, ([\d.]+)\)/)[1])).toBeGreaterThanOrEqual(
+      SURFACE_OPACITY
+    )
+  })
+
+  it('leaves the shell transparent so the scene shows between panels', () => {
+    const shell = styleBlock(LAYOUT_SOURCE, '.app-layout')
+    expect(shell).toContain('background: transparent')
+    expect(shell).not.toContain('#f3f6f5')
+  })
+})
+
+describe('panel text tokens', () => {
+  // Every text colour the signed-in panels use, against the surface it sits on.
+  const PANEL_PAIRS = [
+    ['#12343b', '#ffffff', 'titles and card headings'],
+    ['#0b1c30', '#ffffff', 'body text'],
+    ['#444651', '#ffffff', 'muted body text'],
+    ['#5c7176', '#ffffff', 'subtitles, captions and muted values'],
+    ['#4d6468', '#ffffff', 'empty-state text'],
+    ['#10504e', '#ffffff', 'primary links'],
+    ['#a01b1b', '#ffffff', 'error text'],
+    ['#6b4300', '#fff8e8', 'read-only note'],
+    ['#ffffff', '#98620f', 'read-only badge'],
+    ['#ffffff', '#4f46e5', 'primary button'],
+    ['#ffffff', '#10504e', 'dock brand tile'],
+    ['#5c7176', '#f1f5f9', 'muted text on a slate chip'],
+  ]
+
+  it('keeps every pair at WCAG AA (4.5:1)', () => {
+    for (const [foreground, background, label] of PANEL_PAIRS) {
+      const ratio = contrast(foreground, background)
+      expect(ratio, `${label}: ${foreground} on ${background}`).toBeGreaterThanOrEqual(4.5)
     }
   })
 
-  it('keeps the composited backdrop as light as the shell it replaces', () => {
-    // #5c7176 already sits at 4.70:1 on the current #f3f6f5 shell, so the veil
-    // may not darken the backdrop much at all.
-    const composed = veilOver('#c7d2fe')
-    const shell = contrast('#5c7176', '#f3f6f5')
-    expect(contrast('#5c7176', composed)).toBeGreaterThanOrEqual(4.5)
-    expect(luminance(composed)).toBeGreaterThan(0.88)
-    expect(shell).toBeGreaterThan(4.5)
+  it('darkened exactly the tokens that failed on white', () => {
+    // The old values, kept here so the fix cannot silently regress.
+    expect(contrast('#8b9c9a', '#ffffff')).toBeLessThan(4.5)
+    expect(contrast('#b7791f', '#ffffff')).toBeLessThan(4.5)
+    expect(contrast('#7c8f93', '#ffffff')).toBeLessThan(4.5)
+    expect(contrast('#94a5a7', '#ffffff')).toBeLessThan(4.5)
+    expect(contrast('#b3c2c0', '#ffffff')).toBeLessThan(4.5)
+    expect(contrast('#9aa8a5', '#ffffff')).toBeLessThan(4.5)
+
+    // And the pages now use the passing ones.
+    expect(PROFILE_SOURCE).toContain('color: #5c7176')
+    expect(PROFILE_SOURCE).not.toContain('color: #8b9c9a')
+    expect(PROFILE_SOURCE).toContain('background: #98620f')
+    expect(MY_APPROVERS_SOURCE).toContain('background: #98620f')
+    expect(MY_APPROVERS_SOURCE).not.toContain('background: #b7791f')
+    expect(ADMIN_SOURCE).not.toContain('color: #94a5a7')
+    expect(ADMIN_SOURCE).not.toContain('color: #7c8f93')
+    expect(ADMIN_PERMISSIONS_SOURCE).not.toContain('color: #7c8f93')
+    expect(ADMIN_PERMISSIONS_SOURCE).not.toContain('color: #b3c2c0')
+    expect(CALENDAR_SOURCE).not.toContain('color: #9aa8a5')
+  })
+
+  it('leaves the reduced-motion and low-tier paths untouched', () => {
+    // The readability work is CSS-only: the tier policy module still owns the
+    // tiers, the benchmark and the static fallback.
+    expect(QUALITY_TIERS.high.material).toBe('standard')
+    expect(QUALITY_TIERS.static.objectCount).toBe(0)
+    expect(BENCHMARK.frames).toBe(60)
   })
 })

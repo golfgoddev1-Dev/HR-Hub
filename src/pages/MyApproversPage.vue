@@ -158,7 +158,8 @@ onMounted(load)
   align-items: center;
   padding: 3px 10px;
   border-radius: 999px;
-  background: #b7791f;
+  /* 5.13:1 with white; the old #b7791f only reached 3.64:1. */
+  background: #98620f;
   color: #ffffff;
   font-size: 12px;
   font-weight: 700;

@@ -8,6 +8,9 @@
 //
 // The layer is aria-hidden, fixed, pointer-events: none and painted at z-index 0
 // under the content box, so it can never cover a link, a field or the dock.
+// Nothing is painted over it either: the layer is meant to be seen at full
+// strength, and every block that carries text sits on its own near-solid panel
+// (see the signed-in surface rules in src/styles.css).
 // Three.js is a dynamic import: the library keeps its own chunk, and this
 // component's code is fetched on demand too (AppLayout holds only an async
 // reference), so the entry bundle is untouched.
@@ -22,15 +25,13 @@ import {
   deviceHints,
   initialTier,
   normalizedTier,
-  veilBackground,
 } from '../lib/background-quality.js'
 
-// Soft tints only. The darkest pixel the canvas may paint is indigo-200
-// (#c7d2fe); anything deeper would push the screens' muted grey text (#5c7176),
-// which already sits at 4.70:1 on the #f3f6f5 shell, below WCAG AA once the
-// veil is composited. Violet and indigo therefore appear as washes, not slabs.
-const CARD_TINTS = [0xc7d2fe, 0xddd6fe, 0xe0e7ff]
-const SPHERE_TINTS = [0xddd6fe, 0xc7d2fe]
+// The full brand range. No text ever sits on the canvas — every block that
+// carries text is on its own near-solid panel — so the scene is drawn at full
+// strength instead of as a pale tint.
+const CARD_TINTS = [0x3730a3, 0x6d28d9, 0x818cf8]
+const SPHERE_TINTS = [0x8b5cf6, 0x818cf8]
 const CARD_WIDTH = 1.7
 const CARD_HEIGHT = 1.05
 const CARD_RADIUS = 0.22
@@ -50,7 +51,6 @@ const host = ref(null)
 const canvasEl = ref(null)
 
 const isStatic = computed(() => tier.value === 'static')
-const veilStyle = { background: veilBackground() }
 
 const field = { width: 1, height: 1 }
 const pointer = { x: 0, y: 0, targetX: 0, targetY: 0 }
@@ -126,8 +126,10 @@ function buildScene(config) {
   const group = new THREE.Group()
   group.rotation.x = -0.04
 
-  const ambient = new THREE.AmbientLight(0xffffff, 0.95)
-  const key = new THREE.DirectionalLight(0xffffff, 0.85)
+  // Ambient + key stay below 1.0 combined: brighter light clips the instance
+  // colours to white and the cards read as grey slabs instead of indigo ones.
+  const ambient = new THREE.AmbientLight(0xffffff, 0.62)
+  const key = new THREE.DirectionalLight(0xffffff, 0.5)
   key.position.set(4, 7, 9)
   group.add(ambient, key)
   scene.add(group)
@@ -136,7 +138,7 @@ function buildScene(config) {
   const tint = new THREE.Color()
 
   const cardGeometry = roundedCardGeometry(THREE, CARD_WIDTH, CARD_HEIGHT, CARD_RADIUS)
-  const cardMaterial = makeMaterial(config, 0.66)
+  const cardMaterial = makeMaterial(config, 0.78)
   const cardMesh = new THREE.InstancedMesh(cardGeometry, cardMaterial, config.cardCount)
   cardMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
   cardMesh.frustumCulled = false
@@ -167,7 +169,7 @@ function buildScene(config) {
     Math.max(6, config.sphereSegments),
     Math.max(5, Math.round(config.sphereSegments * 0.65))
   )
-  const sphereMaterial = makeMaterial(config, 0.5)
+  const sphereMaterial = makeMaterial(config, 0.7)
   const sphereMesh = new THREE.InstancedMesh(sphereGeometry, sphereMaterial, config.sphereCount)
   sphereMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
   sphereMesh.frustumCulled = false
@@ -504,7 +506,6 @@ onBeforeUnmount(() => {
       class="app-background-canvas"
       aria-hidden="true"
     ></canvas>
-    <span class="app-background-veil" :style="veilStyle"></span>
   </div>
 </template>
 
@@ -517,11 +518,12 @@ onBeforeUnmount(() => {
   z-index: 0;
   overflow: hidden;
   pointer-events: none;
-  /* Also the whole of the "static" tier: no canvas, just this wash. */
+  /* Also the whole of the "static" tier: no canvas, just this indigo-to-violet
+     field. It is the visible backdrop, so it is not toned down by a veil. */
   background:
-    radial-gradient(120% 120% at 8% 0%, rgba(139, 92, 246, 0.24) 0%, rgba(139, 92, 246, 0) 58%),
-    radial-gradient(110% 120% at 94% 102%, rgba(79, 70, 229, 0.22) 0%, rgba(79, 70, 229, 0) 62%),
-    linear-gradient(135deg, #eef2ff 0%, #e4e9ff 48%, #ede9fe 100%);
+    radial-gradient(115% 105% at 4% -6%, rgba(79, 70, 229, 0.95) 0%, rgba(79, 70, 229, 0) 56%),
+    radial-gradient(120% 115% at 98% 104%, rgba(139, 92, 246, 0.9) 0%, rgba(139, 92, 246, 0) 58%),
+    linear-gradient(135deg, #c7d2fe 0%, #e0e7ff 46%, #ddd6fe 100%);
 }
 
 .app-background-canvas {
@@ -533,11 +535,5 @@ onBeforeUnmount(() => {
   pointer-events: none;
 }
 
-/* The slate-50 veil that keeps text at WCAG AA over whatever the canvas paints. */
-.app-background-veil {
-  position: absolute;
-  inset: 0;
-  display: block;
-  pointer-events: none;
-}
+
 </style>

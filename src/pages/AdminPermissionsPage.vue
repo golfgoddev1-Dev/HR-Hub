@@ -461,7 +461,8 @@ onBeforeUnmount(() => window.clearTimeout(debounceTimer))
   margin: 10px 0 0;
   font-size: 12.5px;
   line-height: 1.6;
-  color: #7c8f93;
+  /* Was #7c8f93 (3.38:1). */
+  color: #5c7176;
   overflow-wrap: anywhere;
 }
 
@@ -526,11 +527,13 @@ onBeforeUnmount(() => window.clearTimeout(debounceTimer))
 
 .meta-icon {
   font-size: 15px;
-  color: #7c8f93;
+  /* Was #7c8f93 (3.38:1). */
+  color: #5c7176;
 }
 
 .dot {
-  color: #b3c2c0;
+  /* Was #b3c2c0 (1.84:1). */
+  color: #5c7176;
 }
 
 .chip {
@@ -658,7 +661,8 @@ onBeforeUnmount(() => window.clearTimeout(debounceTimer))
 .switch-desc {
   font-size: 12px;
   line-height: 1.5;
-  color: #7c8f93;
+  /* Was #7c8f93 (3.38:1). */
+  color: #5c7176;
 }
 
 .switch-control {

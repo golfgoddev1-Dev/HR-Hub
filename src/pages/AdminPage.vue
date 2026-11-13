@@ -289,7 +289,8 @@ onMounted(async () => {
 }
 
 .stat-value.is-empty {
-  color: #94a5a7;
+  /* Was #94a5a7 (2.56:1). */
+  color: #5c7176;
 }
 
 .stat-label {
@@ -303,7 +304,8 @@ onMounted(async () => {
   margin-top: 4px;
   font-size: 11.5px;
   line-height: 1.5;
-  color: #7c8f93;
+  /* Was #7c8f93 (3.38:1). */
+  color: #5c7176;
 }
 
 .state-line {
@@ -332,7 +334,8 @@ onMounted(async () => {
 
 .state-hint {
   display: block;
-  color: #7c8f93;
+  /* Was #7c8f93 (3.38:1). */
+  color: #5c7176;
   font-size: 12px;
 }
 
@@ -358,7 +361,8 @@ onMounted(async () => {
 .section-sub {
   margin: 0;
   font-size: 12.5px;
-  color: #7c8f93;
+  /* Was #7c8f93 (3.38:1). */
+  color: #5c7176;
 }
 
 .shortcut-grid {
@@ -459,7 +463,8 @@ a.shortcut:active {
 }
 
 .shortcut-locked .shortcut-go {
-  color: #94a5a7;
+  /* Was #94a5a7 (2.56:1). */
+  color: #5c7176;
   font-weight: 500;
 }
 

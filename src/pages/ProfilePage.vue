@@ -153,7 +153,8 @@ onMounted(() => {
   align-items: center;
   padding: 3px 10px;
   border-radius: 999px;
-  background: #b7791f;
+  /* 5.13:1 with white; the old #b7791f only reached 3.64:1. */
+  background: #98620f;
   color: #ffffff;
   font-size: 12px;
   font-weight: 700;
@@ -199,7 +200,8 @@ onMounted(() => {
 
 .row dd.muted {
   font-weight: 500;
-  color: #8b9c9a;
+  /* Was #8b9c9a: 2.87:1 on the white card. */
+  color: #5c7176;
 }
 
 .flag {

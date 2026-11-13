@@ -88,25 +88,11 @@ export const DEVICE_HINT_LIMITS = Object.freeze({
   maxCores: 4,
 })
 
-// Slate-50 veil painted over the canvas. 0.86 is the lightest veil that keeps
-// every text token the signed-in screens use at WCAG AA or better over the
-// darkest pixel the scene may paint (indigo-200 #c7d2fe); the muted grey
-// #5c7176 used for page subtitles already sits at 4.70:1 on the current
-// #f3f6f5 shell background, so there is no room for a darker backdrop.
-export const VEIL_OPACITY = 0.86
-
-export const BACKGROUND_PALETTE = Object.freeze({
-  slate50: '#f8fafc',
-  indigo600: '#4f46e5',
-  violet500: '#8b5cf6',
-  // The darkest tone the canvas may use, and the one the contrast test checks.
-  sceneFloor: '#c7d2fe',
-})
-
-const DEFAULT_HINT_SEQUENCE = Object.freeze([
-  '(pointer: coarse)',
-  '(prefers-reduced-motion: reduce)',
-])
+// Nothing is painted over the canvas: the scene is the visible backdrop, and
+// readability comes from the panels the text sits on instead of from a veil.
+// Every surface in src/styles.css is at least this opaque, and none of them
+// depends on a backdrop blur.
+export const SURFACE_OPACITY = 0.97
 
 function defaultWindow() {
   return typeof window === 'undefined' ? null : window
@@ -270,14 +256,4 @@ export function createBenchmark(startTier, options = {}) {
   }
 }
 
-/** The veil colour as CSS, so the canvas and the CSS fallback share one value. */
-export function veilBackground(alpha = VEIL_OPACITY) {
-  const [r, g, b] = BACKGROUND_PALETTE.slate50
-    .replace('#', '')
-    .match(/.{2}/g)
-    .map((part) => parseInt(part, 16))
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`
-}
 
-/** Query strings the component re-reads on mount; exported for the tests. */
-export const MEDIA_QUERIES = DEFAULT_HINT_SEQUENCE

@@ -392,9 +392,9 @@ const logout = createLogoutFlow({
   z-index: 40;
   padding: 8px 10px;
   border-radius: 24px;
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(18px) saturate(160%);
-  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  /* Near-solid, no blur: the menu is a text surface, so its contrast must not
+     depend on what the 3D scene is doing behind it. */
+  background: rgba(255, 255, 255, 0.98);
   border: 1px solid rgba(255, 255, 255, 0.8);
   box-shadow:
     0 18px 40px -24px rgba(16, 80, 78, 0.45),
@@ -1054,9 +1054,8 @@ const logout = createLogoutFlow({
     box-sizing: border-box;
     height: calc(64px + env(safe-area-inset-bottom));
     padding: 0 4px env(safe-area-inset-bottom);
-    background: rgba(255, 255, 255, 0.94);
-    backdrop-filter: blur(18px) saturate(160%);
-    -webkit-backdrop-filter: blur(18px) saturate(160%);
+    /* Near-solid, no blur: the tab labels are text on this bar. */
+    background: rgba(255, 255, 255, 0.98);
     border-top: 1px solid rgba(16, 80, 78, 0.12);
     box-shadow: 0 -10px 26px -20px rgba(16, 80, 78, 0.6);
   }

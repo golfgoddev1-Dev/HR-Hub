@@ -135,7 +135,11 @@ onBeforeUnmount(() => releaseApprovals())
 <style scoped>
 .app-layout {
   min-height: 100vh;
-  background: #f3f6f5;
+  /* Transparent on purpose: the fixed 3D layer behind this box is the page
+     backdrop. Every block that carries text has its own near-solid panel (see
+     the signed-in surface rules in src/styles.css), so the scene is visible in
+     the margins and between panels without ever sitting under text. */
+  background: transparent;
   overflow-x: hidden;
 }
 

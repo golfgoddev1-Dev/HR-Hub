@@ -1397,7 +1397,8 @@ onBeforeUnmount(() => {
   }
 
   :deep(.fc .fc-day-other .day-cell-number) {
-    color: #9aa8a5;
+    /* Was #9aa8a5 (2.47:1 on white); other-month dates are still text. */
+    color: #5c7176;
   }
 
   :deep(.fc .fc-day-other .day-pill),
