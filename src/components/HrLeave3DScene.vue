@@ -5,21 +5,32 @@
 // Three.js is pulled in with a dynamic import() inside this component, so the
 // library becomes its own chunk and is only fetched when the page decides the
 // device can afford it. In lite mode (see src/lib/lite-mode.js) the import never
-// runs and the component draws the same static gradient without a canvas, so a
-// phone still shows the whole list and every button.
+// runs and the component draws the same indigo-to-violet gradient without a
+// canvas, so a phone still shows the whole list and every button.
 //
 // The layer is aria-hidden: it carries no information. Text, buttons and leave
 // rows stay ordinary HTML either way.
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { isLiteMode } from '../lib/lite-mode.js'
 
-// The page's own tokens, so the objects look like they belong to it.
-const COLOR_CARD = 0xd9ece7
-const COLOR_BACK = 0xeef7f4
-const COLOR_ACCENT = 0x8fb8ae
-const COLOR_RING = 0x10504e
+// The page's palette, so the objects belong to it. Status colours stay semantic.
+const COLOR_APPROVED = 0x34d399
+const COLOR_PENDING = 0xfbbf24
+const COLOR_REJECTED = 0xf87171
+const COLOR_CALENDAR = 0x4f46e5
+const COLOR_CALENDAR_HEAD = 0x8b5cf6
+const COLOR_DOT = 0xffffff
+const COLOR_RING = 0x8b5cf6
+const COLOR_FILL = 0x8b5cf6
+
 const PIXEL_RATIO_CAP = 1.5
-const SPIN_PER_FRAME = 0.0018
+const CARD_COUNT = 8
+const ORBIT_RX = 3.15
+const ORBIT_RY = 1.1
+const ORBIT_SPEED = 0.0009
+const CAMERA_FOV = 40
+const CAMERA_Z = 7.4
+const STATUS_CYCLE = ['approved', 'pending', 'rejected', 'approved', 'pending', 'rejected', 'approved', 'pending']
 
 const host = ref(null)
 const canvasEl = ref(null)
@@ -33,6 +44,7 @@ let renderer = null
 let scene = null
 let camera = null
 let group = null
+let calendar = null
 let cards = []
 let frameId = 0
 let running = false
@@ -63,10 +75,17 @@ function startLoop() {
     }
     frameId = requestAnimationFrame(tick)
     elapsed += 1
-    if (group) group.rotation.y += SPIN_PER_FRAME
+
+    // Slow orbit: the ring of cards turns, each one drifts and leans a little.
+    if (group) group.rotation.y += ORBIT_SPEED
     for (const card of cards) {
-      card.mesh.position.y = card.baseY + Math.sin(elapsed * 0.012 + card.phase) * 0.06
+      const wobble = Math.sin(elapsed * 0.009 + card.phase)
+      card.mesh.position.y = card.baseY + wobble * 0.045
+      card.mesh.position.z = card.baseZ + Math.cos(elapsed * 0.007 + card.phase) * 0.07
+      card.mesh.rotation.z = card.tilt + wobble * 0.025
     }
+    if (calendar) calendar.rotation.y = Math.sin(elapsed * 0.004) * 0.08
+
     renderer.render(scene, camera)
   }
   frameId = requestAnimationFrame(tick)
@@ -79,11 +98,19 @@ function onVisibilityChange() {
 
 function resize() {
   if (!renderer || !camera || !host.value) return
-  const width = host.value.clientWidth || 1
-  const height = host.value.clientHeight || 1
+  const width = Math.max(1, Math.round(host.value.clientWidth || 1))
+  const height = Math.max(1, Math.round(host.value.clientHeight || 1))
   renderer.setSize(width, height, false)
   camera.aspect = width / height
   camera.updateProjectionMatrix()
+
+  // A wide, short band needs a slightly larger cluster, a phone-width band a
+  // smaller one, so the ring never clips on either.
+  if (group) {
+    const fit = Math.min(1.25, Math.max(0.78, camera.aspect / 3.6))
+    group.scale.setScalar(fit)
+  }
+
   // A hidden or collapsed panel costs nothing.
   if (width <= 1 || height <= 1) stopLoop()
   else startLoop()
@@ -93,6 +120,7 @@ function dispose({ removeCanvas = true } = {}) {
   disposed = true
   stopLoop()
   window.removeEventListener('resize', resize)
+  window.removeEventListener('orientationchange', resize)
   document.removeEventListener('visibilitychange', onVisibilityChange)
   if (resizeObserver) resizeObserver.disconnect()
   resizeObserver = null
@@ -120,15 +148,102 @@ function dispose({ removeCanvas = true } = {}) {
   scene = null
   camera = null
   group = null
+  calendar = null
+}
+
+/** A rounded rectangle with a small bevel, so the cards read as soft cards. */
+function roundedRectGeometry(THREE, width, height, depth, radius) {
+  const halfW = width / 2
+  const halfH = height / 2
+  const r = Math.min(radius, halfW, halfH)
+  const shape = new THREE.Shape()
+  shape.moveTo(-halfW + r, -halfH)
+  shape.lineTo(halfW - r, -halfH)
+  shape.quadraticCurveTo(halfW, -halfH, halfW, -halfH + r)
+  shape.lineTo(halfW, halfH - r)
+  shape.quadraticCurveTo(halfW, halfH, halfW - r, halfH)
+  shape.lineTo(-halfW + r, halfH)
+  shape.quadraticCurveTo(-halfW, halfH, -halfW, halfH - r)
+  shape.lineTo(-halfW, -halfH + r)
+  shape.quadraticCurveTo(-halfW, -halfH, -halfW + r, -halfH)
+  return new THREE.ExtrudeGeometry(shape, {
+    depth,
+    bevelEnabled: true,
+    bevelSize: 0.015,
+    bevelThickness: 0.015,
+    bevelSegments: 2,
+    curveSegments: 8,
+    steps: 1,
+  })
+}
+
+function buildCalendar(THREE) {
+  const tile = new THREE.Group()
+
+  const bodyGeometry = roundedRectGeometry(THREE, 1.6, 1.5, 0.16, 0.2)
+  const bodyMaterial = new THREE.MeshStandardMaterial({
+    color: COLOR_CALENDAR,
+    roughness: 0.48,
+    metalness: 0.08,
+  })
+  const body = new THREE.Mesh(bodyGeometry, bodyMaterial)
+  body.position.z = -0.08
+  disposables.push(bodyGeometry, bodyMaterial)
+  tile.add(body)
+
+  const headGeometry = roundedRectGeometry(THREE, 1.6, 0.38, 0.17, 0.16)
+  const headMaterial = new THREE.MeshStandardMaterial({
+    color: COLOR_CALENDAR_HEAD,
+    roughness: 0.42,
+    metalness: 0.08,
+  })
+  const head = new THREE.Mesh(headGeometry, headMaterial)
+  head.position.set(0, 0.56, -0.075)
+  disposables.push(headGeometry, headMaterial)
+  tile.add(head)
+
+  // Six day cells, the calendar's only detail: quiet, no text, no icons.
+  const dotGeometry = new THREE.BoxGeometry(0.19, 0.13, 0.03)
+  const dotMaterial = new THREE.MeshStandardMaterial({
+    color: COLOR_DOT,
+    roughness: 0.7,
+    metalness: 0,
+  })
+  disposables.push(dotGeometry, dotMaterial)
+  const rows = [0.14, -0.16, -0.46]
+  for (const y of rows) {
+    for (const x of [-0.46, 0, 0.46]) {
+      const dot = new THREE.Mesh(dotGeometry, dotMaterial)
+      // In front of the tile body (its front face sits at z = 0.08), so the day
+      // cells read as a calendar instead of hiding inside the slab.
+      dot.position.set(x, y, 0.11)
+      tile.add(dot)
+    }
+  }
+
+  // A soft contact shadow so the tile sits on the background, not in front of it.
+  const shadowGeometry = new THREE.CircleGeometry(1.15, 40)
+  const shadowMaterial = new THREE.MeshBasicMaterial({
+    color: 0x1e1b4b,
+    transparent: true,
+    opacity: 0.08,
+  })
+  const shadow = new THREE.Mesh(shadowGeometry, shadowMaterial)
+  shadow.scale.set(1.25, 0.85, 1)
+  shadow.position.set(0, -0.16, -0.32)
+  disposables.push(shadowGeometry, shadowMaterial)
+  tile.add(shadow)
+
+  return tile
 }
 
 async function buildScene() {
   // Dynamic import: a separate chunk, fetched only when the 3D layer is wanted.
   const THREE = await import('three')
-  if (disposed || lite.value) return null
+  if (disposed || lite.value) return
 
   const canvas = canvasEl.value
-  if (!canvas) return null
+  if (!canvas) return
 
   renderer = new THREE.WebGLRenderer({
     canvas,
@@ -139,58 +254,77 @@ async function buildScene() {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, PIXEL_RATIO_CAP))
 
   scene = new THREE.Scene()
-  camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100)
-  camera.position.set(0, 0.5, 6.4)
+  camera = new THREE.PerspectiveCamera(CAMERA_FOV, 1, 0.1, 100)
+  camera.position.set(0, 0.12, CAMERA_Z)
   camera.lookAt(0, 0, 0)
 
   group = new THREE.Group()
+  group.rotation.x = -0.05
   scene.add(group)
 
-  const ambient = new THREE.AmbientLight(COLOR_BACK, 1.15)
-  const keyLight = new THREE.DirectionalLight(0xffffff, 1.2)
-  keyLight.position.set(2.4, 3.2, 4)
-  const rimLight = new THREE.DirectionalLight(COLOR_ACCENT, 0.65)
-  rimLight.position.set(-3, -1.4, -2)
-  scene.add(ambient, keyLight, rimLight)
+  const ambient = new THREE.AmbientLight(0xffffff, 0.92)
+  const keyLight = new THREE.DirectionalLight(0xffffff, 1.05)
+  keyLight.position.set(2.6, 3.4, 5)
+  const fillLight = new THREE.DirectionalLight(COLOR_FILL, 0.32)
+  fillLight.position.set(-3.2, -1.2, 2.4)
+  scene.add(ambient, keyLight, fillLight)
 
-  // Three soft cards, the same rounded rectangles the list is made of.
-  const cardGeometry = new THREE.BoxGeometry(1.5, 0.94, 0.1)
+  // The faint path the cards travel on.
+  const ringGeometry = new THREE.TorusGeometry(1, 0.004, 8, 120)
+  const ringMaterial = new THREE.MeshBasicMaterial({
+    color: COLOR_RING,
+    transparent: true,
+    opacity: 0.26,
+  })
+  const ring = new THREE.Mesh(ringGeometry, ringMaterial)
+  ring.scale.set(ORBIT_RX, ORBIT_RY, 1)
+  ring.position.z = -0.5
+  disposables.push(ringGeometry, ringMaterial)
+  group.add(ring)
+
+  calendar = buildCalendar(THREE)
+  calendar.position.z = 0.1
+  group.add(calendar)
+
+  // Eight small leave cards in three status colours, one shared geometry.
+  const cardGeometry = roundedRectGeometry(THREE, 0.7, 0.48, 0.07, 0.11)
   disposables.push(cardGeometry)
-  const cardSpecs = [
-    { x: -1.55, y: 0.3, z: 0.2, tilt: 0.08, color: COLOR_CARD, phase: 0 },
-    { x: 0.05, y: -0.4, z: -0.35, tilt: -0.05, color: COLOR_BACK, phase: 2.1 },
-    { x: 1.6, y: 0.42, z: 0.05, tilt: 0.12, color: COLOR_ACCENT, phase: 4.2 },
-  ]
-  for (const spec of cardSpecs) {
+  const statusColors = {
+    approved: COLOR_APPROVED,
+    pending: COLOR_PENDING,
+    rejected: COLOR_REJECTED,
+  }
+  const statusMaterials = {}
+  for (const [name, color] of Object.entries(statusColors)) {
     const material = new THREE.MeshStandardMaterial({
-      color: spec.color,
-      roughness: 0.62,
-      metalness: 0.08,
-      transparent: true,
-      opacity: 0.92,
+      color,
+      roughness: 0.52,
+      metalness: 0.04,
     })
+    statusMaterials[name] = material
     disposables.push(material)
-    const mesh = new THREE.Mesh(cardGeometry, material)
-    mesh.position.set(spec.x, spec.y, spec.z)
-    mesh.rotation.z = spec.tilt
-    group.add(mesh)
-    cards.push({ mesh, baseY: spec.y, phase: spec.phase })
   }
 
-  // One slow ring behind them, in the page's deep teal.
-  const ringGeometry = new THREE.TorusGeometry(2.1, 0.026, 12, 88)
-  const ringMaterial = new THREE.MeshStandardMaterial({
-    color: COLOR_RING,
-    roughness: 0.42,
-    metalness: 0.22,
-    transparent: true,
-    opacity: 0.3,
-  })
-  disposables.push(ringGeometry, ringMaterial)
-  const ring = new THREE.Mesh(ringGeometry, ringMaterial)
-  ring.rotation.x = 1.18
-  ring.position.z = -0.9
-  group.add(ring)
+  for (let index = 0; index < CARD_COUNT; index += 1) {
+    const status = STATUS_CYCLE[index % STATUS_CYCLE.length]
+    const angle = (index / CARD_COUNT) * Math.PI * 2
+    const x = Math.cos(angle) * ORBIT_RX
+    const y = Math.sin(angle) * ORBIT_RY
+    const z = Math.sin(angle) * 0.5
+
+    const mesh = new THREE.Mesh(cardGeometry, statusMaterials[status])
+    mesh.position.set(x, y, z)
+    mesh.rotation.z = Math.cos(angle) * 0.12
+    mesh.rotation.y = -x * 0.1
+    group.add(mesh)
+    cards.push({
+      mesh,
+      baseY: y,
+      baseZ: z,
+      tilt: mesh.rotation.z,
+      phase: index * 0.8,
+    })
+  }
 
   return THREE
 }
@@ -212,6 +346,7 @@ onMounted(async () => {
   if (disposed || lite.value || !renderer) return
 
   window.addEventListener('resize', resize)
+  window.addEventListener('orientationchange', resize)
   document.addEventListener('visibilitychange', onVisibilityChange)
 
   if (typeof ResizeObserver === 'function' && host.value) {
@@ -244,18 +379,35 @@ onBeforeUnmount(dispose)
 </template>
 
 <style scoped>
+/* Decorative band. Lite mode shows exactly this gradient, with no canvas, so it
+   can never be an empty or black box. */
 .scene-3d {
   position: relative;
   display: block;
   width: 100%;
-  height: clamp(120px, 15vw, 168px);
+  height: 132px;
   overflow: hidden;
-  border: 1px solid #e0e8e6;
-  border-radius: 16px;
-  /* Lite mode keeps exactly this: one still gradient, no canvas. */
+  border: 1px solid #e2e8f0;
+  border-radius: 18px;
   background:
-    radial-gradient(120% 140% at 18% 10%, #f1f9f6 0%, rgba(241, 249, 246, 0) 62%),
-    linear-gradient(135deg, #f4faf8 0%, #e4f1ee 48%, #dcece8 100%);
+    radial-gradient(120% 160% at 8% 0%, rgba(139, 92, 246, 0.2) 0%, rgba(139, 92, 246, 0) 58%),
+    radial-gradient(110% 150% at 100% 110%, rgba(79, 70, 229, 0.16) 0%, rgba(79, 70, 229, 0) 60%),
+    linear-gradient(135deg, #eef2ff 0%, #e4e9ff 46%, #ede9fe 100%);
+  box-shadow:
+    0 1px 2px rgba(30, 27, 75, 0.05),
+    0 12px 28px rgba(30, 27, 75, 0.06);
+}
+
+@media (min-width: 600px) {
+  .scene-3d {
+    height: 168px;
+  }
+}
+
+@media (min-width: 960px) {
+  .scene-3d {
+    height: 216px;
+  }
 }
 
 .scene-canvas {
@@ -268,6 +420,6 @@ onBeforeUnmount(dispose)
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background: radial-gradient(80% 90% at 84% 88%, rgba(16, 80, 78, 0.1), transparent 70%);
+  background: radial-gradient(70% 90% at 84% 90%, rgba(139, 92, 246, 0.12), transparent 72%);
 }
 </style>

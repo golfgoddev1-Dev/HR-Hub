@@ -441,9 +441,44 @@ onMounted(async () => {
 
 <style scoped>
 .content {
-  max-width: 1120px;
-  margin: 0 auto;
-  padding: 28px 0 64px;
+  /* Approved palette, declared once on the page root. Contrast (WCAG AA, normal
+     text) is asserted in tests/hr-leave-3d.test.js:
+       indigo-900 on white 15.99, on slate-50 15.28, on slate-100 14.59
+       slate-600 on white 7.58, on slate-50 7.24, on slate-100 6.92
+       white on indigo-600 6.29, white on indigo-700 7.90
+       indigo-600 on white 6.29, on slate-50 6.01
+       indigo-700 on indigo-50 7.07
+       violet-500 is decorative only (4.23 on white): never used for text.
+     Status colours stay semantic and unchanged. */
+  --indigo-600: #4f46e5;
+  --indigo-700: #4338ca;
+  --indigo-900: #1e1b4b;
+  --indigo-50: #eef2ff;
+  --violet-500: #8b5cf6;
+  --slate-50: #f8fafc;
+  --slate-100: #f1f5f9;
+  --slate-200: #e2e8f0;
+  --slate-600: #475569;
+  --tap-target: 44px;
+  --radius-card: 16px;
+  --radius-control: 10px;
+
+  position: relative;
+  /* The shell already caps and centres its inner box, so the page background is
+     pulled out to those edges instead of sitting inside the shell padding. */
+  margin: 0 -20px;
+  padding: 24px 20px 64px;
+  color: var(--indigo-900);
+  background: var(--slate-50);
+  border-radius: 18px;
+}
+
+@media (max-width: 720px) {
+  .content {
+    margin: 0 -14px;
+    padding: 16px 14px 40px;
+    border-radius: 0 0 16px 16px;
+  }
 }
 
 .head {
@@ -452,46 +487,50 @@ onMounted(async () => {
   gap: 12px;
   align-items: flex-start;
   justify-content: space-between;
-  margin-bottom: 18px;
+  margin-bottom: 16px;
 }
 
 .head-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  min-width: 0;
 }
 
 .title {
   font-size: 24px;
   font-weight: 700;
-  color: #12343b;
+  color: var(--indigo-900);
   margin: 0 0 6px;
+  letter-spacing: -0.01em;
 }
 
 .sub {
   margin: 0;
   max-width: 640px;
   font-size: 13px;
-  color: #5c7176;
+  color: var(--slate-600);
   line-height: 1.6;
 }
 
 /* The decorative 3D layer sits above the filters as its own band, so no leave
    text ever shares space with it. */
 .hero-scene {
+  display: block;
   margin-bottom: 16px;
 }
 
 .filters {
   display: grid;
   gap: 12px;
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
   align-items: end;
   background: #ffffff;
-  border: 1px solid #e0e8e6;
-  border-radius: 14px;
+  border: 1px solid var(--slate-200);
+  border-radius: var(--radius-card);
   padding: 16px;
   margin-bottom: 16px;
+  box-shadow: 0 1px 2px rgba(30, 27, 75, 0.05);
 }
 
 .field {
@@ -504,19 +543,39 @@ onMounted(async () => {
 .label {
   font-size: 12.5px;
   font-weight: 600;
-  color: #12343b;
+  color: var(--indigo-900);
 }
 
 .input {
   width: 100%;
-  min-height: 40px;
-  padding: 8px 10px;
-  border: 1px solid #cfdcda;
-  border-radius: 9px;
-  background: #f8fbfa;
-  color: #12343b;
+  min-height: var(--tap-target);
+  padding: 8px 12px;
+  border: 1px solid var(--slate-200);
+  border-radius: var(--radius-control);
+  background: var(--slate-50);
+  color: var(--indigo-900);
   font-family: inherit;
   font-size: 14px;
+}
+
+/* Vuetify paints placeholders at 38% opacity (about 2.4:1 on white). The page
+   sets them to slate-600 instead, which is 7.58:1. */
+.input::placeholder,
+.field :deep(input::placeholder) {
+  color: var(--slate-600);
+  opacity: 1;
+}
+
+.input:focus-visible {
+  border-color: var(--indigo-600);
+  outline: 2px solid var(--violet-500);
+  outline-offset: 2px;
+}
+
+/* The Vuetify fields follow the same 44px tap target on every screen. */
+.field :deep(.v-field) {
+  min-height: var(--tap-target);
+  border-radius: var(--radius-control);
 }
 
 .filter-actions {
@@ -527,66 +586,122 @@ onMounted(async () => {
 
 .primary-btn,
 .ghost-btn {
-  min-height: 40px;
-  padding: 0 16px;
-  border-radius: 9px;
+  min-height: var(--tap-target);
+  padding: 0 18px;
+  border-radius: var(--radius-control);
   font-family: inherit;
   font-size: 13.5px;
   font-weight: 600;
   cursor: pointer;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    color 160ms ease;
 }
 
 .primary-btn {
-  background: #10504e;
+  background: var(--indigo-600);
   color: #ffffff;
-  border: 0;
+  border: 1px solid var(--indigo-600);
+  box-shadow: 0 6px 14px rgba(79, 70, 229, 0.2);
 }
 
 .ghost-btn {
   background: #ffffff;
-  color: #12343b;
-  border: 1px solid #cfdcda;
+  color: var(--indigo-900);
+  border: 1px solid var(--slate-200);
+}
+
+.primary-btn:focus-visible,
+.ghost-btn:focus-visible,
+.primary-link:focus-visible {
+  outline: 2px solid var(--violet-500);
+  outline-offset: 2px;
 }
 
 .primary-btn:disabled,
 .ghost-btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+  box-shadow: none;
 }
 
 .primary-link {
   display: inline-flex;
   align-items: center;
-  min-height: 40px;
-  padding: 0 16px;
-  border-radius: 9px;
-  background: #10504e;
+  justify-content: center;
+  min-height: var(--tap-target);
+  padding: 0 18px;
+  border-radius: var(--radius-control);
+  background: var(--indigo-600);
   color: #ffffff;
   font-size: 13.5px;
   font-weight: 600;
   text-decoration: none;
+  box-shadow: 0 6px 14px rgba(79, 70, 229, 0.2);
+  transition:
+    background-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+/* Hover is a bonus for precise pointers only; every action is a real button, so
+   a touch device loses nothing. */
+@media (hover: hover) and (pointer: fine) {
+  .primary-btn:hover {
+    background: var(--indigo-700);
+    border-color: var(--indigo-700);
+  }
+
+  .primary-link:hover {
+    background: var(--indigo-700);
+  }
+
+  .ghost-btn:hover {
+    background: var(--indigo-50);
+    border-color: #c7d2fe;
+  }
+
+  .list-row:hover {
+    background: var(--indigo-50);
+  }
+
+  /* A small follow of the pointer, only where lite mode left the tilt on. */
+  .list-row.row-tilt:hover {
+    z-index: 2;
+    transform: rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg)) translateZ(6px);
+    box-shadow:
+      0 2px 4px rgba(30, 27, 75, 0.08),
+      0 10px 22px rgba(30, 27, 75, 0.1),
+      0 22px 44px rgba(30, 27, 75, 0.06);
+  }
+
+  .note a:hover {
+    text-decoration: underline;
+  }
 }
 
 .hint,
 .empty {
   font-size: 13.5px;
-  color: #5c7176;
+  color: var(--slate-600);
   padding: 6px 2px;
 }
 
 .hint.warning {
-  color: #8a4b06;
+  color: #92400e;
 }
 
 .hint.error {
-  color: #a01b1b;
+  color: #b91c1c;
 }
 
 .card {
   background: #ffffff;
-  border: 1px solid #e0e8e6;
-  border-radius: 14px;
+  border: 1px solid var(--slate-200);
+  border-radius: var(--radius-card);
   padding: 8px 16px 4px;
+  box-shadow: 0 1px 2px rgba(30, 27, 75, 0.05);
 }
 
 .list-head,
@@ -601,9 +716,9 @@ onMounted(async () => {
 .list-head {
   font-size: 12px;
   font-weight: 700;
-  color: #5c7176;
+  color: var(--slate-600);
   padding: 8px 4px;
-  border-bottom: 1px solid #e6edeb;
+  border-bottom: 1px solid var(--slate-200);
 }
 
 .list-body {
@@ -612,46 +727,42 @@ onMounted(async () => {
 
 .list-row {
   width: 100%;
+  min-height: var(--tap-target);
   border: none;
-  border-bottom: 1px solid #eef3f2;
+  border-bottom: 1px solid var(--slate-100);
   background: none;
   padding: 10px 4px;
   font-family: inherit;
   font-size: 13.5px;
-  color: #12343b;
+  color: var(--indigo-900);
   cursor: pointer;
   transform: rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg));
   transform-style: preserve-3d;
-  transition: transform 240ms ease, box-shadow 240ms ease, background-color 160ms ease;
-  box-shadow: 0 1px 1px rgba(16, 80, 78, 0.04);
+  transition:
+    transform 240ms ease,
+    box-shadow 240ms ease,
+    background-color 160ms ease;
+  box-shadow: 0 1px 1px rgba(30, 27, 75, 0.03);
 }
 
-.list-row:hover,
 .list-row:focus-visible {
-  background: #f4f8f7;
-  outline: none;
+  background: var(--indigo-50);
+  outline: 2px solid var(--violet-500);
+  outline-offset: -2px;
 }
 
-/* A small follow of the pointer, only where lite mode left the tilt on. */
-.list-row.row-tilt:hover,
-.list-row.row-tilt:focus-visible {
-  z-index: 2;
-  transform: rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg)) translateZ(6px);
-  box-shadow:
-    0 2px 4px rgba(16, 80, 78, 0.1),
-    0 10px 20px rgba(16, 80, 78, 0.1),
-    0 22px 40px rgba(16, 80, 78, 0.06);
-}
-
-/* Entrance: the cards rise in with a short stagger, 280ms at the slowest. */
+/* Entrance: the cards rise in with a short stagger, 280ms at the slowest.
+   Transform and opacity only, so the list never changes size. */
 .leave-card-enter-active {
-  transition: opacity 260ms ease, transform 260ms cubic-bezier(0.22, 0.75, 0.35, 1);
+  transition:
+    opacity 260ms ease,
+    transform 260ms cubic-bezier(0.22, 0.75, 0.35, 1);
   transition-delay: calc(var(--row-index, 0) * 28ms);
 }
 
 .leave-card-enter-from {
   opacity: 0;
-  transform: translateY(12px) rotateX(-4deg) scale(0.985);
+  transform: translate3d(0, 12px, 0) rotateX(-4deg) scale(0.985);
 }
 
 .leave-card-leave-active {
@@ -677,31 +788,32 @@ onMounted(async () => {
 .code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 11.5px;
-  color: #5c7176;
+  color: var(--slate-600);
 }
 
 .name {
   font-weight: 600;
+  color: var(--indigo-900);
 }
 
 .meta {
   font-size: 11.5px;
-  color: #5c7176;
+  color: var(--slate-600);
 }
 
 .tag {
   align-self: flex-start;
   margin-top: 3px;
-  padding: 1px 6px;
+  padding: 2px 8px;
   border-radius: 999px;
-  background: #eef3f2;
+  background: var(--indigo-50);
   font-size: 11px;
-  color: #41585c;
+  color: var(--indigo-700);
 }
 
 .badge {
   display: inline-block;
-  padding: 3px 9px;
+  padding: 3px 10px;
   border-radius: 999px;
   font-size: 11.5px;
   font-weight: 700;
@@ -721,31 +833,36 @@ onMounted(async () => {
 
 .page-number {
   font-size: 13px;
-  color: #5c7176;
+  color: var(--slate-600);
 }
 
 .detail {
   margin-top: 20px;
   background: #ffffff;
-  border: 1px solid #dfe7e5;
-  border-radius: 14px;
-  padding: 18px 20px;
+  border: 1px solid var(--slate-200);
+  border-radius: var(--radius-card);
+  padding: 20px;
   transform-origin: top center;
+  box-shadow: 0 10px 30px rgba(30, 27, 75, 0.08);
 }
 
 /* The detail panel opens from the top: a slight scale and a small rotateX. */
 .leave-detail-enter-active {
-  transition: opacity 240ms ease, transform 240ms cubic-bezier(0.22, 0.75, 0.35, 1);
+  transition:
+    opacity 240ms ease,
+    transform 240ms cubic-bezier(0.22, 0.75, 0.35, 1);
 }
 
 .leave-detail-enter-from {
   opacity: 0;
   transform-origin: top center;
-  transform: perspective(900px) scale(0.96) rotateX(-8deg);
+  transform: perspective(900px) scale(0.96) rotateX(-6deg);
 }
 
 .leave-detail-leave-active {
-  transition: opacity 160ms ease, transform 160ms ease;
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease;
 }
 
 .leave-detail-leave-to {
@@ -765,65 +882,160 @@ onMounted(async () => {
   margin: 0;
   font-size: 18px;
   font-weight: 700;
-  color: #12343b;
+  color: var(--indigo-900);
 }
 
 .facts {
   display: grid;
   gap: 10px;
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   margin: 0;
-  padding: 12px 14px;
+  padding: 14px;
   border-radius: 12px;
-  background: #f6faf9;
+  background: var(--slate-50);
+  border: 1px solid var(--slate-100);
 }
 
 .fact dt {
   font-size: 12px;
-  color: #5c7176;
+  color: var(--slate-600);
 }
 
 .fact dd {
   margin: 2px 0 0;
   font-size: 14px;
   font-weight: 600;
-  color: #12343b;
+  color: var(--indigo-900);
+  overflow-wrap: anywhere;
 }
 
 .note {
   margin: 10px 0 0;
   font-size: 13px;
-  color: #5c7176;
+  color: var(--slate-600);
   line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.note-sub {
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  color: var(--slate-600);
+  overflow-wrap: anywhere;
 }
 
 .note a {
-  color: #10504e;
+  color: var(--indigo-600);
   font-weight: 600;
 }
 
+.detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+/* Phones and small tablets: the rows ARE the cards, so the wrapper steps back. */
 @media (max-width: 760px) {
-  .list-head { display: none; }
+  .list-head {
+    display: none;
+  }
+
+  .card {
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+    padding: 0;
+  }
+
   .list-row {
     grid-template-columns: 1fr;
     gap: 4px;
-    border: 1px solid #e6edeb;
-    border-radius: 10px;
+    border: 1px solid var(--slate-200);
+    border-radius: 12px;
     margin-bottom: 8px;
-    padding: 12px;
+    padding: 12px 14px;
+    background: #ffffff;
+    box-shadow: 0 1px 2px rgba(30, 27, 75, 0.05);
+  }
+
+  .badge {
+    font-size: 12px;
+    padding: 4px 10px;
+  }
+
+  .pager {
+    justify-content: space-between;
   }
 }
 
-/* Reduced motion: no tilt, no rise, no scale. The list and the panel still
-   render, just without movement. */
+/* Below 600px the detail panel is a full-screen sheet: no chance of a sideways
+   overflow, and the page underneath cannot be tapped by accident. */
+@media (max-width: 599px) {
+  .detail {
+    position: fixed;
+    inset: 0;
+    z-index: 70;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    padding: calc(10px + env(safe-area-inset-top)) 16px
+      calc(28px + env(safe-area-inset-bottom));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    box-shadow: none;
+    background: #ffffff;
+  }
+
+  .detail-head {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    margin-bottom: 14px;
+    padding: 10px 0 12px;
+    background: #ffffff;
+    border-bottom: 1px solid var(--slate-200);
+  }
+
+  .detail-title {
+    font-size: 17px;
+  }
+
+  .facts {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px 12px;
+  }
+
+  .detail-actions button {
+    flex: 1 1 100%;
+  }
+
+  /* A sheet slides up rather than opening from the top: no perspective, so it
+     cannot paint outside the viewport. */
+  .leave-detail-enter-from {
+    opacity: 0;
+    transform: translate3d(0, 16px, 0);
+  }
+
+  .leave-detail-leave-to {
+    opacity: 0;
+    transform: none;
+  }
+}
+
+/* Reduced motion: no tilt, no rise, no scale, no slide. The list and the panel
+   still render, just without movement. */
 @media (prefers-reduced-motion: reduce) {
   .list-row,
   .list-row.row-tilt:hover,
-  .list-row.row-tilt:focus-visible,
   .leave-card-enter-active,
   .leave-card-leave-active,
   .leave-detail-enter-active,
-  .leave-detail-leave-active {
+  .leave-detail-leave-active,
+  .primary-btn,
+  .ghost-btn,
+  .primary-link {
     transition: none;
     transform: none;
   }
