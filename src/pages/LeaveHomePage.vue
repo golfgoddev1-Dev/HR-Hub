@@ -19,6 +19,7 @@ import {
   certificateStatus,
 } from '../leave-certificate.js'
 import { setApprovalCount } from '../lib/approval-count.js'
+import { useCountUp } from '../lib/use-count-up.js'
 
 const LOAD_ERROR = 'โหลดรายการใบลาไม่สำเร็จ กรุณาลองใหม่'
 const EMPTY = 'ยังไม่มีรายการใบลา'
@@ -42,6 +43,10 @@ const errorMessage = ref('')
 const results = ref([])
 // Own request counts come from the Worker, scoped to this employee.
 const counts = ref({ pending: 0, approved: 0 })
+// The two totals count up to the Worker's numbers; the labels above them never
+// move, so the row keeps its height while the digits climb.
+const pendingShown = useCountUp(computed(() => counts.value.pending))
+const approvedShown = useCountUp(computed(() => counts.value.approved))
 const retentionDays = ref(0)
 
 const route = useRoute()
@@ -129,11 +134,11 @@ onMounted(async () => {
       <section class="summary">
         <div class="summary-item">
           <span class="summary-label">ใบลารออนุมัติ</span>
-          <span class="summary-value">{{ counts.pending }}</span>
+          <span class="summary-value">{{ pendingShown }}</span>
         </div>
         <div class="summary-item">
           <span class="summary-label">ใบลาอนุมัติแล้ว</span>
-          <span class="summary-value">{{ counts.approved }}</span>
+          <span class="summary-value">{{ approvedShown }}</span>
         </div>
       </section>
 

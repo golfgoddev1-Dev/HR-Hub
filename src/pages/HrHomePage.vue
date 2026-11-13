@@ -261,7 +261,10 @@ const cards = [
 
 .card-desc {
   font-size: 13px;
-  color: #5c7176;
+  /* Was #5c7176. On a frosted card the mint icon tile beside the caption
+     blurs into the surface at 4.21:1; this keeps the caption at 4.6:1 over the
+     darkest pixel the glass can show here, still 6.0:1 on plain white. */
+  color: #55696d;
   line-height: 1.6;
 }
 

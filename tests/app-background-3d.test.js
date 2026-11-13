@@ -10,6 +10,7 @@ import { readFileSync } from 'node:fs'
 
 import {
   BENCHMARK,
+  GLASS,
   QUALITY_TIERS,
   SURFACE_OPACITY,
   createBenchmark,
@@ -28,6 +29,7 @@ const threeMock = vi.hoisted(() => {
     disposedInstanced: 0,
     renders: 0,
     instanced: [],
+    bufferAttributes: [],
     pixelRatios: [],
     sizes: [],
     contextLosses: 0,
@@ -195,10 +197,46 @@ const threeMock = vi.hoisted(() => {
     }
   }
 
+  class BufferGeometry extends Geometry {
+    constructor() {
+      super()
+      this.attributes = {}
+    }
+    setAttribute(name, attribute) {
+      this.attributes[name] = attribute
+      return this
+    }
+  }
+
+  class BufferAttribute {
+    constructor(array, itemSize) {
+      this.array = array
+      this.itemSize = itemSize
+      this.needsUpdate = false
+      this.usage = null
+      state.bufferAttributes.push(this)
+    }
+    setUsage(usage) {
+      this.usage = usage
+      return this
+    }
+  }
+
+  class Points extends Object3D {
+    constructor(geometry, material) {
+      super()
+      this.geometry = geometry
+      this.material = material
+    }
+  }
+
   return {
     state,
     module: {
+      AdditiveBlending: 1,
       AmbientLight: Object3D,
+      BufferAttribute,
+      BufferGeometry,
       Color,
       DirectionalLight: Object3D,
       DoubleSide: 2,
@@ -206,6 +244,8 @@ const threeMock = vi.hoisted(() => {
       Group: Object3D,
       InstancedMesh,
       MeshBasicMaterial: Material,
+      Points,
+      PointsMaterial: Material,
       MeshLambertMaterial: Material,
       MeshStandardMaterial: Material,
       Object3D,
@@ -319,6 +359,28 @@ function contrast(foreground, background) {
   return (lighter + 0.05) / (darker + 0.05)
 }
 
+/** The value of one custom property in a stylesheet. */
+function cssVar(source, name) {
+  const match = new RegExp(`${name}:\\s*([^;]+);`).exec(source)
+  return match ? match[1].trim() : ''
+}
+
+/** The alpha of an `rgba(255, 255, 255, a)` value, or null. */
+function whiteAlpha(value) {
+  const match = /rgba\(\s*255,\s*255,\s*255,\s*([\d.]+)\s*\)/.exec(String(value))
+  return match ? Number(match[1]) : null
+}
+
+/** A white tint at `alpha` over a backdrop colour: what a glass panel shows. */
+function glassOver(backdropHex, alpha) {
+  const base = backdropHex
+    .replace('#', '')
+    .match(/.{2}/g)
+    .map((part) => parseInt(part, 16))
+  const mixed = base.map((channel) => Math.round(255 * alpha + channel * (1 - alpha)))
+  return `#${mixed.map((channel) => channel.toString(16).padStart(2, '0')).join('')}`
+}
+
 
 beforeEach(() => {
   raf.nextId = 0
@@ -327,6 +389,7 @@ beforeEach(() => {
   raf.cancelled = 0
   raf.clock = 0
   threeMock.state.instanced.length = 0
+  threeMock.state.bufferAttributes.length = 0
   threeMock.state.sizes.length = 0
   threeMock.state.pixelRatios.length = 0
   threeMock.state.renders = 0
@@ -362,27 +425,56 @@ afterEach(() => {
 
 describe('tier constants', () => {
   it('declares the three budgets and the static fallback', () => {
-    expect(QUALITY_TIERS.high.objectCount).toBe(60)
+    // The tier budget from the brief: 120 / 60 / 24 objects, 300 / 120 / 40
+    // particles, 1.5 / 1.0 / 0.75 pixel ratio, 60 / 30 / 24 fps.
+    expect(QUALITY_TIERS.high.objectCount).toBe(120)
+    expect(QUALITY_TIERS.high.particleCount).toBe(300 - 40)
     expect(QUALITY_TIERS.high.pixelRatioCap).toBe(1.5)
     expect(QUALITY_TIERS.high.targetFps).toBe(60)
 
-    expect(QUALITY_TIERS.medium.objectCount).toBe(30)
+    expect(QUALITY_TIERS.medium.objectCount).toBe(60)
+    expect(QUALITY_TIERS.medium.particleCount).toBe(120)
     expect(QUALITY_TIERS.medium.pixelRatioCap).toBe(1)
     expect(QUALITY_TIERS.medium.targetFps).toBe(30)
 
-    expect(QUALITY_TIERS.low.objectCount).toBe(12)
+    expect(QUALITY_TIERS.low.objectCount).toBe(24)
+    expect(QUALITY_TIERS.low.particleCount).toBe(32)
     expect(QUALITY_TIERS.low.pixelRatioCap).toBe(0.75)
     expect(QUALITY_TIERS.low.targetFps).toBe(24)
 
     expect(QUALITY_TIERS.static.objectCount).toBe(0)
+    expect(QUALITY_TIERS.static.particleCount).toBe(0)
     expect(QUALITY_TIERS.static.targetFps).toBe(0)
   })
 
-  it('splits each budget into cards and spheres', () => {
+  it('never puts more than the budget in the scene', () => {
+    for (const name of ['high', 'medium', 'low', 'static']) {
+      const tier = QUALITY_TIERS[name]
+      expect(tier.particleCount, name).toBeLessThanOrEqual(
+        { high: 300, medium: 120, low: 40, static: 0 }[name]
+      )
+      expect(tier.glassBlur, name).toBeLessThanOrEqual(QUALITY_TIERS.high.glassBlur)
+    }
+    expect(QUALITY_TIERS.high.particleCount).toBeLessThanOrEqual(300)
+    expect(QUALITY_TIERS.medium.particleCount).toBeLessThanOrEqual(120)
+    expect(QUALITY_TIERS.low.particleCount).toBeLessThanOrEqual(40)
+  })
+
+  it('splits each budget into the three planes, spheres, glints and calendar', () => {
     for (const name of ['high', 'medium', 'low']) {
       const tier = QUALITY_TIERS[name]
-      expect(tier.cardCount + tier.sphereCount, name).toBe(tier.objectCount)
+      expect(
+        tier.cardCount + tier.sphereCount + tier.glintCount + tier.calendarCellCount,
+        name
+      ).toBe(tier.objectCount)
+      expect(tier.cardCount % tier.planeCount, name).toBe(0)
+      expect(tier.planeCount, name).toBe(3)
     }
+  })
+
+  it('drops the glints on the lowest 3D tier', () => {
+    expect(QUALITY_TIERS.low.material).toBe('basic')
+    expect(QUALITY_TIERS.low.glintCount).toBe(0)
   })
 
   it('never enables shadow maps or post-processing', () => {
@@ -398,11 +490,13 @@ describe('tier constants', () => {
     expect(QUALITY_TIERS.low.material).toBe('basic')
   })
 
-  it('offers mouse parallax only on fine pointers at high and medium', () => {
+  it('offers mouse parallax and card tilt only at high', () => {
     expect(QUALITY_TIERS.high.mouseParallax).toBe(true)
-    expect(QUALITY_TIERS.medium.mouseParallax).toBe(true)
-    expect(QUALITY_TIERS.low.mouseParallax).toBe(false)
-    expect(QUALITY_TIERS.static.mouseParallax).toBe(false)
+    expect(QUALITY_TIERS.high.cardTilt).toBe(true)
+    for (const name of ['medium', 'low', 'static']) {
+      expect(QUALITY_TIERS[name].mouseParallax, name).toBe(false)
+      expect(QUALITY_TIERS[name].cardTilt, name).toBe(false)
+    }
   })
 })
 
@@ -551,8 +645,12 @@ describe('AppBackground3D mount', () => {
     expect(threeMock.state.renderers).toBe(renderersBefore + 1)
     expect(wrapper.attributes('data-tier')).toBe('high')
     expect(wrapper.find('canvas').exists()).toBe(true)
-    // 44 cards and 16 spheres, two draw calls.
-    expect(threeMock.state.instanced.map((mesh) => mesh.count)).toEqual([44, 16])
+    // Three card planes, then spheres, the calendar grid and the glints.
+    expect(threeMock.state.instanced.map((mesh) => mesh.count)).toEqual([20, 20, 20, 14, 40, 6])
+    // One dust cloud of 260 motes, one draw call.
+    expect(threeMock.state.bufferAttributes.map((attribute) => attribute.array.length)).toEqual([
+      260 * 3,
+    ])
     expect(threeMock.state.shadowMap.enabled).toBe(false)
     expect(threeMock.state.pixelRatios.at(-1)).toBe(1.5)
 
@@ -571,7 +669,7 @@ describe('AppBackground3D mount', () => {
     const wrapper = await mountBackground()
 
     expect(wrapper.attributes('data-tier')).toBe('medium')
-    expect(threeMock.state.instanced.map((mesh) => mesh.count)).toEqual([22, 8])
+    expect(threeMock.state.instanced.map((mesh) => mesh.count)).toEqual([10, 10, 10, 8, 18, 4])
     expect(threeMock.state.pixelRatios.at(-1)).toBe(1)
 
     wrapper.unmount()
@@ -585,7 +683,10 @@ describe('AppBackground3D mount', () => {
     runFrames(61, 30)
     await flushPromises()
     expect(wrapper.attributes('data-tier')).toBe('medium')
-    expect(threeMock.state.instanced.map((mesh) => mesh.count).slice(-2)).toEqual([22, 8])
+    // The rebuild adds a second set of meshes; the newest six are the medium one.
+    expect(threeMock.state.instanced.map((mesh) => mesh.count).slice(-6)).toEqual([
+      10, 10, 10, 8, 18, 4,
+    ])
 
     // Fast frames afterwards must not raise it back.
     runFrames(61, 6)
@@ -792,26 +893,53 @@ describe('layer contract', () => {
 })
 
 describe('the scene is the visible backdrop', () => {
-  it('paints no veil or full-page overlay over the canvas', () => {
-    // The old slate-50 veil hid the scene; readability now comes from panels.
+  it('paints no veil over the canvas, only a transparent light sweep', () => {
+    // The old slate-50 veil hid the scene; readability now comes from the glass.
     expect(BACKGROUND_SOURCE).not.toContain('app-background-veil')
     expect(BACKGROUND_SOURCE).not.toContain('veilStyle')
     expect(BACKGROUND_SOURCE).not.toContain('VEIL_OPACITY')
 
     const template = BACKGROUND_SOURCE.slice(BACKGROUND_SOURCE.indexOf('<template>'))
     expect(template).toContain('<canvas')
-    // The canvas is the only thing inside the host: nothing is painted over it.
     expect(template).not.toContain('<span')
-    expect(template).not.toContain('<div class="app-background-')
+    // The one overlay is a screen-blended gradient, never an opaque sheet.
+    expect(template).toContain('app-background-sweep')
+    const sweep = styleBlock(BACKGROUND_SOURCE, '.app-background-sweep')
+    expect(sweep).toContain('pointer-events: none')
+    expect(sweep).toContain('mix-blend-mode: screen')
+    expect(sweep).not.toMatch(/background:\s*#[0-9a-f]{3,6}/i)
   })
 
-  it('keeps the canvas at full strength behind the content', () => {
-    // The scene's own background is a gradient, not a washed-out slate veil.
+  it('draws the leave palette and a calendar motif inside the scene', () => {
+    // Brand indigo and violet plus the three leave-status colours.
+    expect(BACKGROUND_SOURCE).toContain('0x16a34a')
+    expect(BACKGROUND_SOURCE).toContain('0xd97706')
+    expect(BACKGROUND_SOURCE).toContain('0xdc2626')
     expect(BACKGROUND_SOURCE).toContain('rgba(79, 70, 229, 0.95)')
     expect(BACKGROUND_SOURCE).toContain('rgba(139, 92, 246, 0.9)')
-    // Vivid brand tints inside the scene, not pale greys.
-    expect(BACKGROUND_SOURCE).toContain('const CARD_TINTS = [0x3730a3, 0x6d28d9, 0x818cf8]')
-    expect(BACKGROUND_SOURCE).toContain('const SPHERE_TINTS = [0x8b5cf6, 0x818cf8]')
+    expect(BACKGROUND_SOURCE).toContain('CALENDAR_TINTS')
+    // Shapes only: the scene never draws lettering.
+    expect(BACKGROUND_SOURCE).not.toContain('TextGeometry')
+    expect(BACKGROUND_SOURCE).not.toContain('FontLoader')
+  })
+
+  it('builds three depth planes, glints and dust, and disposes all of them', async () => {
+    stubEnvironment({ memory: 8, cores: 8 })
+    const wrapper = await mountBackground()
+
+    // Three card planes with different parallax shares, then spheres, calendar
+    // cells, glints and one points cloud.
+    expect(threeMock.state.instanced.map((mesh) => mesh.count)).toEqual([20, 20, 20, 14, 40, 6])
+    expect(threeMock.state.bufferAttributes).toHaveLength(1)
+    expect(threeMock.state.bufferAttributes[0].itemSize).toBe(3)
+
+    const disposed = {
+      geometries: threeMock.state.disposedGeometries,
+      materials: threeMock.state.disposedMaterials,
+    }
+    wrapper.unmount()
+    expect(threeMock.state.disposedGeometries).toBeGreaterThan(disposed.geometries)
+    expect(threeMock.state.disposedMaterials).toBeGreaterThan(disposed.materials)
   })
 
   it('sits below the content box, the dock, the sheet and dialogs', () => {
@@ -833,50 +961,191 @@ describe('the scene is the visible backdrop', () => {
   })
 })
 
-describe('panel surfaces', () => {
-  it('gives every text block a near-solid panel', () => {
-    expect(STYLES_SOURCE).toContain(
-      '.app-layout-inner :is(main.content, main.page-main) > :is(.head, .page-head, .tabs, .hint, .empty)'
+describe('glass panels', () => {
+  const blur = Number(cssVar(STYLES_SOURCE, '--glass-blur').replace('px', ''))
+  const tint = whiteAlpha(cssVar(STYLES_SOURCE, '--glass-tint'))
+  const tintStrong = whiteAlpha(cssVar(STYLES_SOURCE, '--glass-tint-strong'))
+
+  it('frosts between 14 and 20px, 8px on medium and low, and none on static', () => {
+    expect(blur).toBeGreaterThanOrEqual(GLASS.blurMin)
+    expect(blur).toBeLessThanOrEqual(GLASS.blurMax)
+    expect(QUALITY_TIERS.high.glassBlur).toBe(blur)
+    expect(QUALITY_TIERS.medium.glassBlur).toBe(GLASS.reducedBlur)
+    expect(QUALITY_TIERS.low.glassBlur).toBe(GLASS.reducedBlur)
+    expect(QUALITY_TIERS.static.glassBlur).toBe(0)
+
+    // The tier reaches the stylesheet through data-bg-tier on <html>.
+    expect(STYLES_SOURCE).toContain(":root[data-bg-tier='medium'],")
+    expect(STYLES_SOURCE).toContain(":root[data-bg-tier='low'] { --glass-blur: 8px; }")
+    expect(STYLES_SOURCE).toMatch(/--glass-blur: 8px/)
+    expect(STYLES_SOURCE).toContain('--glass-filter: blur(var(--glass-blur)) saturate(1.1)')
+    expect(STYLES_SOURCE).toContain(":root[data-bg-tier='static'] {")
+    expect(STYLES_SOURCE).toContain('--glass-filter: none')
+    expect(BACKGROUND_SOURCE).toContain('document.documentElement.dataset.bgTier = value')
+  })
+
+  it('keeps every tint inside the allowed band', () => {
+    expect(tint).toBeGreaterThanOrEqual(GLASS.tintMin)
+    expect(tint).toBeLessThanOrEqual(GLASS.tintMax)
+    expect(tintStrong).toBeGreaterThanOrEqual(tint)
+    expect(tintStrong).toBeLessThanOrEqual(GLASS.tintMax)
+    expect(SURFACE_OPACITY).toBe(GLASS.tintMin)
+
+    // Static has no blur, so it leans on an even more solid tint.
+    const staticBlock = STYLES_SOURCE.slice(STYLES_SOURCE.indexOf(":root[data-bg-tier='static']"))
+    const staticTint = whiteAlpha(cssVar(staticBlock, '--glass-tint'))
+    expect(staticTint).toBeGreaterThan(tint)
+  })
+
+  it('gives every text panel the same recipe and never frosts text itself', () => {
+    const recipe = STYLES_SOURCE.slice(STYLES_SOURCE.indexOf('background-color: var(--glass-tint) !important'))
+    expect(recipe).toContain('border: 1px solid var(--glass-border) !important')
+    expect(recipe).toContain('box-shadow: var(--glass-shadow) !important')
+    expect(recipe).toContain('-webkit-backdrop-filter: var(--glass-filter) !important')
+    expect(recipe).toContain('backdrop-filter: var(--glass-filter) !important')
+
+    // The recipe list is containers only: no inline text class is frosted.
+    const list = STYLES_SOURCE.slice(
+      STYLES_SOURCE.indexOf('/* One glass recipe'),
+      STYLES_SOURCE.indexOf('background-color: var(--glass-tint) !important')
     )
-    expect(STYLES_SOURCE).toContain('.app-layout-inner .section-head')
-    expect(STYLES_SOURCE).toContain(`background: rgba(255, 255, 255, 0.98)`)
+    for (const textClass of ['.title', '.sub', '.label', '.value', '.badge', '.code', '.detail']) {
+      expect(list, textClass).not.toContain(textClass)
+    }
   })
 
-  it('never depends on a backdrop blur for contrast', () => {
-    expect(DOCK_SOURCE).not.toContain('backdrop-filter')
-    expect(LAYOUT_SOURCE).not.toContain('backdrop-filter')
-    expect(STYLES_SOURCE).not.toContain('backdrop-filter')
-  })
-
-  it('keeps the dock, the tab bar and the sheet at or above the surface opacity', () => {
-    expect(SURFACE_OPACITY).toBe(0.97)
-
+  it('frosts the dock, the phone tab bar and the dialogs', () => {
     const dock = styleBlock(DOCK_SOURCE, '.dock')
-    const dockAlpha = Number(dock.match(/background: rgba\(255, 255, 255, ([\d.]+)\)/)[1])
-    expect(dockAlpha).toBeGreaterThanOrEqual(SURFACE_OPACITY)
-
-    // `.dock-tabs` is declared twice: base (hidden) and inside the phone query.
-    const tabsBlocks = [...DOCK_SOURCE.matchAll(/\n\s*\.dock-tabs\s*\{([\s\S]*?)\n\s*\}/g)].map(
-      (match) => match[1]
-    )
-    const tabs = tabsBlocks.find((block) => block.includes('background: rgba('))
-    expect(tabs, 'tab bar surface').toBeTruthy()
-    expect(Number(tabs.match(/background: rgba\(255, 255, 255, ([\d.]+)\)/)[1])).toBeGreaterThanOrEqual(
-      SURFACE_OPACITY
-    )
-
+    expect(dock).toContain('backdrop-filter: var(--glass-filter')
+    expect(dock).toContain('var(--glass-tint-strong')
+    expect(DOCK_SOURCE).toContain('backdrop-filter: var(--glass-filter')
     expect(styleBlock(DOCK_SOURCE, '.dock-sheet')).toContain('background: #ffffff')
-
-    const panel = STYLES_SOURCE.slice(STYLES_SOURCE.indexOf('---- Signed-in surfaces'))
-    expect(Number(panel.match(/background: rgba\(255, 255, 255, ([\d.]+)\)/)[1])).toBeGreaterThanOrEqual(
-      SURFACE_OPACITY
-    )
+    expect(STYLES_SOURCE).toContain('.v-overlay__content > .v-card')
   })
 
   it('leaves the shell transparent so the scene shows between panels', () => {
     const shell = styleBlock(LAYOUT_SOURCE, '.app-layout')
     expect(shell).toContain('background: transparent')
     expect(shell).not.toContain('#f3f6f5')
+  })
+})
+
+describe('motion', () => {
+  const keyframeBlocks = [
+    ...[...STYLES_SOURCE.matchAll(/@keyframes\s+[\w-]+\s*\{([\s\S]*?)\n\}/g)].map((m) => m[1]),
+    ...[...BACKGROUND_SOURCE.matchAll(/@keyframes\s+[\w-]+\s*\{([\s\S]*?)\n\}/g)].map((m) => m[1]),
+  ]
+
+  it('animates transform and opacity only, never a layout property', () => {
+    expect(keyframeBlocks.length).toBeGreaterThanOrEqual(3)
+    for (const block of keyframeBlocks) {
+      for (const match of block.matchAll(/([a-z-]+)\s*:/g)) {
+        expect(['transform', 'opacity'], match[1]).toContain(match[1])
+      }
+    }
+    for (const match of STYLES_SOURCE.matchAll(/transition:\s*([^;]+);/g)) {
+      expect(match[1]).not.toMatch(
+        /\b(width|height|top|left|right|bottom|margin|padding|font-size|gap)\b/
+      )
+    }
+  })
+
+  it('staggers the page sections and the route change', () => {
+    expect(STYLES_SOURCE).toContain('.app-layout-inner > main { animation: page-fade')
+    expect(STYLES_SOURCE).toContain('.app-layout-inner > main > * {')
+    expect(STYLES_SOURCE).toContain(':nth-child(3) { animation-delay: 0.08s; }')
+    expect(STYLES_SOURCE).toContain(':nth-child(n + 7) { animation-delay: 0.24s; }')
+    // The entrance only defines a start frame, so it never leaves a filled
+    // transform behind that would block the hover tilt.
+    expect(STYLES_SOURCE).not.toMatch(/animation:[^;]*\bboth\b/)
+  })
+
+  it('turns every bit of motion off for a reduced-motion visitor', () => {
+    const gate = STYLES_SOURCE.indexOf('@media (prefers-reduced-motion: no-preference)')
+    expect(gate).toBeGreaterThan(0)
+    for (const marker of [
+      'animation: page-fade',
+      'animation: panel-rise',
+      'transform: translate3d(0, 1px, 0) scale(0.985)',
+      'transform: perspective(900px)',
+    ]) {
+      expect(STYLES_SOURCE.indexOf(marker), marker).toBeGreaterThan(gate)
+    }
+    // The sweep stops, the tier collapses to static and the glass loses its blur.
+    expect(BACKGROUND_SOURCE).toContain('@media (prefers-reduced-motion: reduce)')
+    expect(BACKGROUND_SOURCE).toMatch(/prefers-reduced-motion: reduce\)\s*\{\s*\.app-background-sweep \{ animation: none; \}/)
+    expect(initialTier({ reducedMotion: true })).toBe('static')
+    expect(QUALITY_TIERS.static.glassBlur).toBe(0)
+  })
+
+  it('lifts and tilts only for a real mouse on the top tier', () => {
+    const hover = STYLES_SOURCE.slice(
+      STYLES_SOURCE.indexOf('@media (hover: hover) and (pointer: fine)')
+    )
+    expect(hover).toContain(":root[data-bg-tier='high']")
+    expect(hover).toContain(
+      'transform: perspective(900px) translate3d(0, -3px, 0) rotateX(1.2deg) rotateY(-1.2deg)'
+    )
+    // No other tier is ever named in the hover block.
+    for (const tier of ['medium', 'low', 'static']) {
+      expect(hover, tier).not.toContain("data-bg-tier='" + tier + "'")
+    }
+  })
+
+  it('counts up to a number the page already shows, and stops counting on unmount', () => {
+    const source = readFileSync('src/lib/use-count-up.js', 'utf8')
+    expect(source).toContain('prefers-reduced-motion: reduce')
+    expect(source).toContain('cancelAnimationFrame')
+    expect(source).toContain('watch(')
+    expect(source).not.toMatch(/transition:|@keyframes/)
+    expect(readFileSync('src/pages/LeaveHomePage.vue', 'utf8')).toContain('useCountUp')
+  })
+})
+
+describe('glass readability over the worst backdrop', () => {
+  // The tint has to hold AA over the darkest pixel the scene can put behind a
+  // panel, not over an average: #000000 is the absolute floor and the second row
+  // is the darkest pixel measured in the browser audit.
+  const WORST_BACKDROPS = [
+    ['#000000', 'absolute floor'],
+    ['#14103a', 'darkest measured scene pixel'],
+    ['#ffffff', 'lightest (the sweep glow)'],
+  ]
+
+  // Every text colour a glass panel carries.
+  const INKS = [
+    ['#0b1c30', 'body text'],
+    ['#12343b', 'headings'],
+    ['#444651', 'secondary text'],
+    ['#5c7176', 'muted labels and captions'],
+    ['#55696d', 'the HR card caption beside an icon tile'],
+    ['#4d6468', 'empty state'],
+    ['#10504e', 'links'],
+    ['#a01b1b', 'error text'],
+  ]
+
+  it('keeps every ink at AA on the tinted glass, at both tints', () => {
+    const alphas = [
+      whiteAlpha(cssVar(STYLES_SOURCE, '--glass-tint')),
+      whiteAlpha(cssVar(STYLES_SOURCE, '--glass-tint-strong')),
+    ]
+    for (const [backdrop, label] of WORST_BACKDROPS) {
+      for (const alpha of alphas) {
+        const surface = glassOver(backdrop, alpha)
+        for (const [ink, inkLabel] of INKS) {
+          expect(
+            contrast(ink, surface),
+            `${inkLabel} ${ink} on ${surface} (${alpha} over ${label})`
+          ).toBeGreaterThanOrEqual(4.5)
+        }
+      }
+    }
+  })
+
+  it('keeps the light border visible against the glass', () => {
+    const border = glassOver('#ffffff', 0.72)
+    const surface = glassOver('#14103a', whiteAlpha(cssVar(STYLES_SOURCE, '--glass-tint')))
+    expect(contrast(border, surface)).toBeGreaterThan(1.1)
   })
 })
 
@@ -887,6 +1156,8 @@ describe('panel text tokens', () => {
     ['#0b1c30', '#ffffff', 'body text'],
     ['#444651', '#ffffff', 'muted body text'],
     ['#5c7176', '#ffffff', 'subtitles, captions and muted values'],
+    ['#55696d', '#ffffff', 'HR card caption'],
+    ['#55696d', '#f0f7f6', 'HR card caption over the icon tile tint'],
     ['#4d6468', '#ffffff', 'empty-state text'],
     ['#10504e', '#ffffff', 'primary links'],
     ['#a01b1b', '#ffffff', 'error text'],
@@ -905,7 +1176,6 @@ describe('panel text tokens', () => {
   })
 
   it('darkened exactly the tokens that failed on white', () => {
-    // The old values, kept here so the fix cannot silently regress.
     expect(contrast('#8b9c9a', '#ffffff')).toBeLessThan(4.5)
     expect(contrast('#b7791f', '#ffffff')).toBeLessThan(4.5)
     expect(contrast('#7c8f93', '#ffffff')).toBeLessThan(4.5)
@@ -913,7 +1183,6 @@ describe('panel text tokens', () => {
     expect(contrast('#b3c2c0', '#ffffff')).toBeLessThan(4.5)
     expect(contrast('#9aa8a5', '#ffffff')).toBeLessThan(4.5)
 
-    // And the pages now use the passing ones.
     expect(PROFILE_SOURCE).toContain('color: #5c7176')
     expect(PROFILE_SOURCE).not.toContain('color: #8b9c9a')
     expect(PROFILE_SOURCE).toContain('background: #98620f')
@@ -924,11 +1193,15 @@ describe('panel text tokens', () => {
     expect(ADMIN_PERMISSIONS_SOURCE).not.toContain('color: #7c8f93')
     expect(ADMIN_PERMISSIONS_SOURCE).not.toContain('color: #b3c2c0')
     expect(CALENDAR_SOURCE).not.toContain('color: #9aa8a5')
+
+    // The one token the glass audit still failed at 4.21:1 next to the mint icon
+    // tile, darkened to #55696d. 4.21 -> 4.74 and 5.15 -> 6.00 on white.
+    expect(contrast('#5c7176', '#e2eae9')).toBeLessThan(4.5)
+    expect(contrast('#55696d', '#e2eae9')).toBeGreaterThanOrEqual(4.5)
+    expect(readFileSync('src/pages/HrHomePage.vue', 'utf8')).toContain('color: #55696d')
   })
 
-  it('leaves the reduced-motion and low-tier paths untouched', () => {
-    // The readability work is CSS-only: the tier policy module still owns the
-    // tiers, the benchmark and the static fallback.
+  it('leaves the benchmark and the static fallback untouched', () => {
     expect(QUALITY_TIERS.high.material).toBe('standard')
     expect(QUALITY_TIERS.static.objectCount).toBe(0)
     expect(BENCHMARK.frames).toBe(60)

@@ -18,7 +18,7 @@
 // What is drawn is decided by src/lib/background-quality.js: three 3D tiers plus
 // a CSS-only static tier, chosen from device hints and then from a 60-frame
 // benchmark that may only walk down.
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   QUALITY_TIERS,
   createBenchmark,
@@ -30,8 +30,15 @@ import {
 // The full brand range. No text ever sits on the canvas — every block that
 // carries text is on its own near-solid panel — so the scene is drawn at full
 // strength instead of as a pale tint.
-const CARD_TINTS = [0x3730a3, 0x6d28d9, 0x818cf8]
-const SPHERE_TINTS = [0x8b5cf6, 0x818cf8]
+// Brand indigo and violet, plus the three leave-status colours the app already
+// uses (approved green, pending amber, rejected red) so the field reads as a
+// leave tool. No lettering is drawn in the scene.
+const CARD_TINTS = [
+  0x3730a3, 0x6d28d9, 0x818cf8, 0x4f46e5, 0x16a34a, 0x6d28d9, 0x818cf8, 0x3730a3,
+  0xd97706, 0x4f46e5, 0x16a34a, 0x818cf8, 0xdc2626, 0x6d28d9, 0x3730a3, 0x4f46e5,
+]
+const SPHERE_TINTS = [0x8b5cf6, 0x818cf8, 0x34d399]
+const CALENDAR_TINTS = [0xc7d2fe, 0x86efac, 0xfcd34d, 0xddd6fe, 0xa5b4fc, 0xfca5a5]
 const CARD_WIDTH = 1.7
 const CARD_HEIGHT = 1.05
 const CARD_RADIUS = 0.22
@@ -51,6 +58,19 @@ const host = ref(null)
 const canvasEl = ref(null)
 
 const isStatic = computed(() => tier.value === 'static')
+
+// The panels' frosting is CSS, so the tier is published on <html>: medium and low
+// drop to an 8px blur (and lose tilt), static drops the blur entirely. Removing
+// the attribute on unmount sends the panels back to the full-strength default,
+// which is also what /login (no background at all) uses.
+watch(
+  tier,
+  (value) => {
+    if (typeof document === 'undefined') return
+    document.documentElement.dataset.bgTier = value
+  },
+  { immediate: true }
+)
 
 const field = { width: 1, height: 1 }
 const pointer = { x: 0, y: 0, targetX: 0, targetY: 0 }
@@ -137,32 +157,53 @@ function buildScene(config) {
   const dummy = new THREE.Object3D()
   const tint = new THREE.Color()
 
+  // One rounded card geometry is shared by all three depth planes, so it is
+  // pushed once and disposed once.
   const cardGeometry = roundedCardGeometry(THREE, CARD_WIDTH, CARD_HEIGHT, CARD_RADIUS)
-  const cardMaterial = makeMaterial(config, 0.78)
-  const cardMesh = new THREE.InstancedMesh(cardGeometry, cardMaterial, config.cardCount)
-  cardMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
-  cardMesh.frustumCulled = false
-  disposables.push(cardGeometry, cardMaterial, cardMesh)
+  disposables.push(cardGeometry)
 
-  const cards = []
-  for (let index = 0; index < config.cardCount; index += 1) {
-    const card = {
-      nx: between(index * 3 + 1, -1, 1),
-      ny: between(index * 3 + 2, -1, 1),
-      nz: between(index * 3 + 3, -1, 1),
-      scale: between(index * 5 + 11, 0.55, 1.35),
-      tiltX: between(index * 7 + 2, -0.4, 0.4),
-      tiltY: between(index * 7 + 3, -0.5, 0.5),
-      tiltZ: between(index * 7 + 4, -0.28, 0.28),
-      bob: between(index * 11 + 5, 0.16, 0.5),
-      phase: between(index * 13 + 7, 0, Math.PI * 2),
-      tint: CARD_TINTS[index % CARD_TINTS.length],
+  // Three depth planes. Each plane is its own InstancedMesh with its own base z
+  // and its own share of the pointer parallax, so the field has real depth and a
+  // near card moves more than a far one.
+  const planes = []
+  const planeCount = Math.max(1, config.planeCount)
+  const perPlane = Math.max(1, Math.floor(config.cardCount / planeCount))
+
+  for (let plane = 0; plane < planeCount; plane += 1) {
+    const material = makeMaterial(config, 0.46 + plane * 0.13)
+    const mesh = new THREE.InstancedMesh(cardGeometry, material, perPlane)
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
+    mesh.frustumCulled = false
+    disposables.push(material, mesh)
+    group.add(mesh)
+
+    const cards = []
+    for (let index = 0; index < perPlane; index += 1) {
+      const seed = plane * 97 + index
+      const card = {
+        nx: between(seed * 3 + 1, -1, 1),
+        ny: between(seed * 3 + 2, -1, 1),
+        nz: between(seed * 3 + 3, -1, 1),
+        scale: between(seed * 5 + 11, 0.55, 1.3),
+        tiltX: between(seed * 7 + 2, -0.4, 0.4),
+        tiltY: between(seed * 7 + 3, -0.5, 0.5),
+        tiltZ: between(seed * 7 + 4, -0.28, 0.28),
+        bob: between(seed * 11 + 5, 0.16, 0.5),
+        phase: between(seed * 13 + 7, 0, Math.PI * 2),
+        tint: CARD_TINTS[(plane * 7 + index) % CARD_TINTS.length],
+      }
+      cards.push(card)
+      mesh.setColorAt(index, tint.setHex(card.tint))
     }
-    cards.push(card)
-    cardMesh.setColorAt(index, tint.setHex(card.tint))
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
+
+    planes.push({
+      mesh,
+      cards,
+      // 0 for the far plane, 1 for the nearest: the parallax share.
+      depth: planeCount === 1 ? 1 : plane / (planeCount - 1),
+    })
   }
-  if (cardMesh.instanceColor) cardMesh.instanceColor.needsUpdate = true
-  group.add(cardMesh)
 
   const sphereGeometry = new THREE.SphereGeometry(
     1,
@@ -191,38 +232,140 @@ function buildScene(config) {
   if (sphereMesh.instanceColor) sphereMesh.instanceColor.needsUpdate = true
   group.add(sphereMesh)
 
+  // The calendar motif: a small month grid of rounded cells in the far plane.
+  // It is a shape, never a date or a label.
+  let calendar = null
+  if (config.calendarCellCount > 0) {
+    const geometry = roundedCardGeometry(THREE, 0.52, 0.34, 0.07)
+    const material = makeMaterial(config, 0.42)
+    const mesh = new THREE.InstancedMesh(geometry, material, config.calendarCellCount)
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
+    mesh.frustumCulled = false
+    disposables.push(geometry, material, mesh)
+    group.add(mesh)
+
+    const columns = 7
+    const rows = Math.ceil(config.calendarCellCount / columns)
+    const cells = []
+    for (let index = 0; index < config.calendarCellCount; index += 1) {
+      const column = index % columns
+      const row = Math.floor(index / columns)
+      cells.push({
+        x: (column - (columns - 1) / 2) * 0.62,
+        y: ((rows - 1) / 2 - row) * 0.44,
+        phase: between(index * 37 + 3, 0, Math.PI * 2),
+        tint: CALENDAR_TINTS[index % CALENDAR_TINTS.length],
+      })
+      mesh.setColorAt(index, tint.setHex(cells.at(-1).tint))
+    }
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
+    calendar = { mesh, cells }
+  }
+
+  // Light glints: additive streaks that sweep across the glass at a slow, uneven
+  // pace. They fade in and out by scale, so the wrap is never visible.
+  let glints = null
+  if (config.glintCount > 0) {
+    const geometry = roundedCardGeometry(THREE, 2.4, 0.16, 0.08)
+    const material = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.32,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    })
+    const mesh = new THREE.InstancedMesh(geometry, material, config.glintCount)
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
+    mesh.frustumCulled = false
+    disposables.push(geometry, material, mesh)
+    group.add(mesh)
+
+    const streaks = []
+    for (let index = 0; index < config.glintCount; index += 1) {
+      streaks.push({
+        y: between(index * 41 + 5, -0.85, 0.85),
+        phase: between(index * 43 + 7, 0, 1),
+        speed: between(index * 47 + 11, 0.018, 0.042),
+        lean: between(index * 53 + 13, -0.5, 0.5),
+        level: index % 3,
+      })
+    }
+    glints = { mesh, streaks }
+  }
+
+  // Dust: one Points draw call of drifting motes, wrapped inside the field.
+  let dust = null
+  if (config.particleCount > 0) {
+    const positions = new Float32Array(config.particleCount * 3)
+    const seeds = new Float32Array(config.particleCount)
+    for (let index = 0; index < config.particleCount; index += 1) {
+      positions[index * 3] = between(index * 59 + 3, -1, 1) * 11
+      positions[index * 3 + 1] = between(index * 61 + 5, -1, 1) * 7
+      positions[index * 3 + 2] = between(index * 67 + 7, -1, 0) * DEPTH - 1
+      seeds[index] = between(index * 71 + 11, 0, 1)
+    }
+    const geometry = new THREE.BufferGeometry()
+    const attribute = new THREE.BufferAttribute(positions, 3)
+    attribute.setUsage(THREE.DynamicDrawUsage)
+    geometry.setAttribute('position', attribute)
+    const material = new THREE.PointsMaterial({
+      color: 0xffffff,
+      size: 0.055,
+      transparent: true,
+      opacity: 0.5,
+      depthWrite: false,
+      sizeAttenuation: true,
+    })
+    const points = new THREE.Points(geometry, material)
+    points.frustumCulled = false
+    disposables.push(geometry, material, points)
+    group.add(points)
+    dust = { points, attribute, seeds, count: config.particleCount }
+  }
+
   const update = (time) => {
     const halfWidth = field.width / 2
     const halfHeight = field.height / 2
     // Cards keep their proportion on a narrow phone screen.
     const size = Math.min(1.2, Math.max(0.42, field.width / 22))
+    const tilt = config.cardTilt === true
 
-    for (let index = 0; index < cards.length; index += 1) {
-      const card = cards[index]
-      const bob = Math.sin(time * 0.26 + card.phase)
-      const sway = Math.cos(time * 0.19 + card.phase)
-      dummy.position.set(
-        card.nx * halfWidth * 0.94 + sway * 0.5,
-        card.ny * halfHeight * 0.94 + bob * card.bob,
-        card.nz * DEPTH - 2
-      )
-      dummy.rotation.set(
-        card.tiltX + bob * 0.05,
-        card.tiltY + sway * 0.09,
-        card.tiltZ + bob * 0.04
-      )
-      dummy.scale.setScalar(card.scale * size * (1 + bob * 0.015))
-      dummy.updateMatrix()
-      cardMesh.setMatrixAt(index, dummy.matrix)
+    // Each plane carries a little of the pointer offset, the near one the most.
+    for (let plane = 0; plane < planes.length; plane += 1) {
+      const { mesh, cards: planeCards, depth } = planes[plane]
+      const share = 0.16 + depth * 0.5
+      const baseZ = -2.2 - (1 - depth) * 4.4
+
+      for (let index = 0; index < planeCards.length; index += 1) {
+        const card = planeCards[index]
+        const bob = Math.sin(time * 0.26 + card.phase)
+        const sway = Math.cos(time * 0.19 + card.phase)
+        dummy.position.set(
+          card.nx * halfWidth * 0.94 + sway * 0.5 + pointer.x * share,
+          card.ny * halfHeight * 0.94 + bob * card.bob - pointer.y * share * 0.7,
+          card.nz * DEPTH * 0.8 + baseZ
+        )
+        dummy.rotation.set(
+          card.tiltX + bob * 0.05,
+          card.tiltY + sway * 0.09,
+          card.tiltZ + bob * 0.04
+        )
+        dummy.scale.setScalar(card.scale * size * (1 + bob * 0.015) * (0.72 + depth * 0.28))
+        dummy.updateMatrix()
+        mesh.setMatrixAt(index, dummy.matrix)
+      }
+      mesh.instanceMatrix.needsUpdate = true
+      if (tilt) mesh.rotation.y = pointer.x * 0.04
     }
-    cardMesh.instanceMatrix.needsUpdate = true
 
     for (let index = 0; index < spheres.length; index += 1) {
       const sphere = spheres[index]
       const drift = Math.sin(time * 0.21 + sphere.phase)
       dummy.position.set(
-        sphere.nx * halfWidth * 0.82 + drift * 0.3,
-        sphere.ny * halfHeight * 0.82 + Math.cos(time * 0.17 + sphere.phase) * 0.4,
+        sphere.nx * halfWidth * 0.82 + drift * 0.3 + pointer.x * 0.4,
+        sphere.ny * halfHeight * 0.82 + Math.cos(time * 0.17 + sphere.phase) * 0.4 -
+          pointer.y * 0.3,
         sphere.nz * DEPTH - 4
       )
       dummy.rotation.set(0, 0, 0)
@@ -231,6 +374,60 @@ function buildScene(config) {
       sphereMesh.setMatrixAt(index, dummy.matrix)
     }
     sphereMesh.instanceMatrix.needsUpdate = true
+
+    if (calendar) {
+      const { mesh, cells } = calendar
+      // Sits behind the cards, tilting very slightly like a sheet on a desk.
+      const lean = Math.sin(time * 0.17) * 0.06
+      for (let index = 0; index < cells.length; index += 1) {
+        const cell = cells[index]
+        const bob = Math.sin(time * 0.3 + cell.phase) * 0.04
+        dummy.position.set(
+          cell.x * Math.min(1, halfHeight / 4.2) + pointer.x * 0.2,
+          cell.y * Math.min(1, halfHeight / 4.2) + bob - pointer.y * 0.15,
+          -8.6
+        )
+        dummy.rotation.set(lean, lean * 0.6, 0)
+        dummy.scale.setScalar(0.9)
+        dummy.updateMatrix()
+        mesh.setMatrixAt(index, dummy.matrix)
+      }
+      mesh.instanceMatrix.needsUpdate = true
+    }
+
+    if (glints) {
+      const { mesh, streaks } = glints
+      for (let index = 0; index < streaks.length; index += 1) {
+        const streak = streaks[index]
+        const travel = (time * streak.speed + streak.phase) % 1
+        const fade = Math.sin(travel * Math.PI)
+        dummy.position.set(
+          travel * halfWidth * 2.4 - halfWidth * 1.2,
+          streak.y * halfHeight * 0.9 + Math.sin(travel * Math.PI * 2) * 0.4,
+          -3.4 - streak.level * 0.5
+        )
+        dummy.rotation.set(0, 0, streak.lean * 0.5)
+        dummy.scale.set(Math.max(0.001, fade), Math.max(0.001, fade), 1)
+        dummy.updateMatrix()
+        mesh.setMatrixAt(index, dummy.matrix)
+      }
+      mesh.instanceMatrix.needsUpdate = true
+    }
+
+    if (dust) {
+      const { attribute, seeds, count } = dust
+      const positions = attribute.array
+      for (let index = 0; index < count; index += 1) {
+        const at = index * 3
+        const speed = 0.16 + seeds[index] * 0.34
+        positions[at + 1] += speed * 0.014
+        if (positions[at + 1] > halfHeight + 1) positions[at + 1] = -halfHeight - 1
+        positions[at] += Math.sin(time * 0.4 + seeds[index] * 6.28) * 0.004
+        if (positions[at] > halfWidth + 1) positions[at] = -halfWidth - 1
+        if (positions[at] < -halfWidth - 1) positions[at] = halfWidth + 1
+      }
+      attribute.needsUpdate = true
+    }
   }
 
   const dispose = () => {
@@ -483,6 +680,7 @@ onBeforeUnmount(() => {
   disposeScene()
   disposeRenderer()
   removeCanvas()
+  if (typeof document !== 'undefined') delete document.documentElement.dataset.bgTier
 
   scene = null
   camera = null
@@ -506,6 +704,9 @@ onBeforeUnmount(() => {
       class="app-background-canvas"
       aria-hidden="true"
     ></canvas>
+    <!-- A slow light sweep over the gradient. Purely CSS, transparent, and drawn
+         under every panel; the static and reduced-motion tiers switch it off. -->
+    <div class="app-background-sweep" aria-hidden="true"></div>
   </div>
 </template>
 
@@ -533,6 +734,34 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 100%;
   pointer-events: none;
+}
+
+.app-background-sweep {
+  position: absolute;
+  inset: -30%;
+  pointer-events: none;
+  background: conic-gradient(
+    from 120deg at 50% 50%,
+    rgba(255, 255, 255, 0) 0deg,
+    rgba(255, 255, 255, 0.16) 60deg,
+    rgba(255, 255, 255, 0) 140deg,
+    rgba(199, 210, 254, 0.16) 220deg,
+    rgba(255, 255, 255, 0) 320deg
+  );
+  mix-blend-mode: screen;
+  will-change: transform;
+  animation: background-sweep 26s linear infinite;
+}
+
+@keyframes background-sweep {
+  from { transform: rotate(0turn) scale(1.05); }
+  to { transform: rotate(1turn) scale(1.05); }
+}
+
+.app-background--static .app-background-sweep { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .app-background-sweep { animation: none; }
 }
 
 

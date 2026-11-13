@@ -5,53 +5,75 @@
 // real Three.js. src/components/AppBackground3D.vue owns the canvas; this module
 // owns the budget.
 //
-// The tiers, from the design brief:
-// - high:   up to 60 instanced objects, pixel ratio capped at 1.5, 60 fps target
-// - medium: up to 30 instanced objects, pixel ratio capped at 1.0, 30 fps target
-// - low:    up to 12 instanced objects, pixel ratio capped at 0.75, 24 fps target
-// - static: no WebGL at all, the CSS gradient only
+// The tiers, from the design brief. `objectCount` is the cap on every instanced
+// object in the scene (cards on the three depth planes + spheres + glints +
+// calendar cells); particles are counted separately because they are one draw
+// call of point sprites. `glassBlur` is the CSS cost the panels may spend at that
+// tier, so a mid or low device pays less for the frosting than for the scene.
+//
+// - high:   up to 120 objects, up to 300 particles, pixel ratio 1.5, 60 fps
+// - medium: up to 60 objects, up to 120 particles, pixel ratio 1.0, 30 fps
+// - low:    up to 24 objects, up to 40 particles, pixel ratio 0.75, 24 fps
+// - static: no WebGL at all, the CSS gradient only, no glass blur
 //
 // No tier enables shadow maps or post-processing: the background is a full-screen
 // decal with nothing to receive a shadow, so both would cost frames for nothing.
-
 export const QUALITY_TIERS = Object.freeze({
   high: Object.freeze({
     name: 'high',
-    objectCount: 60,
-    cardCount: 44,
-    sphereCount: 16,
+    objectCount: 120,
+    cardCount: 60,
+    sphereCount: 14,
+    glintCount: 6,
+    calendarCellCount: 40,
+    planeCount: 3,
+    particleCount: 260,
     pixelRatioCap: 1.5,
     targetFps: 60,
     shadows: false,
     postProcessing: false,
     material: 'standard',
     mouseParallax: true,
+    cardTilt: true,
+    glassBlur: 18,
     sphereSegments: 20,
   }),
   medium: Object.freeze({
     name: 'medium',
-    objectCount: 30,
-    cardCount: 22,
+    objectCount: 60,
+    cardCount: 30,
     sphereCount: 8,
+    glintCount: 4,
+    calendarCellCount: 18,
+    planeCount: 3,
+    particleCount: 120,
     pixelRatioCap: 1,
     targetFps: 30,
     shadows: false,
     postProcessing: false,
     material: 'lambert',
-    mouseParallax: true,
+    mouseParallax: false,
+    cardTilt: false,
+    glassBlur: 8,
     sphereSegments: 12,
   }),
   low: Object.freeze({
     name: 'low',
-    objectCount: 12,
-    cardCount: 9,
+    objectCount: 24,
+    cardCount: 12,
     sphereCount: 3,
+    glintCount: 0,
+    calendarCellCount: 9,
+    planeCount: 3,
+    particleCount: 32,
     pixelRatioCap: 0.75,
     targetFps: 24,
     shadows: false,
     postProcessing: false,
     material: 'basic',
     mouseParallax: false,
+    cardTilt: false,
+    glassBlur: 8,
     sphereSegments: 8,
   }),
   static: Object.freeze({
@@ -59,14 +81,32 @@ export const QUALITY_TIERS = Object.freeze({
     objectCount: 0,
     cardCount: 0,
     sphereCount: 0,
+    glintCount: 0,
+    calendarCellCount: 0,
+    planeCount: 0,
+    particleCount: 0,
     pixelRatioCap: 1,
     targetFps: 0,
     shadows: false,
     postProcessing: false,
     material: 'none',
     mouseParallax: false,
+    cardTilt: false,
+    glassBlur: 0,
     sphereSegments: 0,
   }),
+})
+
+// The glass panels: a blur inside the 14-20px band at high, the reduced 8px on
+// medium and low, and no blur at all on the static tier. The tint is never below
+// GLASS_TINT.min, which is what keeps muted text at AA over the darkest scene
+// pixel that can show through.
+export const GLASS = Object.freeze({
+  blurMin: 14,
+  blurMax: 20,
+  reducedBlur: 8,
+  tintMin: 0.9,
+  tintMax: 0.98,
 })
 
 /** Descending quality: every step down is final for the session. */
@@ -89,10 +129,10 @@ export const DEVICE_HINT_LIMITS = Object.freeze({
 })
 
 // Nothing is painted over the canvas: the scene is the visible backdrop, and
-// readability comes from the panels the text sits on instead of from a veil.
-// Every surface in src/styles.css is at least this opaque, and none of them
-// depends on a backdrop blur.
-export const SURFACE_OPACITY = 0.97
+// readability comes from the frosted panels the text sits on. The panels use a
+// translucent white tint over a backdrop blur, so the number below is the floor a
+// panel tint may not go under regardless of tier.
+export const SURFACE_OPACITY = GLASS.tintMin
 
 function defaultWindow() {
   return typeof window === 'undefined' ? null : window

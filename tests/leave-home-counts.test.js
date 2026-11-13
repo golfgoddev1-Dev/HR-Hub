@@ -66,6 +66,15 @@ function mountPage() {
   })
 }
 
+// The totals count up to the Worker's number, so a test reads them once the
+// 700ms count has settled (reduced motion would land on the value at once).
+async function settle(wrapper) {
+  await flushPromises()
+  await new Promise((resolve) => setTimeout(resolve, 900))
+  await flushPromises()
+  return wrapper
+}
+
 function cardText(wrapper, label) {
   const item = wrapper.findAll('.summary-item').find((node) => node.text().includes(label))
   expect(item, label).toBeTruthy()
@@ -79,8 +88,7 @@ describe('leave home own request counts', () => {
 
   it('shows the own pending and approved counts from the Worker', async () => {
     H.counts = { pending: 2, approved: 3 }
-    const wrapper = mountPage()
-    await flushPromises()
+    const wrapper = await settle(mountPage())
 
     expect(cardText(wrapper, 'ใบลารออนุมัติ')).toContain('2')
     expect(cardText(wrapper, 'ใบลาอนุมัติแล้ว')).toContain('3')
@@ -88,8 +96,7 @@ describe('leave home own request counts', () => {
   })
 
   it('shows 0 on both cards when the employee has no matching requests', async () => {
-    const wrapper = mountPage()
-    await flushPromises()
+    const wrapper = await settle(mountPage())
 
     expect(cardText(wrapper, 'ใบลารออนุมัติ')).toContain('0')
     expect(cardText(wrapper, 'ใบลาอนุมัติแล้ว')).toContain('0')

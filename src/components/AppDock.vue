@@ -392,9 +392,11 @@ const logout = createLogoutFlow({
   z-index: 40;
   padding: 8px 10px;
   border-radius: 24px;
-  /* Near-solid, no blur: the menu is a text surface, so its contrast must not
-     depend on what the 3D scene is doing behind it. */
-  background: rgba(255, 255, 255, 0.98);
+  /* Frosted like every other panel, and on the same tier-driven blur: the tint
+     floor (0.95 here) is what keeps the menu labels readable over the scene. */
+  background: var(--glass-tint-strong, rgba(255, 255, 255, 0.95));
+  -webkit-backdrop-filter: var(--glass-filter, blur(18px));
+  backdrop-filter: var(--glass-filter, blur(18px));
   border: 1px solid rgba(255, 255, 255, 0.8);
   box-shadow:
     0 18px 40px -24px rgba(16, 80, 78, 0.45),
@@ -1054,8 +1056,10 @@ const logout = createLogoutFlow({
     box-sizing: border-box;
     height: calc(64px + env(safe-area-inset-bottom));
     padding: 0 4px env(safe-area-inset-bottom);
-    /* Near-solid, no blur: the tab labels are text on this bar. */
-    background: rgba(255, 255, 255, 0.98);
+    /* Frosted on the same tier-driven blur as the dock. */
+    background: var(--glass-tint-strong, rgba(255, 255, 255, 0.95));
+    -webkit-backdrop-filter: var(--glass-filter, blur(18px));
+    backdrop-filter: var(--glass-filter, blur(18px));
     border-top: 1px solid rgba(16, 80, 78, 0.12);
     box-shadow: 0 -10px 26px -20px rgba(16, 80, 78, 0.6);
   }

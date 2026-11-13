@@ -76,24 +76,116 @@ h1, h2, h3 { font-family: 'Prompt', sans-serif; }
   .option-grid { grid-template-columns: 1fr; }
 }
 
-/* ---- Signed-in surfaces ----------------------------------------------------
-   The 3D background is a backdrop, never a text surface. Every top-level block
-   of a signed-in page that carries text sits on a near-solid panel, so the
-   scene shows around the panels, in the gaps between them and in the header and
-   phone margins without any body text ever landing on the canvas. 0.98 with no
-   backdrop blur keeps contrast independent of what the scene is doing. */
+/* ---- Glass surfaces -------------------------------------------------------
+   The 3D background is a backdrop, never a text surface. Every block of a
+   signed-in page that carries text is a frosted panel: a translucent white tint
+   over a backdrop blur, a 1px light border and a soft shadow, so the scene shows
+   through as a soft wash instead of a hard bright canvas under the letters.
+
+   The blur is a CSS cost too, so the tier decides it (the background publishes
+   data-bg-tier on <html>): 18px at high, 8px at medium and low, and no blur at
+   all on the static tier, which falls back to a solid tint with the same
+   contrast floor. The tints never go below GLASS.tintMin (0.9), which is what
+   keeps muted text at AA over the darkest scene pixel that can show through. */
+:root {
+  --glass-blur: 18px;
+  --glass-filter: blur(var(--glass-blur)) saturate(1.1);
+  /* 0.94 / 0.96 are measured, not guessed: a 0.94 tint over the darkest pixel
+     the scene can put behind a panel still leaves muted #5c7176 at 4.55:1. */
+  --glass-tint: rgba(255, 255, 255, 0.95);
+  --glass-tint-strong: rgba(255, 255, 255, 0.97);
+  --glass-border: rgba(255, 255, 255, 0.72);
+  --glass-shadow: 0 14px 34px rgba(23, 32, 84, 0.12);
+  --glass-shadow-hover: 0 20px 44px rgba(23, 32, 84, 0.18);
+}
+
+:root[data-bg-tier='medium'],
+:root[data-bg-tier='low'] { --glass-blur: 8px; }
+
+:root[data-bg-tier='static'] {
+  --glass-blur: 0px;
+  --glass-filter: none;
+  --glass-tint: rgba(255, 255, 255, 0.97);
+  --glass-tint-strong: rgba(255, 255, 255, 0.98);
+}
+
+/* One glass recipe for every text panel. `!important` is deliberate: pages own
+   their own card colours, and the theme has to win without touching 20 files. */
+.app-layout-inner
+  :is(.card, .summary-item, .block, .panel, .filters, .table-wrap, .head, .page-head, .tabs, .hint, .empty, .section-head),
+.v-overlay__content > .v-card {
+  background-color: var(--glass-tint) !important;
+  background-image: linear-gradient(148deg, rgba(255, 255, 255, 0.42) 0%, rgba(255, 255, 255, 0) 58%) !important;
+  border: 1px solid var(--glass-border) !important;
+  -webkit-backdrop-filter: var(--glass-filter) !important;
+  backdrop-filter: var(--glass-filter) !important;
+  box-shadow: var(--glass-shadow) !important;
+}
+
+/* The panels that carry small or muted text (page headers, hints, filters,
+   tables, dialogs) get the stronger tint: their text is the lightest ink on the
+   page, so they need the most help against a dark corner of the scene. */
+.app-layout-inner :is(.head, .page-head, .hint, .empty, .section-head, .filters, .table-wrap),
+.v-overlay__content > .v-card {
+  background-color: var(--glass-tint-strong) !important;
+}
+
 .app-layout-inner :is(main.content, main.page-main) > :is(.head, .page-head, .tabs, .hint, .empty),
 .app-layout-inner .block > :is(.section-title, .hint, .empty),
 .app-layout-inner .section-head {
   padding: 16px 18px;
-  border: 1px solid rgba(224, 232, 230, 0.9);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.98);
-  box-shadow: 0 1px 3px rgba(18, 52, 59, 0.04);
 }
 
 @media (max-width: 720px) {
   .app-layout-inner :is(main.content, main.page-main) > :is(.head, .page-head) {
     padding: 14px 14px;
+  }
+}
+
+/* ---- Motion ----------------------------------------------------------------
+   Transform and opacity only: nothing here animates width, height, top, left or
+   margin, so a running animation can never reflow the page. Every entry is
+   inside a no-preference media query, which is what makes the reduced-motion
+   visitor see the finished layout immediately, with no parallax and no tilt. */
+@keyframes panel-rise {
+  from { opacity: 0; transform: translate3d(0, 12px, 0); }
+}
+
+@keyframes page-fade {
+  from { opacity: 0; transform: translate3d(0, 6px, 0); }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* Every page renders its own <main>, so a route change replays both animations
+     from the top: the new page fades in and its sections rise in sequence. */
+  .app-layout-inner > main { animation: page-fade 0.3s ease-out backwards; }
+  .app-layout-inner > main > * {
+    animation: panel-rise 0.44s cubic-bezier(0.22, 0.61, 0.36, 1) backwards;
+  }
+  .app-layout-inner > main > :nth-child(2) { animation-delay: 0.04s; }
+  .app-layout-inner > main > :nth-child(3) { animation-delay: 0.08s; }
+  .app-layout-inner > main > :nth-child(4) { animation-delay: 0.12s; }
+  .app-layout-inner > main > :nth-child(5) { animation-delay: 0.16s; }
+  .app-layout-inner > main > :nth-child(6) { animation-delay: 0.2s; }
+  .app-layout-inner > main > :nth-child(n + 7) { animation-delay: 0.24s; }
+
+  /* Press feedback, on every tier: a button never moves its neighbours. */
+  .app-layout-inner :is(button, .v-btn):active {
+    transform: translate3d(0, 1px, 0) scale(0.985);
+  }
+}
+
+/* Lift and tilt follow a real mouse only (never a finger), and only while the
+   top tier is running: on medium, low and static the cards stay put. */
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  :root[data-bg-tier='high'] .app-layout-inner :is(.card, .summary-item),
+  :root[data-bg-tier='high'] .v-overlay__content > .v-card {
+    transition: transform 0.24s ease, box-shadow 0.24s ease;
+  }
+
+  :root[data-bg-tier='high'] .app-layout-inner :is(.card, .summary-item):hover,
+  :root[data-bg-tier='high'] .v-overlay__content > .v-card:hover {
+    transform: perspective(900px) translate3d(0, -3px, 0) rotateX(1.2deg) rotateY(-1.2deg);
+    box-shadow: var(--glass-shadow-hover);
   }
 }
