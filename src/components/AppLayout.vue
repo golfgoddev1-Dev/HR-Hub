@@ -2,7 +2,7 @@
 // The dock/admin shell drawn by RoleShell. It owns the dock (so the dock mounts
 // once per system and survives page changes) and the approvals lookup (so pages
 // no longer fetch it), then renders the matched page below.
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import AdminNav from './AdminNav.vue'
 import AppDock from './AppDock.vue'
@@ -23,6 +23,13 @@ import {
   retainApprovalCountSync,
   setApprovalCount,
 } from '../lib/approval-count.js'
+
+// The decorative background is its own chunk and is fetched only once this
+// signed-in shell renders. Holding an async reference here keeps the scene and
+// Three.js out of the entry bundle, and no page outside this layout can mount
+// it: /login, /set-pin, /change-pin, /pending and the public registration page
+// never reach AppLayout.
+const AppBackground = defineAsyncComponent(() => import('./AppBackground3D.vue'))
 
 const props = defineProps({
   nav: {
@@ -107,6 +114,7 @@ onBeforeUnmount(() => releaseApprovals())
 
 <template>
   <div class="app-layout">
+    <AppBackground />
     <div class="app-layout-inner">
       <AdminNav v-if="nav === 'admin'" :sections="sections" />
       <AppDock
@@ -134,6 +142,11 @@ onBeforeUnmount(() => releaseApprovals())
 /* Same 1120px box, centring and single padding for every route: the dock is the
    first child, so its x/y/width no longer depends on the page around it. */
 .app-layout-inner {
+  /* Above the fixed background layer (z-index 0), so no text or control can
+     ever sit under it. The dock, sheets and dialogs keep their own higher
+     z-index; dialogs are teleported to the body anyway. */
+  position: relative;
+  z-index: 1;
   max-width: 1120px;
   margin: 0 auto;
   padding: 16px 20px 0;
