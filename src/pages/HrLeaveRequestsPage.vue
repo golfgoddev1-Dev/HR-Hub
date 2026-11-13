@@ -4,6 +4,8 @@ import { postJson } from '../api.js'
 import { formatThaiDate, formatThaiDateRange } from '../lib/thai-date.js'
 import { certificateStatus, retentionNotice } from '../leave-certificate.js'
 import { getCached, peekCached } from '../lib/data-cache.js'
+import HrLeave3DScene from '../components/HrLeave3DScene.vue'
+import { allowsPointerTilt } from '../lib/lite-mode.js'
 import {
   DATA_KEYS,
   PAGE_TTL_MS,
@@ -50,6 +52,30 @@ const filters = ref({
   from: '',
   to: '',
 })
+
+// Pointer tilt on the rows: a 6-degree follow of the pointer, off on lite
+// devices and wherever the visitor asked for reduced motion.
+const TILT_MAX_DEG = 6
+const tiltEnabled = ref(false)
+
+function tiltCard(event) {
+  if (!tiltEnabled.value) return
+  const el = event.currentTarget
+  if (!el || typeof el.getBoundingClientRect !== 'function') return
+  const rect = el.getBoundingClientRect()
+  if (!rect.width || !rect.height) return
+  const across = (event.clientX - rect.left) / rect.width
+  const down = (event.clientY - rect.top) / rect.height
+  el.style.setProperty('--tilt-y', `${((across - 0.5) * 2 * TILT_MAX_DEG).toFixed(2)}deg`)
+  el.style.setProperty('--tilt-x', `${((0.5 - down) * 2 * TILT_MAX_DEG).toFixed(2)}deg`)
+}
+
+function resetCardTilt(event) {
+  const el = event.currentTarget
+  if (!el || !el.style) return
+  el.style.removeProperty('--tilt-y')
+  el.style.removeProperty('--tilt-x')
+}
 
 const detail = ref(null)
 const detailLoading = ref(false)
@@ -190,6 +216,8 @@ function previousPage() {
 }
 
 onMounted(async () => {
+  // Read once on mount: a lite device keeps the list flat for the whole visit.
+  tiltEnabled.value = allowsPointerTilt()
   await loadOptions()
   await load(1)
 })
@@ -209,6 +237,9 @@ onMounted(async () => {
           <RouterLink to="/hr/leave/backdated" class="primary-link">คีย์ใบลาย้อนหลัง</RouterLink>
         </div>
       </div>
+
+      <!-- Decorative only: lite devices keep the gradient, never a canvas. -->
+      <HrLeave3DScene class="hero-scene" />
 
       <section class="filters">
         <label class="field">
@@ -293,31 +324,39 @@ onMounted(async () => {
             <span>สถานะ</span>
           </div>
 
-          <button
-            v-for="item in results"
-            :key="item.id"
-            type="button"
-            class="list-row"
-            @click="openDetail(item)"
-          >
-            <span class="cell">
-              <span class="code">{{ item.requestCode || '—' }}</span>
-              <span class="name">{{ item.requester?.fullName || '—' }}</span>
-              <span class="meta">
-                {{ item.requester?.employeeCode || '' }}
-                <template v-if="item.departmentName"> · {{ item.departmentName }}</template>
+          <TransitionGroup name="leave-card" tag="div" class="list-body">
+            <button
+              v-for="(item, index) in results"
+              :key="item.id"
+              type="button"
+              class="list-row"
+              :class="{ 'row-tilt': tiltEnabled }"
+              :style="{ '--row-index': index }"
+              @pointermove="tiltCard"
+              @pointerleave="resetCardTilt"
+              @focus="resetCardTilt"
+              @blur="resetCardTilt"
+              @click="openDetail(item)"
+            >
+              <span class="cell">
+                <span class="code">{{ item.requestCode || '—' }}</span>
+                <span class="name">{{ item.requester?.fullName || '—' }}</span>
+                <span class="meta">
+                  {{ item.requester?.employeeCode || '' }}
+                  <template v-if="item.departmentName"> · {{ item.departmentName }}</template>
+                </span>
               </span>
-            </span>
-            <span class="cell">
-              {{ item.leaveTypeName || '—' }}
-              <span v-if="item.source === 'hr_backdated'" class="tag">คีย์ย้อนหลัง</span>
-            </span>
-            <span class="cell">{{ formatThaiDateRange(item.startDate, item.endDate) }}</span>
-            <span class="cell">{{ item.days ?? '—' }}</span>
-            <span class="cell">
-              <span class="badge" :class="statusClass(item.status)">{{ statusLabel(item.status) }}</span>
-            </span>
-          </button>
+              <span class="cell">
+                {{ item.leaveTypeName || '—' }}
+                <span v-if="item.source === 'hr_backdated'" class="tag">คีย์ย้อนหลัง</span>
+              </span>
+              <span class="cell">{{ formatThaiDateRange(item.startDate, item.endDate) }}</span>
+              <span class="cell">{{ item.days ?? '—' }}</span>
+              <span class="cell">
+                <span class="badge" :class="statusClass(item.status)">{{ statusLabel(item.status) }}</span>
+              </span>
+            </button>
+          </TransitionGroup>
 
           <p v-if="results.length === 0" class="empty">ไม่พบใบลาตามเงื่อนไขที่เลือก</p>
         </section>
@@ -333,68 +372,70 @@ onMounted(async () => {
         </div>
       </template>
 
-      <section v-if="detail" class="detail">
-        <div class="detail-head">
-          <h2 class="detail-title">รายละเอียดใบลา</h2>
-          <button type="button" class="ghost-btn" @click="detail = null">ปิด</button>
-        </div>
-
-        <p v-if="detail.error" class="hint error">{{ detail.error }}</p>
-        <p v-else-if="detailLoading && !detail.requestCode" class="hint">กำลังโหลด…</p>
-        <template v-else>
-          <dl class="facts">
-            <div class="fact"><dt>รหัส</dt><dd>{{ detail.requestCode || '—' }}</dd></div>
-            <div class="fact"><dt>พนักงาน</dt><dd>{{ detail.requester?.fullName || '—' }}</dd></div>
-            <div class="fact"><dt>แผนก</dt><dd>{{ detail.departmentName || '—' }}</dd></div>
-            <div class="fact"><dt>ประเภท</dt><dd>{{ detail.leaveTypeName || '—' }}</dd></div>
-            <div class="fact"><dt>ช่วงวันที่</dt><dd>{{ formatThaiDateRange(detail.startDate, detail.endDate) }}</dd></div>
-            <div class="fact"><dt>จำนวนวัน</dt><dd>{{ detail.days ?? '—' }}</dd></div>
-            <div class="fact">
-              <dt>กลับมาทำงาน</dt>
-              <dd>
-                {{ detail.returnDate ? `${formatThaiDate(detail.returnDate)} ${detail.returnTime || ''}` : '—' }}
-              </dd>
-            </div>
-            <div class="fact"><dt>กะ / OT</dt><dd>{{ detail.shiftCode || '—' }} · {{ detail.otOption || '—' }}</dd></div>
-            <div class="fact"><dt>ผู้อนุมัติ</dt><dd>{{ detail.approver?.fullName || '—' }}</dd></div>
-            <div class="fact"><dt>ที่มา</dt><dd>{{ detail.source === 'hr_backdated' ? 'HR คีย์ย้อนหลัง' : 'พนักงานยื่นเอง' }}</dd></div>
-            <div class="fact"><dt>ตัดสินเมื่อ</dt><dd>{{ formatThaiDate(detail.decidedAt) }}</dd></div>
-            <div class="fact"><dt>บันทึกเมื่อ</dt><dd>{{ formatThaiDate(detail.createdAt) }}</dd></div>
-          </dl>
-
-          <p v-if="detail.otherTypeDetail" class="note">ประเภทอื่น ๆ: {{ detail.otherTypeDetail }}</p>
-          <p v-if="detail.reason" class="note">เหตุผล: {{ detail.reason }}</p>
-          <p v-if="detail.decisionNote" class="note">หมายเหตุการตัดสิน: {{ detail.decisionNote }}</p>
-          <p v-if="certificateOf(detail).has" class="note">
-            <span>{{ certificateOf(detail).label }}</span>
-            <span
-              v-if="certificateOf(detail).state === 'stored' && certificateOf(detail).expiry"
-              class="note-sub"
-            >
-              · {{ certificateOf(detail).expiry.label }}
-            </span>
-          </p>
-          <p v-if="retentionDays > 0" class="note-sub">{{ retentionNotice(retentionDays) }}</p>
-
-          <div class="detail-actions">
-            <button type="button" class="ghost-btn" @click="openPrint(detail.id)">
-              พิมพ์ / บันทึกเป็น PDF
-            </button>
-            <button
-              v-if="detail.status === 'pending'"
-              type="button"
-              class="primary-btn"
-              :disabled="resendBusy"
-              @click="resendApprovalLink(detail.id)"
-            >
-              ส่งลิงก์อนุมัติใหม่
-            </button>
+      <Transition name="leave-detail">
+        <section v-if="detail" class="detail">
+          <div class="detail-head">
+            <h2 class="detail-title">รายละเอียดใบลา</h2>
+            <button type="button" class="ghost-btn" @click="detail = null">ปิด</button>
           </div>
 
-          <p v-if="resendError" class="hint error">{{ resendError }}</p>
-          <p v-if="resendMessage" class="hint">{{ resendMessage }}</p>
-        </template>
-      </section>
+          <p v-if="detail.error" class="hint error">{{ detail.error }}</p>
+          <p v-else-if="detailLoading && !detail.requestCode" class="hint">กำลังโหลด…</p>
+          <template v-else>
+            <dl class="facts">
+              <div class="fact"><dt>รหัส</dt><dd>{{ detail.requestCode || '—' }}</dd></div>
+              <div class="fact"><dt>พนักงาน</dt><dd>{{ detail.requester?.fullName || '—' }}</dd></div>
+              <div class="fact"><dt>แผนก</dt><dd>{{ detail.departmentName || '—' }}</dd></div>
+              <div class="fact"><dt>ประเภท</dt><dd>{{ detail.leaveTypeName || '—' }}</dd></div>
+              <div class="fact"><dt>ช่วงวันที่</dt><dd>{{ formatThaiDateRange(detail.startDate, detail.endDate) }}</dd></div>
+              <div class="fact"><dt>จำนวนวัน</dt><dd>{{ detail.days ?? '—' }}</dd></div>
+              <div class="fact">
+                <dt>กลับมาทำงาน</dt>
+                <dd>
+                  {{ detail.returnDate ? `${formatThaiDate(detail.returnDate)} ${detail.returnTime || ''}` : '—' }}
+                </dd>
+              </div>
+              <div class="fact"><dt>กะ / OT</dt><dd>{{ detail.shiftCode || '—' }} · {{ detail.otOption || '—' }}</dd></div>
+              <div class="fact"><dt>ผู้อนุมัติ</dt><dd>{{ detail.approver?.fullName || '—' }}</dd></div>
+              <div class="fact"><dt>ที่มา</dt><dd>{{ detail.source === 'hr_backdated' ? 'HR คีย์ย้อนหลัง' : 'พนักงานยื่นเอง' }}</dd></div>
+              <div class="fact"><dt>ตัดสินเมื่อ</dt><dd>{{ formatThaiDate(detail.decidedAt) }}</dd></div>
+              <div class="fact"><dt>บันทึกเมื่อ</dt><dd>{{ formatThaiDate(detail.createdAt) }}</dd></div>
+            </dl>
+
+            <p v-if="detail.otherTypeDetail" class="note">ประเภทอื่น ๆ: {{ detail.otherTypeDetail }}</p>
+            <p v-if="detail.reason" class="note">เหตุผล: {{ detail.reason }}</p>
+            <p v-if="detail.decisionNote" class="note">หมายเหตุการตัดสิน: {{ detail.decisionNote }}</p>
+            <p v-if="certificateOf(detail).has" class="note">
+              <span>{{ certificateOf(detail).label }}</span>
+              <span
+                v-if="certificateOf(detail).state === 'stored' && certificateOf(detail).expiry"
+                class="note-sub"
+              >
+                · {{ certificateOf(detail).expiry.label }}
+              </span>
+            </p>
+            <p v-if="retentionDays > 0" class="note-sub">{{ retentionNotice(retentionDays) }}</p>
+
+            <div class="detail-actions">
+              <button type="button" class="ghost-btn" @click="openPrint(detail.id)">
+                พิมพ์ / บันทึกเป็น PDF
+              </button>
+              <button
+                v-if="detail.status === 'pending'"
+                type="button"
+                class="primary-btn"
+                :disabled="resendBusy"
+                @click="resendApprovalLink(detail.id)"
+              >
+                ส่งลิงก์อนุมัติใหม่
+              </button>
+            </div>
+
+            <p v-if="resendError" class="hint error">{{ resendError }}</p>
+            <p v-if="resendMessage" class="hint">{{ resendMessage }}</p>
+          </template>
+        </section>
+      </Transition>
     </main>
 </template>
 
@@ -433,6 +474,12 @@ onMounted(async () => {
   font-size: 13px;
   color: #5c7176;
   line-height: 1.6;
+}
+
+/* The decorative 3D layer sits above the filters as its own band, so no leave
+   text ever shares space with it. */
+.hero-scene {
+  margin-bottom: 16px;
 }
 
 .filters {
@@ -559,6 +606,10 @@ onMounted(async () => {
   border-bottom: 1px solid #e6edeb;
 }
 
+.list-body {
+  perspective: 1000px;
+}
+
 .list-row {
   width: 100%;
   border: none;
@@ -569,12 +620,46 @@ onMounted(async () => {
   font-size: 13.5px;
   color: #12343b;
   cursor: pointer;
+  transform: rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg));
+  transform-style: preserve-3d;
+  transition: transform 240ms ease, box-shadow 240ms ease, background-color 160ms ease;
+  box-shadow: 0 1px 1px rgba(16, 80, 78, 0.04);
 }
 
 .list-row:hover,
 .list-row:focus-visible {
   background: #f4f8f7;
   outline: none;
+}
+
+/* A small follow of the pointer, only where lite mode left the tilt on. */
+.list-row.row-tilt:hover,
+.list-row.row-tilt:focus-visible {
+  z-index: 2;
+  transform: rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg)) translateZ(6px);
+  box-shadow:
+    0 2px 4px rgba(16, 80, 78, 0.1),
+    0 10px 20px rgba(16, 80, 78, 0.1),
+    0 22px 40px rgba(16, 80, 78, 0.06);
+}
+
+/* Entrance: the cards rise in with a short stagger, 280ms at the slowest. */
+.leave-card-enter-active {
+  transition: opacity 260ms ease, transform 260ms cubic-bezier(0.22, 0.75, 0.35, 1);
+  transition-delay: calc(var(--row-index, 0) * 28ms);
+}
+
+.leave-card-enter-from {
+  opacity: 0;
+  transform: translateY(12px) rotateX(-4deg) scale(0.985);
+}
+
+.leave-card-leave-active {
+  transition: opacity 140ms ease;
+}
+
+.leave-card-leave-to {
+  opacity: 0;
 }
 
 .list-row:last-of-type {
@@ -645,6 +730,27 @@ onMounted(async () => {
   border: 1px solid #dfe7e5;
   border-radius: 14px;
   padding: 18px 20px;
+  transform-origin: top center;
+}
+
+/* The detail panel opens from the top: a slight scale and a small rotateX. */
+.leave-detail-enter-active {
+  transition: opacity 240ms ease, transform 240ms cubic-bezier(0.22, 0.75, 0.35, 1);
+}
+
+.leave-detail-enter-from {
+  opacity: 0;
+  transform-origin: top center;
+  transform: perspective(900px) scale(0.96) rotateX(-8deg);
+}
+
+.leave-detail-leave-active {
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.leave-detail-leave-to {
+  opacity: 0;
+  transform: perspective(900px) scale(0.98);
 }
 
 .detail-head {
@@ -705,6 +811,29 @@ onMounted(async () => {
     border-radius: 10px;
     margin-bottom: 8px;
     padding: 12px;
+  }
+}
+
+/* Reduced motion: no tilt, no rise, no scale. The list and the panel still
+   render, just without movement. */
+@media (prefers-reduced-motion: reduce) {
+  .list-row,
+  .list-row.row-tilt:hover,
+  .list-row.row-tilt:focus-visible,
+  .leave-card-enter-active,
+  .leave-card-leave-active,
+  .leave-detail-enter-active,
+  .leave-detail-leave-active {
+    transition: none;
+    transform: none;
+  }
+
+  .leave-card-enter-from,
+  .leave-card-leave-to,
+  .leave-detail-enter-from,
+  .leave-detail-leave-to {
+    opacity: 1;
+    transform: none;
   }
 }
 </style>
