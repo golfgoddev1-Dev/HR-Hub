@@ -1,7 +1,6 @@
 // Frontend rules for the system-admin permission page. No browser needed: the
 // search URL and escaping, the flag diff, the confirm rule and the route/nav
 // wiring are all plain data.
-import { readFileSync } from 'node:fs'
 
 import { describe, expect, it } from 'vitest'
 
@@ -27,11 +26,12 @@ import {
 import { adminNavItems } from '../src/lib/nav-config.js'
 import { canOpenPath } from '../src/lib/route-access.js'
 
-const NAV = readFileSync(new URL('../src/components/AdminNav.vue', import.meta.url), 'utf8')
-const ROUTER = readFileSync(new URL('../src/router.js', import.meta.url), 'utf8')
-const PAGE = readFileSync(
-  new URL('../src/pages/AdminPermissionsPage.vue', import.meta.url),
-  'utf8'
+import { readSource } from './helpers/read-source.js'
+
+const NAV = readSource(new URL('../src/components/AdminNav.vue', import.meta.url))
+const ROUTER = readSource(new URL('../src/router.js', import.meta.url))
+const PAGE = readSource(
+  new URL('../src/pages/AdminPermissionsPage.vue', import.meta.url)
 )
 
 const ALL_OFF = emptyPermissionFlags()

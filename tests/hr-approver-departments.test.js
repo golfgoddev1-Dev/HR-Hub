@@ -2,18 +2,18 @@
 // (`/api/hr/directory/catalog/catalog`), which threw on every load and left the
 // page showing "ไม่พบแผนก". These checks pin the source URL, the no-caching rule
 // for a failed or empty read, and the error + retry the page now shows.
-import { readFileSync } from 'node:fs'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { DATA_KEYS, loadHrDepartments } from '../src/lib/shared-data.js'
 import { clearAll, peekCached } from '../src/lib/data-cache.js'
 
-const PAGE = readFileSync(
-  new URL('../src/pages/HrLeaveApproversPage.vue', import.meta.url),
-  'utf8'
+import { readSource } from './helpers/read-source.js'
+
+const PAGE = readSource(
+  new URL('../src/pages/HrLeaveApproversPage.vue', import.meta.url)
 )
-const SHARED = readFileSync(new URL('../src/lib/shared-data.js', import.meta.url), 'utf8')
+const SHARED = readSource(new URL('../src/lib/shared-data.js', import.meta.url))
 
 const realFetch = globalThis.fetch
 

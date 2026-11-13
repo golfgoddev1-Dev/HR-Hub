@@ -1,7 +1,6 @@
 // The pending-approval badge: the decision path lowers the shared number, the
 // other tabs of this browser hear it over a BroadcastChannel, and a light ETag
 // read picks up new requests. These tests cover the pure rules and the wiring.
-import { readFileSync } from 'node:fs'
 
 import { describe, expect, it, vi } from 'vitest'
 
@@ -17,7 +16,9 @@ import {
   setApprovalCount,
 } from '../src/lib/approval-count.js'
 
-const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
+import { readSource } from './helpers/read-source.js'
+
+const read = (path) => readSource(new URL(`../${path}`, import.meta.url))
 
 const COUNT_LIB = read('src/lib/approval-count.js')
 const APPROVALS_PAGE = read('src/pages/LeaveApprovalsPage.vue')

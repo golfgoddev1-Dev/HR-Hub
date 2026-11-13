@@ -16,11 +16,13 @@
 //   therefore ignored.
 // - A dynamic class produced entirely by application code is not a Vuetify
 //   utility allowlist entry; the guard does not guess its runtime value.
-import { readFileSync, readdirSync } from 'node:fs'
+import { readdirSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
+
+import { readSource } from './helpers/read-source.js'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const ICON_TOKEN = /^[a-z][a-z0-9_]*$/
@@ -41,12 +43,12 @@ function sourceFiles(dir) {
 
 const ALL_SOURCES = sourceFiles(join(ROOT, 'src')).map((absolute) => ({
   file: toPosix(relative(ROOT, absolute)),
-  source: readFileSync(absolute, 'utf8'),
+  source: readSource(absolute),
 }))
 const VUE_SOURCES = ALL_SOURCES.filter(({ file }) => file.endsWith('.vue'))
 
 function readProjectFile(file) {
-  return readFileSync(join(ROOT, file), 'utf8')
+  return readSource(join(ROOT, file))
 }
 
 const HTML = readProjectFile('index.html')

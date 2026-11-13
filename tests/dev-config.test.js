@@ -2,12 +2,13 @@
 // only API, so `npm run dev` must start it together with Vite and Vite must
 // proxy /api to it. These replace the server-only unit tests that were removed
 // with server/.
-import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 
+import { readSource } from './helpers/read-source.js'
+
 const projectRoot = path.resolve(import.meta.dirname, '..')
-const pkg = JSON.parse(readFileSync(path.join(projectRoot, 'package.json'), 'utf8'))
+const pkg = JSON.parse(readSource(path.join(projectRoot, 'package.json')))
 
 describe('local dev wiring', () => {
   it('runs the Worker and Vite together and no longer ships Express scripts', () => {

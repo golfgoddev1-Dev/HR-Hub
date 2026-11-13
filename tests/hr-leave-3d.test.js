@@ -8,12 +8,13 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { readFileSync } from 'node:fs'
 
 import { allowsPointerTilt, isLiteMode, prefersReducedMotion } from '../src/lib/lite-mode.js'
 import HrLeave3DScene from '../src/components/HrLeave3DScene.vue'
 import HrLeaveRequestsPage from '../src/pages/HrLeaveRequestsPage.vue'
 import { clearAll } from '../src/lib/data-cache.js'
+
+import { readSource } from './helpers/read-source.js'
 
 const threeMock = vi.hoisted(() => {
   const state = {
@@ -227,8 +228,8 @@ function fakeWindow({ width = 1440, coarse = false, reduced = false, memory, cor
   }
 }
 
-const SCENE_SOURCE = readFileSync('src/components/HrLeave3DScene.vue', 'utf8')
-const PAGE_SOURCE = readFileSync('src/pages/HrLeaveRequestsPage.vue', 'utf8')
+const SCENE_SOURCE = readSource('src/components/HrLeave3DScene.vue')
+const PAGE_SOURCE = readSource('src/pages/HrLeaveRequestsPage.vue')
 const CARD_COUNT_MIN = 6
 
 function luminance(hex) {

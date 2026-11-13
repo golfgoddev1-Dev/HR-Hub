@@ -1,13 +1,14 @@
 // One shell for every signed-in page. These checks pin the rule that fixes the
 // menu swap: the route parent chooses the navigation from the session role, so a
 // meeting controller on /leave keeps the meeting sidebar.
-import { readFileSync } from 'node:fs'
 
 import { describe, expect, it } from 'vitest'
 
 import { NAV_SECTION_LABELS, leaveNavItems, navSections } from '../src/lib/nav-config.js'
 
-const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
+import { readSource } from './helpers/read-source.js'
+
+const read = (path) => readSource(new URL(`../${path}`, import.meta.url))
 
 const ROUTER = read('src/router.js')
 const ROLE_SHELL = read('src/components/RoleShell.vue')

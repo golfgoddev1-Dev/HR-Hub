@@ -1,18 +1,17 @@
 // The shell no longer wraps each page: one route parent mounts the nav and swaps
 // only the routed page, so the nav element cannot remount and flicker when the
 // user moves between leave pages.
-import { readFileSync } from 'node:fs'
 
 import { describe, expect, it } from 'vitest'
 
-const ROUTER = readFileSync(new URL('../src/router.js', import.meta.url), 'utf8')
-const APP_LAYOUT = readFileSync(
-  new URL('../src/components/AppLayout.vue', import.meta.url),
-  'utf8'
+import { readSource } from './helpers/read-source.js'
+
+const ROUTER = readSource(new URL('../src/router.js', import.meta.url))
+const APP_LAYOUT = readSource(
+  new URL('../src/components/AppLayout.vue', import.meta.url)
 )
-const ROLE_SHELL = readFileSync(
-  new URL('../src/components/RoleShell.vue', import.meta.url),
-  'utf8'
+const ROLE_SHELL = readSource(
+  new URL('../src/components/RoleShell.vue', import.meta.url)
 )
 
 const LEAVE_PAGES = [
@@ -23,7 +22,7 @@ const LEAVE_PAGES = [
   'ProfilePage.vue',
 ]
 
-const page = (name) => readFileSync(new URL(`../src/pages/${name}`, import.meta.url), 'utf8')
+const page = (name) => readSource(new URL(`../src/pages/${name}`, import.meta.url))
 
 describe('persistent leave layout', () => {
   it('is the one shell route parent, so the dock mounts once for all leave pages', () => {

@@ -1,7 +1,7 @@
 // One shell, mounted by the router. These checks pin the structure that keeps a
 // signed-in user inside one navigation: RoleShell owns the shell for the session
 // role, the routed page renders below it, and pages are content only.
-import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { readdirSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -9,14 +9,16 @@ import { describe, expect, it } from 'vitest'
 
 import { canOpenPath } from '../src/lib/route-access.js'
 
+import { readSource } from './helpers/read-source.js'
+
 const SRC = fileURLToPath(new URL('../src', import.meta.url))
 const COMPONENTS = join(SRC, 'components')
 const PAGES = join(SRC, 'pages')
 
-const LAYOUT = readFileSync(join(COMPONENTS, 'AppLayout.vue'), 'utf8')
-const ROUTER = readFileSync(join(SRC, 'router.js'), 'utf8')
-const ROLE_SHELL = readFileSync(join(COMPONENTS, 'RoleShell.vue'), 'utf8')
-const CONTROLLER_SHELL = readFileSync(join(COMPONENTS, 'ControllerShell.vue'), 'utf8')
+const LAYOUT = readSource(join(COMPONENTS, 'AppLayout.vue'))
+const ROUTER = readSource(join(SRC, 'router.js'))
+const ROLE_SHELL = readSource(join(COMPONENTS, 'RoleShell.vue'))
+const CONTROLLER_SHELL = readSource(join(COMPONENTS, 'ControllerShell.vue'))
 
 const PAGE_FILES = readdirSync(PAGES).filter((name) => name.endsWith('.vue'))
 
@@ -28,7 +30,7 @@ function vueFiles(dir) {
   })
 }
 
-const page = (name) => readFileSync(join(PAGES, name), 'utf8')
+const page = (name) => readSource(join(PAGES, name))
 
 const LEAVE_PATHS = [
   '/change-pin',
@@ -95,7 +97,7 @@ describe('shared app layout', () => {
 
   it('is the only file that imports the dock or the admin menu', () => {
     const importers = vueFiles(SRC)
-      .filter((file) => /import (AppDock|AdminNav) from/.test(readFileSync(file, 'utf8')))
+      .filter((file) => /import (AppDock|AdminNav) from/.test(readSource(file)))
       .map((file) => relative(SRC, file).split('\\').join('/'))
     expect(importers).toEqual(['components/AppLayout.vue'])
   })

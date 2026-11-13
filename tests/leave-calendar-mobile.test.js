@@ -1,6 +1,5 @@
 // The phone month grid: one pill per cell, no event dots or "+N" text, short
 // weekday labels, and Thai aria-labels built from the visible day counts.
-import { readFileSync } from 'node:fs'
 
 import { describe, expect, it } from 'vitest'
 
@@ -15,9 +14,10 @@ import {
   pillCount,
 } from '../src/lib/leave-calendar-mobile.js'
 
-const VIEW = readFileSync(
-  new URL('../src/components/LeaveCalendarView.vue', import.meta.url),
-  'utf8'
+import { readSource } from './helpers/read-source.js'
+
+const VIEW = readSource(
+  new URL('../src/components/LeaveCalendarView.vue', import.meta.url)
 )
 const CSS = VIEW.slice(VIEW.indexOf('<style scoped>'))
 

@@ -1,7 +1,6 @@
 // Printable leave form (phase 4): every field the template requires, Thai
 // Buddhist dates, the half-day wording, the certificate answer and the HR-only
 // access rule.
-import { readFileSync } from 'node:fs'
 
 import { describe, expect, it } from 'vitest'
 
@@ -16,6 +15,8 @@ import {
   isBackdatedRequest,
   leavePrintModel,
 } from '../src/leave-print.js'
+
+import { readSource } from './helpers/read-source.js'
 
 const REQUEST = {
   id: 'leave-1',
@@ -43,7 +44,7 @@ const REQUEST = {
   shift: { code: 'DAY_FULL', label: 'เต็มวัน', timeFrom: '08:30:00', timeTo: '16:30:00' },
 }
 
-const PRINT_PAGE = readFileSync(new URL('../src/pages/HrLeavePrintPage.vue', import.meta.url), 'utf8')
+const PRINT_PAGE = readSource(new URL('../src/pages/HrLeavePrintPage.vue', import.meta.url))
 
 describe('leavePrintModel', () => {
   it('fills every field of the form', () => {

@@ -1,6 +1,5 @@
 // Notification route keys and the login `to` allowlist. Payloads never carry a
 // path or URL; these two values are the complete set of accepted destinations.
-import { readFileSync } from 'node:fs'
 
 import { describe, expect, it } from 'vitest'
 
@@ -10,9 +9,11 @@ import {
   safeLoginTarget,
 } from '../src/lib/notification-routes.js'
 
-const SW = readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8')
-const ROUTER = readFileSync(new URL('../src/router.js', import.meta.url), 'utf8')
-const LOGIN = readFileSync(new URL('../src/pages/LoginPage.vue', import.meta.url), 'utf8')
+import { readSource } from './helpers/read-source.js'
+
+const SW = readSource(new URL('../public/sw.js', import.meta.url))
+const ROUTER = readSource(new URL('../src/router.js', import.meta.url))
+const LOGIN = readSource(new URL('../src/pages/LoginPage.vue', import.meta.url))
 
 describe('notification route keys', () => {
   it('maps the two allowed keys and sends everything else to the root', () => {

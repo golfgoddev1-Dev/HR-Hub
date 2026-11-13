@@ -1,6 +1,5 @@
 // Certificate status on the leave pages: stored, recorded by HR, expired or
 // none, plus the retention window read from leave_settings.
-import { readFileSync } from 'node:fs'
 
 import { describe, expect, it } from 'vitest'
 
@@ -13,6 +12,8 @@ import {
   retentionNotice,
 } from '../src/leave-certificate.js'
 
+import { readSource } from './helpers/read-source.js'
+
 const STORED = {
   hasMedicalCertificate: true,
   attachmentPath: 'leave/1111/LV-20261103-001/cert.pdf',
@@ -20,7 +21,7 @@ const STORED = {
   createdAt: '2026-01-01T02:00:00.000Z',
 }
 
-const readPage = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
+const readPage = (path) => readSource(new URL(`../${path}`, import.meta.url))
 
 describe('certificateStatus', () => {
   it('shows nothing when the request has no certificate', () => {

@@ -1,11 +1,12 @@
 // Static checks for the mandatory PIN change wiring: the route, the guard and
 // the page that talks to /api/auth/change-pin.
-import { readFileSync } from 'node:fs'
 
 import { describe, expect, it } from 'vitest'
 
-const ROUTER = readFileSync(new URL('../src/router.js', import.meta.url), 'utf8')
-const PAGE = readFileSync(new URL('../src/pages/ChangePinPage.vue', import.meta.url), 'utf8')
+import { readSource } from './helpers/read-source.js'
+
+const ROUTER = readSource(new URL('../src/router.js', import.meta.url))
+const PAGE = readSource(new URL('../src/pages/ChangePinPage.vue', import.meta.url))
 
 describe('mandatory PIN change', () => {
   it('declares the change page as an authenticated route', () => {

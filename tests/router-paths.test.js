@@ -1,28 +1,28 @@
 // Router wiring checks that need no browser:
 // - HR can reach the employee management page that the menu links to;
 // - the router declares no /admin page, so nothing may send a role there.
-import { readFileSync, readdirSync } from 'node:fs'
+import { readdirSync } from 'node:fs'
 
 import { describe, expect, it } from 'vitest'
 
-const ROUTER = readFileSync(new URL('../src/router.js', import.meta.url), 'utf8')
+import { readSource } from './helpers/read-source.js'
+
+const ROUTER = readSource(new URL('../src/router.js', import.meta.url))
 // Both menus come from one shared config module now.
-const NAV_CONFIG = readFileSync(new URL('../src/lib/nav-config.js', import.meta.url), 'utf8')
-const ADMIN_PAGE = readFileSync(new URL('../src/pages/AdminPage.vue', import.meta.url), 'utf8')
-const ADMIN_NAV = readFileSync(new URL('../src/components/AdminNav.vue', import.meta.url), 'utf8')
+const NAV_CONFIG = readSource(new URL('../src/lib/nav-config.js', import.meta.url))
+const ADMIN_PAGE = readSource(new URL('../src/pages/AdminPage.vue', import.meta.url))
+const ADMIN_NAV = readSource(new URL('../src/components/AdminNav.vue', import.meta.url))
 // The role allow-lists now live in their own module, which the guard imports.
-const ROUTE_ACCESS = readFileSync(
-  new URL('../src/lib/route-access.js', import.meta.url),
-  'utf8'
+const ROUTE_ACCESS = readSource(
+  new URL('../src/lib/route-access.js', import.meta.url)
 )
-const HR_PASSWORD_PAGE = readFileSync(
-  new URL('../src/pages/HrPasswordPage.vue', import.meta.url),
-  'utf8'
+const HR_PASSWORD_PAGE = readSource(
+  new URL('../src/pages/HrPasswordPage.vue', import.meta.url)
 )
-const CHANGE_PIN_PAGE = readFileSync(new URL('../src/pages/ChangePinPage.vue', import.meta.url), 'utf8')
-const SET_PIN_PAGE = readFileSync(new URL('../src/pages/SetPinPage.vue', import.meta.url), 'utf8')
-const LOGIN_PAGE = readFileSync(new URL('../src/pages/LoginPage.vue', import.meta.url), 'utf8')
-const PENDING_PAGE = readFileSync(new URL('../src/pages/PendingPage.vue', import.meta.url), 'utf8')
+const CHANGE_PIN_PAGE = readSource(new URL('../src/pages/ChangePinPage.vue', import.meta.url))
+const SET_PIN_PAGE = readSource(new URL('../src/pages/SetPinPage.vue', import.meta.url))
+const LOGIN_PAGE = readSource(new URL('../src/pages/LoginPage.vue', import.meta.url))
+const PENDING_PAGE = readSource(new URL('../src/pages/PendingPage.vue', import.meta.url))
 const PAGES_DIR = new URL('../src/pages/', import.meta.url)
 
 /** The allow-list array of one role, as written in src/lib/route-access.js. */
@@ -110,17 +110,16 @@ describe('system_admin landing page', () => {
   it('is rendered by the admin page only, so no other role sees it', () => {
     // RoleShell picks the admin nav from the session role; pages never do.
     expect(ROUTER).toContain('component: RoleShell')
-    const roleShell = readFileSync(
-      new URL('../src/components/RoleShell.vue', import.meta.url),
-      'utf8'
+    const roleShell = readSource(
+      new URL('../src/components/RoleShell.vue', import.meta.url)
     )
     expect(roleShell).toContain("system_admin: 'admin'")
-    const layout = readFileSync(new URL('../src/components/AppLayout.vue', import.meta.url), 'utf8')
+    const layout = readSource(new URL('../src/components/AppLayout.vue', import.meta.url))
     expect(layout).toContain('<AdminNav')
 
     const importers = readdirSync(PAGES_DIR)
       .filter((name) => name.endsWith('.vue'))
-      .filter((name) => readFileSync(new URL(name, PAGES_DIR), 'utf8').includes('<AdminNav'))
+      .filter((name) => readSource(new URL(name, PAGES_DIR)).includes('<AdminNav'))
     expect(importers).toEqual([])
   })
 

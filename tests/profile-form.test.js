@@ -1,7 +1,6 @@
 // The profile page's rules without a browser: what the card shows, which
 // departments the dropdown may offer, when Save is enabled, and what the PATCH
 // body holds. The Worker still validates all of it.
-import { readFileSync } from 'node:fs'
 
 import { describe, expect, it } from 'vitest'
 
@@ -21,15 +20,16 @@ import {
   validateProfileForm,
 } from '../src/lib/profile-form.js'
 
+import { readSource } from './helpers/read-source.js'
+
 const READ_ONLY_NOTE =
   'หากต้องการแก้ไขข้อมูล กรุณาติดต่อฝ่ายบุคคล (HR) เท่านั้น'
 
-const ROUTER = readFileSync(new URL('../src/router.js', import.meta.url), 'utf8')
-const ROUTE_ACCESS = readFileSync(new URL('../src/lib/route-access.js', import.meta.url), 'utf8')
-const NAV_CONFIG = readFileSync(new URL('../src/lib/nav-config.js', import.meta.url), 'utf8')
-const PROFILE_PAGE = readFileSync(
-  new URL('../src/pages/ProfilePage.vue', import.meta.url),
-  'utf8'
+const ROUTER = readSource(new URL('../src/router.js', import.meta.url))
+const ROUTE_ACCESS = readSource(new URL('../src/lib/route-access.js', import.meta.url))
+const NAV_CONFIG = readSource(new URL('../src/lib/nav-config.js', import.meta.url))
+const PROFILE_PAGE = readSource(
+  new URL('../src/pages/ProfilePage.vue', import.meta.url)
 )
 
 const ACTIVE_A = '22222222-2222-4222-8222-222222222222'

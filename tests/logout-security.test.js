@@ -1,7 +1,7 @@
 // Logout must leave nothing behind in the browser: the API cache, web storage,
 // Cache Storage and the history entry. These checks pin the client half and the
 // back/forward-cache re-check without a browser.
-import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -11,8 +11,10 @@ import { clearAll, getCached } from '../src/lib/data-cache.js'
 import { completeLogout, logoutRequestOptions } from '../src/lib/logout.js'
 import { APP_STORAGE_KEYS, clearClientStorage } from '../src/lib/logout-storage.js'
 
+import { readSource } from './helpers/read-source.js'
+
 const SRC = fileURLToPath(new URL('../src', import.meta.url))
-const read = (path) => readFileSync(join(SRC, path), 'utf8')
+const read = (path) => readSource(join(SRC, path))
 
 function sourceFiles(dir) {
   return readdirSync(dir).flatMap((entry) => {
@@ -24,7 +26,7 @@ function sourceFiles(dir) {
 
 const ALL_SOURCES = sourceFiles(SRC).map((file) => ({
   file: file.slice(SRC.length + 1),
-  source: readFileSync(file, 'utf8'),
+  source: readSource(file),
 }))
 
 function fakeStorage(initial) {

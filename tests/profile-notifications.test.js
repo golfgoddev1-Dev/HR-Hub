@@ -1,22 +1,20 @@
 // Source checks for the single account-level leave-notification card: one
 // heading, one switch, the exact copy, an approver-only line, and permission
 // still requested only from a click path.
-import { readFileSync } from 'node:fs'
 
 import { describe, expect, it } from 'vitest'
 
-const PROFILE_PAGE = readFileSync(
-  new URL('../src/pages/ProfilePage.vue', import.meta.url),
-  'utf8'
+import { readSource } from './helpers/read-source.js'
+
+const PROFILE_PAGE = readSource(
+  new URL('../src/pages/ProfilePage.vue', import.meta.url)
 )
-const PUSH_TOGGLE = readFileSync(
-  new URL('../src/components/PushToggle.vue', import.meta.url),
-  'utf8'
+const PUSH_TOGGLE = readSource(
+  new URL('../src/components/PushToggle.vue', import.meta.url)
 )
-const PUSH_LIB = readFileSync(new URL('../src/lib/push.js', import.meta.url), 'utf8')
-const SWITCH = readFileSync(
-  new URL('../src/components/NotificationSwitch.vue', import.meta.url),
-  'utf8'
+const PUSH_LIB = readSource(new URL('../src/lib/push.js', import.meta.url))
+const SWITCH = readSource(
+  new URL('../src/components/NotificationSwitch.vue', import.meta.url)
 )
 
 function collapse(value) {

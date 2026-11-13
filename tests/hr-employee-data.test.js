@@ -1,27 +1,24 @@
 // Read-only employee profile and the one HR employee-data page. These are
 // source checks because the page components render Vuetify dialogs; the
 // behavioural checks live in the Worker route tests.
-import { readFileSync } from 'node:fs'
 
 import { describe, expect, it } from 'vitest'
 
 import { navSections } from '../src/lib/nav-config.js'
 
-const PROFILE_PAGE = readFileSync(
-  new URL('../src/pages/ProfilePage.vue', import.meta.url),
-  'utf8'
+import { readSource } from './helpers/read-source.js'
+
+const PROFILE_PAGE = readSource(
+  new URL('../src/pages/ProfilePage.vue', import.meta.url)
 )
-const HR_PAGE = readFileSync(
-  new URL('../src/pages/HrEmployeeDataPage.vue', import.meta.url),
-  'utf8'
+const HR_PAGE = readSource(
+  new URL('../src/pages/HrEmployeeDataPage.vue', import.meta.url)
 )
-const DIRECTORY_MANAGER = readFileSync(
-  new URL('../src/components/EmployeeDirectoryManager.vue', import.meta.url),
-  'utf8'
+const DIRECTORY_MANAGER = readSource(
+  new URL('../src/components/EmployeeDirectoryManager.vue', import.meta.url)
 )
-const HR_ROUTE = readFileSync(
-  new URL('../worker/src/routes/employee-directory.js', import.meta.url),
-  'utf8'
+const HR_ROUTE = readSource(
+  new URL('../worker/src/routes/employee-directory.js', import.meta.url)
 )
 
 describe('employee profile is read-only', () => {

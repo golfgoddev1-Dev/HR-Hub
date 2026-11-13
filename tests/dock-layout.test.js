@@ -2,14 +2,15 @@
 // groups and keeps logout on the right; phones get four primary tabs plus a
 // full-height sheet that lists every item and the logout button. These are
 // source checks because no DOM library is installed.
-import { readFileSync } from 'node:fs'
 
 import { describe, expect, it } from 'vitest'
 
 import { dockPrimaryItems, navSections } from '../src/lib/nav-config.js'
 
-const DOCK = readFileSync(new URL('../src/components/AppDock.vue', import.meta.url), 'utf8')
-const LAYOUT = readFileSync(new URL('../src/components/AppLayout.vue', import.meta.url), 'utf8')
+import { readSource } from './helpers/read-source.js'
+
+const DOCK = readSource(new URL('../src/components/AppDock.vue', import.meta.url))
+const LAYOUT = readSource(new URL('../src/components/AppLayout.vue', import.meta.url))
 
 const CSS = DOCK.slice(DOCK.indexOf('<style scoped>'))
 const DESKTOP = DOCK.slice(DOCK.indexOf('<header'), DOCK.indexOf('<nav class="dock-tabs"'))

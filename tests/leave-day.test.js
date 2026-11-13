@@ -1,7 +1,6 @@
 // The calendar day panel: counts are people, not records; a multi-day request
 // appears on every day; dates are string-only; the Intl heading is Bangkok; and
 // the modal markup carries the required accessibility and responsive pieces.
-import { readFileSync } from 'node:fs'
 
 import { describe, expect, it } from 'vitest'
 
@@ -14,13 +13,13 @@ import {
   toDetailRequest,
 } from '../src/lib/leave-day.js'
 
-const VIEW = readFileSync(
-  new URL('../src/components/LeaveCalendarView.vue', import.meta.url),
-  'utf8'
+import { readSource } from './helpers/read-source.js'
+
+const VIEW = readSource(
+  new URL('../src/components/LeaveCalendarView.vue', import.meta.url)
 )
-const DETAIL = readFileSync(
-  new URL('../src/components/LeaveRequestDetail.vue', import.meta.url),
-  'utf8'
+const DETAIL = readSource(
+  new URL('../src/components/LeaveRequestDetail.vue', import.meta.url)
 )
 
 const EVENTS = [

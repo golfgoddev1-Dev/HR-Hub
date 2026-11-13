@@ -1,7 +1,6 @@
 // The push switch is on only when the browser subscription and the server row
 // agree, while automatic re-subscribe is silent and click-only enabling is the
 // only place permission is requested.
-import { readFileSync } from 'node:fs'
 
 import { describe, expect, it } from 'vitest'
 
@@ -10,18 +9,17 @@ import {
   shouldAutoSubscribe,
 } from '../src/lib/push.js'
 
-const PUSH_LIB = readFileSync(new URL('../src/lib/push.js', import.meta.url), 'utf8')
-const PUSH_TOGGLE = readFileSync(
-  new URL('../src/components/PushToggle.vue', import.meta.url),
-  'utf8'
+import { readSource } from './helpers/read-source.js'
+
+const PUSH_LIB = readSource(new URL('../src/lib/push.js', import.meta.url))
+const PUSH_TOGGLE = readSource(
+  new URL('../src/components/PushToggle.vue', import.meta.url)
 )
-const PROFILE_PAGE = readFileSync(
-  new URL('../src/pages/ProfilePage.vue', import.meta.url),
-  'utf8'
+const PROFILE_PAGE = readSource(
+  new URL('../src/pages/ProfilePage.vue', import.meta.url)
 )
-const LOGIN_PAGE = readFileSync(
-  new URL('../src/pages/LoginPage.vue', import.meta.url),
-  'utf8'
+const LOGIN_PAGE = readSource(
+  new URL('../src/pages/LoginPage.vue', import.meta.url)
 )
 
 describe('push switch state', () => {

@@ -1,7 +1,6 @@
 // The approval history page: one default month, a 50-row page with "โหลดเพิ่ม",
 // no reason in the list, and menu/route visibility limited to an active approver
 // or HR.
-import { readFileSync } from 'node:fs'
 
 import { describe, expect, it } from 'vitest'
 
@@ -22,11 +21,12 @@ import {
 import { navSections } from '../src/lib/nav-config.js'
 import { canOpenPath } from '../src/lib/route-access.js'
 
-const PAGE = readFileSync(
-  new URL('../src/pages/LeaveApprovalHistoryPage.vue', import.meta.url),
-  'utf8'
+import { readSource } from './helpers/read-source.js'
+
+const PAGE = readSource(
+  new URL('../src/pages/LeaveApprovalHistoryPage.vue', import.meta.url)
 )
-const ROUTER = readFileSync(new URL('../src/router.js', import.meta.url), 'utf8')
+const ROUTER = readSource(new URL('../src/router.js', import.meta.url))
 
 describe('the default range', () => {
   it('is the current month in Bangkok', () => {

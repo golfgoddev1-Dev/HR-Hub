@@ -4,7 +4,6 @@
 // - an active approver sees it even with nothing pending, with no badge;
 // - pending requests add a badge with the count;
 // - a deactivated approver row means isApprover is false, so no item.
-import { readFileSync } from 'node:fs'
 
 import { describe, expect, it } from 'vitest'
 
@@ -15,8 +14,10 @@ import {
   badgeCount,
 } from '../src/lib/leave-nav-items.js'
 
-const APP_LAYOUT = readFileSync(new URL('../src/components/AppLayout.vue', import.meta.url), 'utf8')
-const NAV_CONFIG = readFileSync(new URL('../src/lib/nav-config.js', import.meta.url), 'utf8')
+import { readSource } from './helpers/read-source.js'
+
+const APP_LAYOUT = readSource(new URL('../src/components/AppLayout.vue', import.meta.url))
+const NAV_CONFIG = readSource(new URL('../src/lib/nav-config.js', import.meta.url))
 
 describe('approvals menu entry', () => {
   it('is absent for an employee who is not an approver', () => {

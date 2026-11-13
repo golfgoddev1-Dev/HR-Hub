@@ -1,7 +1,6 @@
 // The installed icon badge: a number the page paints fire-and-forget, a clear
 // at zero, and a service worker path that reads the count from the payload and
 // tolerates a browser without the Badging API. Nothing here may prompt.
-import { readFileSync } from 'node:fs'
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -18,7 +17,9 @@ import {
 } from '../src/lib/approval-count.js'
 import { applyApprovalDecision } from '../src/lib/shared-data.js'
 
-const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
+import { readSource } from './helpers/read-source.js'
+
+const read = (path) => readSource(new URL(`../${path}`, import.meta.url))
 
 const SW = read('public/sw.js')
 const BADGE_LIB = read('src/lib/app-badge.js')

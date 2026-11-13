@@ -2,7 +2,6 @@
 // The public approval page: reached from the email link, outside the signed-in
 // shell, with no redirect. It only reads until a button is pressed, and the
 // reject button stays disabled until the shared reason rule passes.
-import { readFileSync } from 'node:fs'
 
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -15,15 +14,17 @@ import {
   reasonError,
 } from '../src/lib/approval-link.js'
 
+import { readSource } from './helpers/read-source.js'
+
 const TOKEN = 'T'.repeat(43)
 const EMPLOYEE_NAME = 'สมชาย ใจดี'
 const EMPLOYEE_CODE = 'EMP-001'
 
 // Read from the project root: under the happy-dom environment import.meta.url is
 // an http URL, so the file paths are resolved by the test runner's cwd instead.
-const ROUTER = readFileSync('src/router.js', 'utf8')
-const COMPONENT = readFileSync('src/components/ApprovalLinkView.vue', 'utf8')
-const PAGE = readFileSync('src/pages/ApproveLinkPage.vue', 'utf8')
+const ROUTER = readSource('src/router.js')
+const COMPONENT = readSource('src/components/ApprovalLinkView.vue')
+const PAGE = readSource('src/pages/ApproveLinkPage.vue')
 const CSS = COMPONENT.slice(COMPONENT.indexOf('<style scoped>'))
 
 const DETAIL = {

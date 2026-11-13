@@ -1,7 +1,6 @@
 // Frontend half of the leave calendar: the inclusive→exclusive end date rule,
 // the Buddhist year in the title, the view breakpoint, the menu entries and the
 // route allow-list.
-import { readFileSync } from 'node:fs'
 
 import { describe, expect, it } from 'vitest'
 
@@ -23,12 +22,13 @@ import { hrNavItems, leaveNavItems } from '../src/lib/nav-config.js'
 import { canOpenPath } from '../src/lib/route-access.js'
 import { formatThaiYear } from '../src/lib/thai-date.js'
 
-const PAGE = readFileSync(new URL('../src/pages/LeaveCalendarPage.vue', import.meta.url), 'utf8')
-const VIEW = readFileSync(
-  new URL('../src/components/LeaveCalendarView.vue', import.meta.url),
-  'utf8'
+import { readSource } from './helpers/read-source.js'
+
+const PAGE = readSource(new URL('../src/pages/LeaveCalendarPage.vue', import.meta.url))
+const VIEW = readSource(
+  new URL('../src/components/LeaveCalendarView.vue', import.meta.url)
 )
-const ROUTER = readFileSync(new URL('../src/router.js', import.meta.url), 'utf8')
+const ROUTER = readSource(new URL('../src/router.js', import.meta.url))
 
 describe('inclusive end date to FullCalendar exclusive end', () => {
   it('adds one day for an ordinary date', () => {
@@ -149,9 +149,8 @@ describe('access and wiring', () => {
     expect(PAGE).toContain('<LeaveCalendarView')
     expect(PAGE).toContain('isHr')
     expect(ROUTER).not.toContain('hrDock')
-    const roleShell = readFileSync(
-      new URL('../src/components/RoleShell.vue', import.meta.url),
-      'utf8'
+    const roleShell = readSource(
+      new URL('../src/components/RoleShell.vue', import.meta.url)
     )
     expect(roleShell).toContain("hr: 'hr'")
     expect(VIEW).toContain("from '@fullcalendar/vue3'")

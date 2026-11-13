@@ -3,15 +3,16 @@
 // days, a dry-run preview and confirmation before enabling, and a Thai message
 // below the minimum.
 
-import { readFileSync } from 'node:fs'
 
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import HrLeaveSettingsPage from '../src/pages/HrLeaveSettingsPage.vue'
 
-const PAGE = readFileSync('src/pages/HrLeaveSettingsPage.vue', 'utf8')
-const WORKER = readFileSync('worker/src/maintenance/cleanup.js', 'utf8')
+import { readSource } from './helpers/read-source.js'
+
+const PAGE = readSource('src/pages/HrLeaveSettingsPage.vue')
+const WORKER = readSource('worker/src/maintenance/cleanup.js')
 
 const SETTINGS = {
   ok: true,

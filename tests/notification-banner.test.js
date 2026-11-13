@@ -1,27 +1,24 @@
 // The new-device banner after login: it decides silently, prompts only from its
 // own button, remembers a dismissal for the session only, and never asks for
 // permission while rendering.
-import { readFileSync } from 'node:fs'
 
 import { describe, expect, it } from 'vitest'
 
 import { notificationBannerState } from '../src/lib/push.js'
 
-const BANNER = readFileSync(
-  new URL('../src/components/NotificationBanner.vue', import.meta.url),
-  'utf8'
+import { readSource } from './helpers/read-source.js'
+
+const BANNER = readSource(
+  new URL('../src/components/NotificationBanner.vue', import.meta.url)
 )
-const APP_LAYOUT = readFileSync(
-  new URL('../src/components/AppLayout.vue', import.meta.url),
-  'utf8'
+const APP_LAYOUT = readSource(
+  new URL('../src/components/AppLayout.vue', import.meta.url)
 )
-const CONTROLLER_LAYOUT = readFileSync(
-  new URL('../src/components/ControllerLayout.vue', import.meta.url),
-  'utf8'
+const CONTROLLER_LAYOUT = readSource(
+  new URL('../src/components/ControllerLayout.vue', import.meta.url)
 )
-const LOGIN_PAGE = readFileSync(
-  new URL('../src/pages/LoginPage.vue', import.meta.url),
-  'utf8'
+const LOGIN_PAGE = readSource(
+  new URL('../src/pages/LoginPage.vue', import.meta.url)
 )
 
 function collapse(value) {

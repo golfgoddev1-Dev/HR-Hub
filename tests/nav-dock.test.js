@@ -1,14 +1,15 @@
 // The shared dock. These checks pin the behaviour the restyle must not lose:
 // real routes, a real pending badge, the real logout call, one indicator that
 // follows the router, and an entrance that only plays on the first mount.
-import { readFileSync } from 'node:fs'
 
 import { describe, expect, it } from 'vitest'
 
-const DOCK = readFileSync(new URL('../src/components/AppDock.vue', import.meta.url), 'utf8')
-const LAYOUT = readFileSync(new URL('../src/components/AppLayout.vue', import.meta.url), 'utf8')
-const NAV_CONFIG = readFileSync(new URL('../src/lib/nav-config.js', import.meta.url), 'utf8')
-const ENTRANCE = readFileSync(new URL('../src/lib/dock-entrance.js', import.meta.url), 'utf8')
+import { readSource } from './helpers/read-source.js'
+
+const DOCK = readSource(new URL('../src/components/AppDock.vue', import.meta.url))
+const LAYOUT = readSource(new URL('../src/components/AppLayout.vue', import.meta.url))
+const NAV_CONFIG = readSource(new URL('../src/lib/nav-config.js', import.meta.url))
+const ENTRANCE = readSource(new URL('../src/lib/dock-entrance.js', import.meta.url))
 
 /** The declaration block of one selector, up to its closing brace. */
 function selectorBlock(source, selector) {

@@ -1,6 +1,5 @@
 // The leave calendar's view switch: default by width, a remembered choice, and
 // the day-grouped list built from the responses the grid already loads.
-import { readFileSync } from 'node:fs'
 
 import { describe, expect, it } from 'vitest'
 
@@ -17,9 +16,10 @@ import {
   storeLeaveView,
 } from '../src/lib/leave-calendar-view.js'
 
-const VIEW = readFileSync(
-  new URL('../src/components/LeaveCalendarView.vue', import.meta.url),
-  'utf8'
+import { readSource } from './helpers/read-source.js'
+
+const VIEW = readSource(
+  new URL('../src/components/LeaveCalendarView.vue', import.meta.url)
 )
 
 const LEAVE_FIELDS = [

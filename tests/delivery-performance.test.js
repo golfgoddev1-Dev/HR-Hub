@@ -2,19 +2,20 @@
 // the shell stays in the entry, no component imports a font from a CDN, the head
 // carries the description and the noindex rule, robots.txt refuses every path,
 // and source maps are not published.
-import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
 
-const ROUTER = readFileSync(new URL('../src/router.js', import.meta.url), 'utf8')
-const INDEX = readFileSync(new URL('../index.html', import.meta.url), 'utf8')
-const ROBOTS = readFileSync(new URL('../public/robots.txt', import.meta.url), 'utf8')
-const VITE = readFileSync(new URL('../vite.config.js', import.meta.url), 'utf8')
-const PAGE_LOADING = readFileSync(
-  new URL('../src/components/PageLoading.vue', import.meta.url),
-  'utf8'
+import { readSource } from './helpers/read-source.js'
+
+const ROUTER = readSource(new URL('../src/router.js', import.meta.url))
+const INDEX = readSource(new URL('../index.html', import.meta.url))
+const ROBOTS = readSource(new URL('../public/robots.txt', import.meta.url))
+const VITE = readSource(new URL('../vite.config.js', import.meta.url))
+const PAGE_LOADING = readSource(
+  new URL('../src/components/PageLoading.vue', import.meta.url)
 )
 const SRC = fileURLToPath(new URL('../src', import.meta.url))
 
@@ -81,7 +82,7 @@ describe('route-level splitting', () => {
 describe('fonts', () => {
   it('has no per-component Google Fonts import left', () => {
     const offenders = vueFiles(SRC).filter((file) =>
-      readFileSync(file, 'utf8').includes('fonts.googleapis.com')
+      readSource(file).includes('fonts.googleapis.com')
     )
 
     expect(offenders).toEqual([])

@@ -3,17 +3,18 @@
 // requests with certificates) and opens each file in a new tab through the
 // HR-only streaming route. Approval, history and day views carry no link.
 
-import { readFileSync } from 'node:fs'
 
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import HrLeaveCertificatesPage from '../src/pages/HrLeaveCertificatesPage.vue'
 
-const PAGE = readFileSync('src/pages/HrLeaveCertificatesPage.vue', 'utf8')
+import { readSource } from './helpers/read-source.js'
+
+const PAGE = readSource('src/pages/HrLeaveCertificatesPage.vue')
 const CSS = PAGE.slice(PAGE.indexOf('<style scoped>'))
-const APPROVALS = readFileSync('src/pages/LeaveApprovalsPage.vue', 'utf8')
-const DETAIL = readFileSync('src/components/LeaveRequestDetail.vue', 'utf8')
+const APPROVALS = readSource('src/pages/LeaveApprovalsPage.vue')
+const DETAIL = readSource('src/components/LeaveRequestDetail.vue')
 
 function json(body, status = 200) {
   return Promise.resolve({
@@ -129,7 +130,7 @@ describe('no certificate link for approvers, history or the day panel', () => {
   })
 
   it('the owner page opens only the owner route, in a new tab', () => {
-    const home = readFileSync('src/pages/LeaveHomePage.vue', 'utf8')
+    const home = readSource('src/pages/LeaveHomePage.vue')
     expect(home).toContain('/api/leave/requests/')
     expect(home).toContain('canOpenOwnCertificate')
     expect(home).toContain('target="_blank"')

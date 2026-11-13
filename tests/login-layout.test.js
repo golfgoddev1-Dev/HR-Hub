@@ -1,12 +1,13 @@
 // The login page on a phone: centred in the dynamic viewport, never wider than
 // the narrowest supported screen, 16px inputs that do not trigger iOS zoom, and
 // 44px controls. These read the scoped CSS because the rules are the contract.
-import { readFileSync } from 'node:fs'
 
 import { describe, expect, it } from 'vitest'
 
-const PAGE = readFileSync(new URL('../src/pages/LoginPage.vue', import.meta.url), 'utf8')
-const GLOBAL = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8')
+import { readSource } from './helpers/read-source.js'
+
+const PAGE = readSource(new URL('../src/pages/LoginPage.vue', import.meta.url))
+const GLOBAL = readSource(new URL('../src/styles.css', import.meta.url))
 const CSS = PAGE.slice(PAGE.indexOf('<style scoped>'))
 
 /** The declarations of the first rule whose selector matches exactly. */

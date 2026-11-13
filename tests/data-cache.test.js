@@ -1,7 +1,6 @@
 // The in-memory read cache: one loader call per ttl, one shared promise for
 // concurrent readers, failures never cached, and the logout/login invalidation
 // that the source checks below pin.
-import { readFileSync } from 'node:fs'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -13,6 +12,8 @@ import {
   peekCached,
 } from '../src/lib/data-cache.js'
 import { DATA_KEYS, loadShared } from '../src/lib/shared-data.js'
+
+import { readSource } from './helpers/read-source.js'
 
 const NOW = 1_700_000_000_000
 
@@ -207,7 +208,7 @@ describe('loadShared across a route change', () => {
 
 // --- source checks -----------------------------------------------------------
 
-const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
+const read = (path) => readSource(new URL(`../${path}`, import.meta.url))
 
 describe('source checks', () => {
   it('AppLayout reads the session and approvals once, not per route change', () => {

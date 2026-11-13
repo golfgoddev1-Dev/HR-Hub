@@ -3,7 +3,6 @@
 // counter, a case-insensitive duplicate block, a warning when the chosen person
 // has no email, and a server error that keeps what the user typed.
 
-import { readFileSync } from 'node:fs'
 
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -17,7 +16,9 @@ import {
   shiftLeadsPath,
 } from '../src/lib/shift-leads.js'
 
-const COMPONENT = readFileSync('src/components/ShiftLeadsSection.vue', 'utf8')
+import { readSource } from './helpers/read-source.js'
+
+const COMPONENT = readSource('src/components/ShiftLeadsSection.vue')
 const CSS = COMPONENT.slice(COMPONENT.indexOf('<style scoped>'))
 
 const DEPARTMENT_ID = 'dept-1'

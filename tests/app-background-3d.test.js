@@ -17,7 +17,6 @@
 // canvas leaves the document on unmount.
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { readFileSync } from 'node:fs'
 
 import {
   BENCHMARK,
@@ -47,6 +46,8 @@ import {
 } from '../src/lib/background-scene.js'
 import { countUp, fadeRoute, installUiMotion } from '../src/lib/motion.js'
 import AppBackground3D from '../src/components/AppBackground3D.vue'
+
+import { readSource } from './helpers/read-source.js'
 
 // What the mocked TresJS saw: the props it was handed, the loop hooks it was
 // given, and how many of those hooks were released.
@@ -97,21 +98,21 @@ vi.mock('@tresjs/core', async () => {
   }
 })
 
-const BACKGROUND_SOURCE = readFileSync('src/components/AppBackground3D.vue', 'utf8')
-const BACKDROP_SOURCE = readFileSync('src/components/background/TresBackdrop.vue', 'utf8')
-const SCENE_SOURCE = readFileSync('src/components/background/TresBackdropScene.vue', 'utf8')
-const PLAN_SOURCE = readFileSync('src/lib/background-scene.js', 'utf8')
-const MOTION_SOURCE = readFileSync('src/lib/motion.js', 'utf8')
-const LAYOUT_SOURCE = readFileSync('src/components/AppLayout.vue', 'utf8')
-const ROUTER_SOURCE = readFileSync('src/router.js', 'utf8')
-const INDEX_SOURCE = readFileSync('index.html', 'utf8')
-const STYLES_SOURCE = readFileSync('src/styles.css', 'utf8')
-const DOCK_SOURCE = readFileSync('src/components/AppDock.vue', 'utf8')
-const PROFILE_SOURCE = readFileSync('src/pages/ProfilePage.vue', 'utf8')
-const MY_APPROVERS_SOURCE = readFileSync('src/pages/MyApproversPage.vue', 'utf8')
-const ADMIN_SOURCE = readFileSync('src/pages/AdminPage.vue', 'utf8')
-const ADMIN_PERMISSIONS_SOURCE = readFileSync('src/pages/AdminPermissionsPage.vue', 'utf8')
-const CALENDAR_SOURCE = readFileSync('src/components/LeaveCalendarView.vue', 'utf8')
+const BACKGROUND_SOURCE = readSource('src/components/AppBackground3D.vue')
+const BACKDROP_SOURCE = readSource('src/components/background/TresBackdrop.vue')
+const SCENE_SOURCE = readSource('src/components/background/TresBackdropScene.vue')
+const PLAN_SOURCE = readSource('src/lib/background-scene.js')
+const MOTION_SOURCE = readSource('src/lib/motion.js')
+const LAYOUT_SOURCE = readSource('src/components/AppLayout.vue')
+const ROUTER_SOURCE = readSource('src/router.js')
+const INDEX_SOURCE = readSource('index.html')
+const STYLES_SOURCE = readSource('src/styles.css')
+const DOCK_SOURCE = readSource('src/components/AppDock.vue')
+const PROFILE_SOURCE = readSource('src/pages/ProfilePage.vue')
+const MY_APPROVERS_SOURCE = readSource('src/pages/MyApproversPage.vue')
+const ADMIN_SOURCE = readSource('src/pages/AdminPage.vue')
+const ADMIN_PERMISSIONS_SOURCE = readSource('src/pages/AdminPermissionsPage.vue')
+const CALENDAR_SOURCE = readSource('src/components/LeaveCalendarView.vue')
 
 const VEIL_OPACITY = 0
 
@@ -302,7 +303,7 @@ describe('the TresJS components', () => {
 
     // The shell clamps the device pixel ratio with the tier cap, and low goes
     // below 1 on purpose.
-    const shell = readFileSync('src/components/AppBackground3D.vue', 'utf8')
+    const shell = readSource('src/components/AppBackground3D.vue')
     expect(shell).toContain('pixelRatioCap')
     expect(shell).toContain('cap < 1 ? [cap, cap] : [1, cap]')
     for (const name of ['high', 'medium', 'low']) {
@@ -691,7 +692,7 @@ describe('layer contract', () => {
       'src/pages/RegisterPage.vue',
       'src/pages/ApproveLinkPage.vue',
     ]) {
-      const source = readFileSync(file, 'utf8')
+      const source = readSource(file)
       expect(source, file).not.toContain('AppBackground3D')
       expect(source, file).not.toContain("from 'three'")
     }
@@ -733,7 +734,7 @@ describe('the scene is the visible backdrop', () => {
     // Brand indigo and violet plus the three leave-status colours. The palette
     // lives in the scene plan now, not in the component.
     expect(BACKGROUND_SOURCE).toContain('rgba(79, 70, 229, 0.95)')
-    const palette = readFileSync('src/lib/background-scene.js', 'utf8')
+    const palette = readSource('src/lib/background-scene.js')
     expect(palette).toContain('0x16a34a')
     expect(palette).toContain('0xd97706')
     expect(palette).toContain('0xdc2626')
@@ -905,10 +906,10 @@ describe('motion', () => {
   it('counts up to a number the page already shows', () => {
     expect(MOTION_SOURCE).toContain('export async function countUp')
     expect(MOTION_SOURCE).toContain('onUpdate')
-    expect(readFileSync('src/pages/LeaveHomePage.vue', 'utf8')).toContain('countUp(')
+    expect(readSource('src/pages/LeaveHomePage.vue')).toContain('countUp(')
     // The totals are in the DOM before any animation runs, so they are correct
     // with motion off.
-    expect(readFileSync('src/pages/LeaveHomePage.vue', 'utf8')).toContain('{{ counts.pending }}')
+    expect(readSource('src/pages/LeaveHomePage.vue')).toContain('{{ counts.pending }}')
   })
 })
 
@@ -1008,7 +1009,7 @@ describe('panel text tokens', () => {
     // tile, darkened to #55696d. 4.21 -> 4.74 and 5.15 -> 6.00 on white.
     expect(contrast('#5c7176', '#e2eae9')).toBeLessThan(4.5)
     expect(contrast('#55696d', '#e2eae9')).toBeGreaterThanOrEqual(4.5)
-    expect(readFileSync('src/pages/HrHomePage.vue', 'utf8')).toContain('color: #55696d')
+    expect(readSource('src/pages/HrHomePage.vue')).toContain('color: #55696d')
   })
 
   it('leaves the benchmark and the static fallback untouched', () => {

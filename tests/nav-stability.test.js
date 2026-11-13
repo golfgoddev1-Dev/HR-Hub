@@ -3,17 +3,17 @@
 //   and without a scrollbar have the same content width;
 // - an active nav link never changes its font weight, because a heavier weight
 //   is wider and pushes every following item sideways.
-import { readFileSync } from 'node:fs'
 
 import { describe, expect, it } from 'vitest'
 
-const STYLES = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8')
-const MAIN = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
+import { readSource } from './helpers/read-source.js'
+
+const STYLES = readSource(new URL('../src/styles.css', import.meta.url))
+const MAIN = readSource(new URL('../src/main.js', import.meta.url))
 // The dock is shared now, so one file carries both systems' menu styles.
-const DOCK = readFileSync(new URL('../src/components/AppDock.vue', import.meta.url), 'utf8')
-const ADMIN_NAV = readFileSync(
-  new URL('../src/components/AdminNav.vue', import.meta.url),
-  'utf8'
+const DOCK = readSource(new URL('../src/components/AppDock.vue', import.meta.url))
+const ADMIN_NAV = readSource(
+  new URL('../src/components/AdminNav.vue', import.meta.url)
 )
 
 /** The declaration block that follows `selector`, up to its closing brace. */

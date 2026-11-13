@@ -1,7 +1,6 @@
 // The switch's coalescing, rollback and storage rules. The helper takes its
 // timers and storage as arguments, so the 400ms debounce and the 10 second
 // safety timeout are tested without a browser.
-import { readFileSync } from 'node:fs'
 
 import { describe, expect, it } from 'vitest'
 
@@ -16,16 +15,16 @@ import {
   writeNotificationState,
 } from '../src/lib/notification-toggle.js'
 
-const TOGGLE = readFileSync(
-  new URL('../src/components/PushToggle.vue', import.meta.url),
-  'utf8'
+import { readSource } from './helpers/read-source.js'
+
+const TOGGLE = readSource(
+  new URL('../src/components/PushToggle.vue', import.meta.url)
 )
-const LIB = readFileSync(
-  new URL('../src/lib/notification-toggle.js', import.meta.url),
-  'utf8'
+const LIB = readSource(
+  new URL('../src/lib/notification-toggle.js', import.meta.url)
 )
-const DATA_CACHE = readFileSync(new URL('../src/lib/data-cache.js', import.meta.url), 'utf8')
-const LOGOUT = readFileSync(new URL('../src/lib/logout.js', import.meta.url), 'utf8')
+const DATA_CACHE = readSource(new URL('../src/lib/data-cache.js', import.meta.url))
+const LOGOUT = readSource(new URL('../src/lib/logout.js', import.meta.url))
 
 function memoryStorage(initial = {}) {
   const map = new Map(Object.entries(initial))
