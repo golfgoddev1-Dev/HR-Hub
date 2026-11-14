@@ -17,6 +17,11 @@ import { canPrintLeave } from './leave-print.js'
 const page = (loader) =>
   defineAsyncComponent({ loader, loadingComponent: PageLoading, delay: 0 })
 
+// The employee list and its master-detail selection are one page: sharing the
+// wrapper keeps the same component instance across /hr/employees and
+// /hr/employees/:id, so the list (search text, results, scroll) never remounts.
+const hrEmployeesPage = page(() => import('./pages/HrEmployeesPage.vue'))
+
 export const router = createRouter({
   history: createWebHistory(),
   routes: [
@@ -94,7 +99,7 @@ export const router = createRouter({
         },
         {
           path: '/hr/employees',
-          component: page(() => import('./pages/HrEmployeesPage.vue')),
+          component: hrEmployeesPage,
           meta: { requiresAuth: true },
         },
         {
@@ -114,7 +119,9 @@ export const router = createRouter({
         },
         {
           path: '/hr/employees/:id',
-          component: page(() => import('./pages/HrEmployeeDetailPage.vue')),
+          // Same component as the list: the detail is a panel beside it, not a
+          // second page, and the URL stays the employee's own route.
+          component: hrEmployeesPage,
           meta: { requiresAuth: true },
         },
         {
