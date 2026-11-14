@@ -349,4 +349,14 @@ describe('HR employee directory page', () => {
     expect(CSS).toMatch(/\.list-row \{[^}]*min-height: var\(--tap\)/)
     expect(blockFor('.import-link {')).toContain('min-height: var(--tap)')
   })
+
+  it('paints the import link’s control border at 3:1', () => {
+    // The tier audit measured the decorative --line (0.12) at 1.27:1 against the
+    // glass, so the bordered control uses the search field's boundary instead.
+    expect(blockFor('.import-link {')).toContain('border: 1px solid var(--field-line)')
+    const token = /--field-line:\s*rgba\(([^)]+)\)/.exec(PAGE_STYLES)
+    expect(token).not.toBeNull()
+    const white = parseColor('#ffffff')
+    expect(contrast(over(parseColor(`rgba(${token[1]})`), white), white)).toBeGreaterThanOrEqual(3)
+  })
 })
