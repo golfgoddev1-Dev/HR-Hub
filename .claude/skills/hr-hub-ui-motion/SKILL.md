@@ -11,6 +11,10 @@ that is calm, purposeful and optional. These rules describe what is already in
 the code. They are not suggestions, and a change that cannot meet them has to be
 raised with the user instead of worked around.
 
+The tool-neutral copy of these rules is `docs/ai/hr-hub-ui-motion.md`; the two
+are the same contract and are edited together. The design intent behind them is
+`docs/ai/frontend-design.md`.
+
 Files that own the system:
 
 - `src/styles.css` — the app-wide glass recipe, its tint tokens and the CSS
@@ -248,6 +252,7 @@ Run all of these and report the numbers:
    and confirm request shapes did not change.
 8. Report: **contrast ratios, tier used, and screenshot paths** for every UI
    change (plus any token change old → new with its measured ratio).
+9. Check the change against docs/ai/frontend-design.md sections A to H and list any section that you could not meet.
 
 ## 9. Design direction
 

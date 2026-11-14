@@ -3,24 +3,45 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
+  AGENTS_FILE,
   CLAUDE_FILE,
+  DESIGN_DOC_FILE,
+  DESIGN_HEADINGS,
+  DESIGN_SKILL_FILE,
   MANDATORY_RULE,
   REPORT_RULE,
   SECTION_COUNT,
   SKILL_FILE,
+  UI_DOC_FILE,
   checkUiSkill,
   sectionHeading,
 } from '../scripts/check-ui-skill.mjs'
 import { readSource } from './helpers/read-source.js'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
-const claude = readSource(join(root, CLAUDE_FILE))
-const skill = readSource(join(root, SKILL_FILE))
+const read = (file) => readSource(join(root, file))
 
-const fixtureReader = (claudeText, skillText) => (file) => {
-  if (file.endsWith(CLAUDE_FILE)) return claudeText
-  if (file.endsWith('SKILL.md')) return skillText
-  throw new Error(`unexpected read: ${file}`)
+const agents = read(AGENTS_FILE)
+const claude = read(CLAUDE_FILE)
+const skill = read(SKILL_FILE)
+const uiDoc = read(UI_DOC_FILE)
+const designDoc = read(DESIGN_DOC_FILE)
+const designSkill = read(DESIGN_SKILL_FILE)
+
+const files = {
+  'AGENTS.md': agents,
+  'CLAUDE.md': claude,
+  'hr-hub-ui-motion/SKILL.md': skill,
+  'hr-hub-ui-motion.md': uiDoc,
+  'frontend-design.md': designDoc,
+}
+
+function fixtureReader(overrides = {}) {
+  return (file) => {
+    const key = Object.keys(files).find((name) => file.endsWith(name))
+    if (!key) throw new Error(`unexpected read: ${file}`)
+    return key in overrides ? overrides[key] : files[key]
+  }
 }
 
 describe('UI skill guard', () => {
@@ -28,10 +49,14 @@ describe('UI skill guard', () => {
     expect(checkUiSkill()).toEqual([])
   })
 
-  it('CLAUDE.md carries the mandatory rule as its first section', () => {
-    const flat = claude.replace(/\s+/g, ' ')
-    expect(flat).toContain(MANDATORY_RULE.replace(/\s+/g, ' '))
-    expect(flat).toContain(REPORT_RULE.replace(/\s+/g, ' '))
+  it('AGENTS.md and CLAUDE.md both make both documents mandatory', () => {
+    for (const text of [agents, claude]) {
+      const flat = text.replace(/\s+/g, ' ')
+      expect(flat).toContain(MANDATORY_RULE.replace(/\s+/g, ' '))
+      expect(flat).toContain('docs/ai/hr-hub-ui-motion.md')
+      expect(flat).toContain('docs/ai/frontend-design.md')
+      expect(flat).toContain(REPORT_RULE.replace(/\s+/g, ' '))
+    }
 
     const firstSection = claude.match(/^##\s+(.+)$/m)
     expect(firstSection).not.toBeNull()
@@ -43,12 +68,9 @@ describe('UI skill guard', () => {
     expect(skill.startsWith('---\n')).toBe(true)
     expect(skill).toMatch(/^name: hr-hub-ui-motion$/m)
     expect(skill).toMatch(/^description: .*src\/pages.*src\/components.*src\/styles\.css/m)
-    expect(skill).toMatch(/src\/lib\/background-scene\.js/)
-    expect(skill).toMatch(/src\/lib\/motion\.js/)
-    expect(skill).toMatch(/src\/lib\/background-quality\.js/)
 
     for (let n = 1; n <= SECTION_COUNT; n += 1) {
-      expect(sectionHeading(n).test(skill), `section ${n} heading`).toBe(true)
+      expect(sectionHeading(n).test(skill), `skill section ${n}`).toBe(true)
     }
 
     // A bare heading is not a section: every one of them must carry rules.
@@ -59,16 +81,50 @@ describe('UI skill guard', () => {
     }
   })
 
-  it('fails when CLAUDE.md loses the mandatory rule', () => {
-    const withoutRule = claude.replace(MANDATORY_RULE, 'Make it look nice.')
-    const problems = checkUiSkill(fixtureReader(withoutRule, skill))
-    expect(problems.join('\n')).toMatch(/mandatory UI skill rule/)
+  it('the plain Markdown copy is complete and points at the design document', () => {
+    expect(uiDoc.startsWith('---')).toBe(false)
+    for (let n = 1; n <= SECTION_COUNT; n += 1) {
+      expect(sectionHeading(n).test(uiDoc), `doc section ${n}`).toBe(true)
+    }
+    expect(uiDoc.replace(/\s+/g, ' ')).toContain(
+      'Check the change against docs/ai/frontend-design.md sections A to H and list any section that you could not meet.'
+    )
   })
 
-  it('fails when the skill loses a numbered section', () => {
-    const withoutSectionSeven = skill.replace(/^## 7\. .+$/m, '')
-    const problems = checkUiSkill(fixtureReader(claude, withoutSectionSeven))
-    expect(problems.join('\n')).toMatch(/section 7 heading/)
+  it('the frontend design document is plain Markdown with A-H in order', () => {
+    expect(designDoc.startsWith('---')).toBe(false)
+    let last = -1
+    for (const heading of DESIGN_HEADINGS) {
+      const index = designDoc.indexOf(`## ${heading}`)
+      expect(index, `heading ${heading}`).toBeGreaterThan(-1)
+      expect(index, `order of ${heading}`).toBeGreaterThan(last)
+      last = index
+    }
+  })
+
+  it('the second wrapper loads the design document', () => {
+    expect(designSkill.startsWith('---\n')).toBe(true)
+    expect(designSkill).toMatch(/^name: hr-hub-frontend-design$/m)
+    expect(designSkill).toMatch(/^description: .*(design|typography|colour|motion).*/m)
+    expect(designSkill).toContain('docs/ai/frontend-design.md')
+  })
+
+  it('fails when AGENTS.md loses the mandatory rule', () => {
+    const withoutRule = agents.replace(MANDATORY_RULE, 'Make it look nice.')
+    const problems = checkUiSkill(fixtureReader({ 'AGENTS.md': withoutRule }))
+    expect(problems.join('\n')).toMatch(/AGENTS\.md does not contain the mandatory UI rule/)
+  })
+
+  it('fails when a design document heading goes missing', () => {
+    const withoutHeading = designDoc.replace('## G. Performance budget\n', '')
+    const problems = checkUiSkill(fixtureReader({ 'frontend-design.md': withoutHeading }))
+    expect(problems.join('\n')).toMatch(/missing the heading "## G\. Performance budget"/)
+  })
+
+  it('fails when the plain Markdown copy loses a section', () => {
+    const withoutSectionSeven = uiDoc.replace(/^## 7\. .+$/m, '')
+    const problems = checkUiSkill(fixtureReader({ 'hr-hub-ui-motion.md': withoutSectionSeven }))
+    expect(problems.join('\n')).toMatch(/hr-hub-ui-motion\.md is missing the section 7 heading/)
   })
 
   it('the CLI exits 0 on this repository', () => {
