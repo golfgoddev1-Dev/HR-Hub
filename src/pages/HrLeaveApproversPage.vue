@@ -527,11 +527,9 @@ onMounted(async () => {
 }
 
 .toggle-btn-on { background: #10504e; border-color: #10504e; color: #ffffff; }
-.toggle-btn-on:hover { background: #0b3f3d; border-color: #0b3f3d; box-shadow: 0 3px 10px rgba(16, 80, 78, 0.3); }
 .toggle-btn-on:active { background: #08302f; }
 
 .toggle-btn-off { background: #ffffff; border-color: #e2b6b6; color: #a01b1b; }
-.toggle-btn-off:hover { background: #fdf1f1; border-color: #c48181; box-shadow: 0 3px 10px rgba(160, 27, 27, 0.14); }
 .toggle-btn-off:active { background: #fbe6e6; }
 
 .toggle-btn:focus-visible { outline: 3px solid #0f6f63; outline-offset: 2px; }
@@ -543,5 +541,11 @@ onMounted(async () => {
   .row { align-items: flex-start; }
   .row-main { flex-basis: 100%; }
   .toggle-btn { width: 100%; }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .toggle-btn-on:hover { background: #0b3f3d; border-color: #0b3f3d; box-shadow: 0 3px 10px rgba(16, 80, 78, 0.3); }
+
+  .toggle-btn-off:hover { background: #fdf1f1; border-color: #c48181; box-shadow: 0 3px 10px rgba(160, 27, 27, 0.14); }
 }
 </style>

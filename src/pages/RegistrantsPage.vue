@@ -612,10 +612,6 @@ loadPage()
   text-decoration: none;
 }
 
-.back-link:hover {
-  background: #eaf3ef;
-}
-
 .back-icon {
   font-size: 18px;
 }
@@ -870,10 +866,6 @@ loadPage()
   cursor: pointer;
 }
 
-.edit-btn:hover:enabled {
-  background: #eaf3ef;
-}
-
 .edit-btn:disabled {
   color: #9aa8a3;
   cursor: default;
@@ -1054,10 +1046,6 @@ loadPage()
   font-size: 13px;
 }
 
-.close-btn:hover:enabled {
-  background: #fdecea;
-}
-
 .close-btn:disabled {
   border-color: #d8e4de;
   color: #9aa8a3;
@@ -1078,5 +1066,19 @@ loadPage()
 .close-warn {
   color: #6b7a75;
   font-size: 13px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .back-link:hover {
+    background: #eaf3ef;
+  }
+
+  .edit-btn:hover:enabled {
+    background: #eaf3ef;
+  }
+
+  .close-btn:hover:enabled {
+    background: #fdecea;
+  }
 }
 </style>

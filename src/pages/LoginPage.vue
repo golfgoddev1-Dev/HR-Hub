@@ -759,12 +759,6 @@ async function submitLogin() {
   transition: transform var(--motion-hover) var(--motion-ease), opacity var(--motion-hover) var(--motion-ease), background-color var(--motion-hover) var(--motion-ease), border-color var(--motion-hover) var(--motion-ease), color var(--motion-hover) var(--motion-ease), box-shadow var(--motion-hover) var(--motion-ease);
 }
 
-.benefit:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.14);
-  transform: translateX(3px);
-}
-
 .benefit-icon {
   width: 24px;
   height: 24px;
@@ -931,10 +925,6 @@ async function submitLogin() {
   display: flex;
 }
 
-.success-close:hover {
-  color: #0b1c30;
-}
-
 .success-close .material-symbols-outlined {
   font-size: 18px;
 }
@@ -1038,13 +1028,6 @@ async function submitLogin() {
   border: 1px solid rgba(255, 255, 255, 0.9);
   box-shadow: 0 2px 8px rgba(15, 33, 55, 0.03);
   transition: transform var(--motion-hover) var(--motion-ease), opacity var(--motion-hover) var(--motion-ease), background-color var(--motion-hover) var(--motion-ease), border-color var(--motion-hover) var(--motion-ease), color var(--motion-hover) var(--motion-ease), box-shadow var(--motion-hover) var(--motion-ease);
-}
-
-.role-option:hover {
-  background: rgba(255, 255, 255, 0.88);
-  transform: translateY(-2px);
-  border-color: rgba(255, 255, 255, 1);
-  box-shadow: 0 8px 20px rgba(15, 33, 55, 0.08);
 }
 
 .role-option--selected {
@@ -1221,11 +1204,6 @@ async function submitLogin() {
   transition: transform var(--motion-hover) var(--motion-ease), opacity var(--motion-hover) var(--motion-ease), background-color var(--motion-hover) var(--motion-ease), border-color var(--motion-hover) var(--motion-ease), color var(--motion-hover) var(--motion-ease), box-shadow var(--motion-hover) var(--motion-ease);
 }
 
-.toggle:hover {
-  color: #0b1c30;
-  background: rgba(220, 233, 255, 0.6);
-}
-
 .toggle-icon {
   font-size: 18px;
 }
@@ -1303,10 +1281,6 @@ async function submitLogin() {
   display: flex;
   border-radius: 4px;
   transition: background-color 0.2s;
-}
-
-.error-close:hover {
-  background: rgba(186, 26, 26, 0.1);
 }
 
 .error-close .material-symbols-outlined {
@@ -1390,14 +1364,6 @@ async function submitLogin() {
   animation: shimmerSweep 3.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
-.submit.ready:hover {
-  background: linear-gradient(135deg, #0a1829 0%, #0c1c30 55%, #132a47 100%);
-  transform: translateY(-2px);
-  box-shadow: 
-    0 8px 24px rgba(15, 33, 55, 0.32),
-    0 0 30px rgba(133, 248, 196, 0.22);
-}
-
 .submit.ready:active {
   transform: translateY(0) scale(0.99);
 }
@@ -1455,10 +1421,6 @@ async function submitLogin() {
   text-decoration-color: rgba(49, 107, 243, 0.4);
   text-underline-offset: 4px;
   transition: color 0.2s ease;
-}
-
-.footer-link:hover {
-  color: #002b6e;
 }
 
 .security-row {
@@ -1764,6 +1726,46 @@ async function submitLogin() {
     animation-delay: 0ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .benefit:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.14);
+    transform: translateX(3px);
+  }
+
+  .success-close:hover {
+    color: #0b1c30;
+  }
+
+  .role-option:hover {
+    background: rgba(255, 255, 255, 0.88);
+    transform: translateY(-2px);
+    border-color: rgba(255, 255, 255, 1);
+    box-shadow: 0 8px 20px rgba(15, 33, 55, 0.08);
+  }
+
+  .toggle:hover {
+    color: #0b1c30;
+    background: rgba(220, 233, 255, 0.6);
+  }
+
+  .error-close:hover {
+    background: rgba(186, 26, 26, 0.1);
+  }
+
+  .submit.ready:hover {
+    background: linear-gradient(135deg, #0a1829 0%, #0c1c30 55%, #132a47 100%);
+    transform: translateY(-2px);
+    box-shadow: 
+      0 8px 24px rgba(15, 33, 55, 0.32),
+      0 0 30px rgba(133, 248, 196, 0.22);
+  }
+
+  .footer-link:hover {
+    color: #002b6e;
   }
 }
 </style>

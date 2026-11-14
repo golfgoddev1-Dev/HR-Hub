@@ -546,10 +546,6 @@ loadMonthlySessions()
   text-decoration: none;
 }
 
-.back-link:hover {
-  background: #eaf3ef;
-}
-
 .back-icon {
   font-size: 18px;
   line-height: 1;
@@ -853,5 +849,11 @@ loadMonthlySessions()
 @media (max-width: 899px) {
   .time-grid { grid-template-columns: minmax(0, 1fr); }
   .qr-actions .v-btn { width: 100%; }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .back-link:hover {
+    background: #eaf3ef;
+  }
 }
 </style>

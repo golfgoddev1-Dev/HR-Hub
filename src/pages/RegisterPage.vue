@@ -714,11 +714,6 @@ onMounted(loadContext)
   transition: border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-.status-card:hover {
-  border-color: var(--primary-container);
-  background: var(--surface-low);
-}
-
 .status-card--active {
   border-color: var(--primary);
   background: var(--surface-low);
@@ -813,11 +808,6 @@ onMounted(loadContext)
   transition: border-color 0.15s ease, background-color 0.15s ease;
 }
 
-.shift-chip:hover {
-  border-color: var(--primary-container);
-  background: var(--surface-low);
-}
-
 .shift-chip--active {
   border-color: var(--primary);
   background: var(--primary);
@@ -904,10 +894,6 @@ onMounted(loadContext)
   letter-spacing: 0.1px;
   cursor: pointer;
   transition: filter 0.15s ease, transform var(--motion-press) ease;
-}
-
-.submit-btn:hover:not(:disabled) {
-  filter: brightness(1.04);
 }
 
 .submit-btn:active:not(:disabled) {
@@ -1095,6 +1081,22 @@ onMounted(loadContext)
 @media (min-width: 600px) {
   .readout {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .status-card:hover {
+    border-color: var(--primary-container);
+    background: var(--surface-low);
+  }
+
+  .shift-chip:hover {
+    border-color: var(--primary-container);
+    background: var(--surface-low);
+  }
+
+  .submit-btn:hover:not(:disabled) {
+    filter: brightness(1.04);
   }
 }
 </style>

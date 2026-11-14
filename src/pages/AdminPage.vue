@@ -261,11 +261,6 @@ onMounted(async () => {
   transition: box-shadow var(--motion-hover) var(--motion-ease), border-color var(--motion-hover) var(--motion-ease);
 }
 
-.stat-card:hover {
-  border-color: #c9dcda;
-  box-shadow: 0 10px 22px -10px rgba(18, 52, 59, 0.18);
-}
-
 .stat-icon {
   display: inline-flex;
   align-items: center;
@@ -392,17 +387,6 @@ onMounted(async () => {
     border-color var(--motion-hover) var(--motion-ease), background-color var(--motion-hover) var(--motion-ease);
 }
 
-a.shortcut:hover {
-  border-color: #b7cecb;
-  transform: translateY(-3px);
-  box-shadow: 0 14px 26px -12px rgba(18, 52, 59, 0.22);
-}
-
-a.shortcut:hover .shortcut-go {
-  gap: 8px;
-  color: #0b3837;
-}
-
 a.shortcut:focus-visible {
   outline: 3px solid #0f6f63;
   outline-offset: 2px;
@@ -477,7 +461,6 @@ a.shortcut:active {
   100% { transform: scaleX(1); opacity: 0; }
 }
 
-
 @keyframes admin-fade-slide-down {
   from { opacity: 0; transform: translateY(-12px); }
   to { opacity: 1; transform: translateY(0); }
@@ -518,6 +501,24 @@ a.shortcut:active {
   a.shortcut:hover {
     transition: none !important;
     transform: none !important;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .stat-card:hover {
+    border-color: #c9dcda;
+    box-shadow: 0 10px 22px -10px rgba(18, 52, 59, 0.18);
+  }
+
+  a.shortcut:hover {
+    border-color: #b7cecb;
+    transform: translateY(-3px);
+    box-shadow: 0 14px 26px -12px rgba(18, 52, 59, 0.22);
+  }
+
+  a.shortcut:hover .shortcut-go {
+    gap: 8px;
+    color: #0b3837;
   }
 }
 </style>

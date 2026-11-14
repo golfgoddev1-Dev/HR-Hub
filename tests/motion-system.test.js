@@ -169,6 +169,50 @@ describe('the page layer uses transform and opacity only', () => {
     }
   })
 
+  it('puts every hover rule behind a real mouse and a fine pointer', () => {
+    // Walk each style block as a stack of at-rule preludes, so a rule counts as
+    // guarded only when the enclosing media queries say hover+fine pointer.
+    const offenders = (source, name) => {
+      const styles = [...source.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)].map((match) => match[1])
+      const found = []
+      for (const css of styles) {
+        const stack = []
+        let index = 0
+        let selector = ''
+        while (index < css.length) {
+          const character = css[index]
+          if (character === '{') {
+            const prelude = selector.trim()
+            selector = ''
+            if (prelude.startsWith('@')) {
+              stack.push(prelude)
+            } else {
+              const guarded = stack.some(
+                (at) => /\(hover:\s*hover\)/.test(at) && /\(pointer:\s*fine\)/.test(at)
+              )
+              if (prelude.includes(':hover') && !guarded) found.push(`${name}: ${prelude}`)
+              stack.push(null)
+            }
+            index += 1
+            continue
+          }
+          if (character === '}') {
+            if (stack.length) stack.pop()
+            selector = ''
+            index += 1
+            continue
+          }
+          if (stack.length === 0 || stack[stack.length - 1] !== null) selector += character
+          index += 1
+        }
+      }
+      return found
+    }
+
+    const all = PAGES.flatMap((page) => offenders(page.source, page.name))
+    expect(all).toEqual([])
+  })
+
   it('transitions only paint and compositor properties in a page', () => {
     const ALLOWED = ['transform', 'opacity', 'background-color', 'border-color', 'color', 'box-shadow', 'outline-color', 'filter']
     // Split at top-level commas only: a cubic-bezier() has commas of its own.

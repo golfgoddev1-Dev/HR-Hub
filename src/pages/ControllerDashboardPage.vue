@@ -1000,10 +1000,6 @@ loadDashboard()
   text-decoration: none;
 }
 
-.back-link:hover {
-  background: #eaf3ef;
-}
-
 .back-icon {
   font-size: 18px;
 }
@@ -1070,10 +1066,6 @@ loadDashboard()
   cursor: pointer;
 }
 
-.btn:hover {
-  background: #eaf3ef;
-}
-
 .btn:disabled {
   cursor: progress;
   opacity: 0.7;
@@ -1092,10 +1084,6 @@ loadDashboard()
 
 .btn-primary .btn-icon {
   color: #ffffff;
-}
-
-.btn-primary:hover {
-  background: var(--primary);
 }
 
 .btn-small {
@@ -1125,10 +1113,6 @@ loadDashboard()
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-}
-
-.tab:hover {
-  color: var(--on-surface);
 }
 
 .tab-active {
@@ -1313,11 +1297,6 @@ loadDashboard()
   border-radius: 14px;
   background: var(--surface-low);
   transition: transform var(--motion-release) var(--motion-ease), background-color var(--motion-release) var(--motion-ease);
-}
-
-.metric:hover {
-  background: var(--surface-container);
-  transform: translateY(-2px);
 }
 
 .metric-top {
@@ -1682,10 +1661,6 @@ loadDashboard()
 .row-click {
   cursor: pointer;
   transition: background-color var(--motion-release) var(--motion-ease);
-}
-
-.row-click:hover td {
-  background: var(--surface-low);
 }
 
 .row-click:focus-visible {
@@ -2277,6 +2252,33 @@ loadDashboard()
 
   .modal {
     padding: 16px;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .back-link:hover {
+    background: #eaf3ef;
+  }
+
+  .btn:hover {
+    background: #eaf3ef;
+  }
+
+  .btn-primary:hover {
+    background: var(--primary);
+  }
+
+  .tab:hover {
+    color: var(--on-surface);
+  }
+
+  .metric:hover {
+    background: var(--surface-container);
+    transform: translateY(-2px);
+  }
+
+  .row-click:hover td {
+    background: var(--surface-low);
   }
 }
 </style>

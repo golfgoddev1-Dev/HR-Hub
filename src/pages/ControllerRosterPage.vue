@@ -300,10 +300,6 @@ loadMembers()
   text-decoration: none;
 }
 
-.back-link:hover {
-  background: #eaf3ef;
-}
-
 .back-icon {
   font-size: 18px;
   line-height: 1;
@@ -492,5 +488,11 @@ loadMembers()
 
 @media (max-width: 899px) {
   .list { max-height: none; }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .back-link:hover {
+    background: #eaf3ef;
+  }
 }
 </style>

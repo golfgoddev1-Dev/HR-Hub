@@ -360,10 +360,6 @@ onMounted(load)
   cursor: pointer;
 }
 
-.history-row:hover {
-  background: #f6faf9;
-}
-
 .cell {
   min-width: 0;
   overflow-wrap: anywhere;
@@ -529,6 +525,12 @@ onMounted(load)
   .apply-btn,
   .more-btn {
     transition: none;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .history-row:hover {
+    background: #f6faf9;
   }
 }
 </style>

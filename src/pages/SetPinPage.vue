@@ -904,10 +904,6 @@ async function submitSetPin() {
   display: flex;
 }
 
-.alert-close:hover {
-  color: #93000a;
-}
-
 .alert-close .material-symbols-outlined {
   font-size: 18px;
 }
@@ -1069,11 +1065,6 @@ async function submitSetPin() {
   transition: color 0.2s, background-color 0.2s;
 }
 
-.toggle:hover {
-  color: #0b1c30;
-  background: #e5eeff;
-}
-
 .toggle-icon {
   font-size: 18px;
 }
@@ -1112,10 +1103,6 @@ async function submitSetPin() {
   box-shadow: 0 4px 14px rgba(15, 33, 55, 0.25);
 }
 
-.submit.ready:hover {
-  background: linear-gradient(135deg, #0a1829 0%, #0c1c30 55%, #132a47 100%);
-}
-
 .submit.ready:active {
   transform: scale(0.99);
 }
@@ -1146,11 +1133,6 @@ async function submitSetPin() {
   color: #0051d5;
   text-decoration: none;
   transition: color 0.2s, background-color 0.2s;
-}
-
-.back-link:hover {
-  color: #316bf3;
-  background: #eff4ff;
 }
 
 .back-icon {
@@ -1285,6 +1267,26 @@ async function submitSetPin() {
     animation-delay: 0ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .alert-close:hover {
+    color: #93000a;
+  }
+
+  .toggle:hover {
+    color: #0b1c30;
+    background: #e5eeff;
+  }
+
+  .submit.ready:hover {
+    background: linear-gradient(135deg, #0a1829 0%, #0c1c30 55%, #132a47 100%);
+  }
+
+  .back-link:hover {
+    color: #316bf3;
+    background: #eff4ff;
   }
 }
 </style>

@@ -495,11 +495,6 @@ onBeforeUnmount(() => window.clearTimeout(debounceTimer))
   cursor: pointer;
 }
 
-.result:hover {
-  border-color: #b7cecb;
-  background: #f7fbfa;
-}
-
 .result-active {
   border-color: #0f6f63;
   background: #f0f7f6;
@@ -807,6 +802,13 @@ onBeforeUnmount(() => window.clearTimeout(debounceTimer))
 
   .card {
     padding: 14px;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .result:hover {
+    border-color: #b7cecb;
+    background: #f7fbfa;
   }
 }
 </style>
