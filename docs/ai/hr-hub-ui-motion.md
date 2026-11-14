@@ -115,8 +115,6 @@ particles, draw calls or shadow maps beyond it:
 - Keep the tier flag, the benchmark and the reduced-motion behaviour unchanged
   unless the task is explicitly about them.
 
-Visitors without a session never mount AppBackground3D or WebGL: login, pending, set-pin, approve links, and the anonymous meeting registration (bare RouterView when cleanShellWhenAnonymous and no session).
-
 ## 3. Motion
 
 - **Transform and opacity only.** Never animate `width`, `height`, `top`,

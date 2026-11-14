@@ -119,6 +119,15 @@ describe('visitors without a session never reach the 3D background', () => {
     }
   })
 
+  it('keeps /pending and /set-pin explicitly public, with no requiresAuth', () => {
+    for (const path of ['/pending', '/set-pin']) {
+      const block = routeObject(ROUTER, path)
+      expect(block, path).toContain('component: page(')
+      expect(block, path).not.toContain('requiresAuth')
+      expect(block, path).toContain("path: '")
+    }
+  })
+
   it('keeps the anonymous registration inside RoleShell with its bare flag', () => {
     expect(CHILDREN.indexOf("path: '/meeting/register'")).toBeGreaterThan(-1)
 

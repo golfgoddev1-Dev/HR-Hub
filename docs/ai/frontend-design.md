@@ -136,6 +136,8 @@ Motion exists to explain, not to entertain.
   renderer, animation frames and listeners. A route change must not leak a WebGL
   context.
 
+Visitors without a session never mount AppBackground3D or WebGL: login, pending, set-pin, approve links, and the anonymous meeting registration (bare RouterView when cleanShellWhenAnonymous and no session).
+
 ## G. Performance budget
 
 - **The entry JS must not grow beyond its current size on `main` (113,404 B).**
