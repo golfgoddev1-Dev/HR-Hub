@@ -314,7 +314,7 @@ onMounted(async () => {
    both columns above them. */
 @media (min-width: 1024px) {
   .page {
-    grid-template-columns: 340px minmax(0, 1fr);
+    grid-template-columns: 320px minmax(0, 1fr);
     grid-template-areas:
       'hero hero'
       'rail list';
