@@ -327,7 +327,34 @@ describe('leave home card stack', () => {
     wrapper.unmount()
   })
 
+  it('schedules one timeout at a time and stops the chain on unmount', async () => {
+    H.results = ROWS
+    stubMatchMedia()
+    const wrapper = await mountPage()
+
+    // One pending step, not a repeating interval.
+    expect(vi.getTimerCount()).toBe(1)
+    await waitCycle()
+    expect(typeOf(wrapper)).toBe(CYCLES[1])
+    expect(vi.getTimerCount()).toBe(1)
+
+    wrapper.unmount()
+    expect(vi.getTimerCount()).toBe(0)
+
+    // The chain is gone: a full cycle later nothing has been re-scheduled.
+    await waitCycle()
+    await waitCycle()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
   it('uses the motion budget the rules allow', () => {
+    // A timeout chain, never an interval: /leave owns no polling timer, so
+    // src/lib/approval-count.js stays the only interval in the tree.
+    expect(PAGE_SOURCE).not.toContain('setInterval')
+    expect(PAGE_SOURCE).toContain('cycleTimer = setTimeout(')
+    expect(PAGE_SOURCE).toContain('scheduleNextStep()')
+    expect(PAGE_SOURCE).toContain('clearTimeout(cycleTimer)')
+
     expect(PAGE_SOURCE).toContain('const CYCLE_MS = 4600')
     const cycle = Number(/const CYCLE_MS = (\d+)/.exec(PAGE_SOURCE)[1])
     expect(cycle).toBeGreaterThanOrEqual(4000)
