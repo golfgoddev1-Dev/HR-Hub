@@ -353,6 +353,14 @@ onBeforeUnmount(() => {
             </button>
           </header>
 
+          <!-- The way back to the import screen, kept from the old detail page.
+               It sits at the top of the panel so it is reachable before any
+               scrolling, in both the side panel and the phone sheet. -->
+          <RouterLink to="/hr/employees/import" class="back-link">
+            <span class="back-arrow" aria-hidden="true">←</span>
+            <span>กลับไปหน้านำเข้า</span>
+          </RouterLink>
+
           <p v-if="detailError" class="detail-note error">{{ detailError }}</p>
           <p v-else-if="detailLoading && !detail" class="detail-note">กำลังโหลดข้อมูลพนักงาน…</p>
 
@@ -834,6 +842,41 @@ onBeforeUnmount(() => {
   outline-offset: 2px;
 }
 
+/* A real control, not a caption: 44px on every width, a boundary that shows on
+   the glass (3.22:1 over the 0.88 tint, measured in
+   tests/hr-employees-master-detail.test.js) and the violet focus ring. Text is
+   indigo-700, 6.41:1 over the darkest panel pixel. */
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  gap: 8px;
+  min-width: var(--tap);
+  min-height: var(--tap);
+  padding: 0 12px;
+  border: 1px solid var(--field-line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--accent-deep);
+  font-family: 'Prompt', sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  text-decoration: none;
+  transition:
+    background-color 0.18s ease,
+    border-color 0.18s ease;
+}
+
+.back-link:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.back-arrow {
+  display: inline-block;
+  transition: transform 0.18s ease;
+}
+
 .detail-note {
   margin: 0;
   font-size: 14px;
@@ -942,6 +985,15 @@ onBeforeUnmount(() => {
 
   .import-link:active {
     transform: scale(0.99);
+  }
+
+  .back-link:hover {
+    background-color: rgba(79, 70, 229, 0.07);
+    border-color: rgba(79, 70, 229, 0.35);
+  }
+
+  .back-link:hover .back-arrow {
+    transform: translateX(-3px);
   }
 
   .detail-close:hover,
@@ -1164,6 +1216,8 @@ onBeforeUnmount(() => {
   .list-row,
   .import-link,
   .import-arrow,
+  .back-link,
+  .back-arrow,
   .detail-close,
   .reveal-btn,
   .detail-slide-enter-active,

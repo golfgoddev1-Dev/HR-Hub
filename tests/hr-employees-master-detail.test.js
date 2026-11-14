@@ -197,6 +197,7 @@ function makeRouter() {
     history: createMemoryHistory(),
     routes: [
       { path: '/hr/employees', component: { template: '<div />' } },
+      { path: '/hr/employees/import', component: { template: '<div />' } },
       { path: '/hr/employees/:id', component: { template: '<div />' } },
     ],
   })
@@ -336,6 +337,40 @@ describe('HR employee master-detail', () => {
     await flushPromises()
     expect(wrapper.vm.$route.fullPath).toBe('/hr/employees')
     wrapper.unmount()
+  })
+
+  it('keeps the way back to the import screen inside the panel', async () => {
+    // The old detail page linked there; the panel now carries the same target.
+    for (const wide of [true, false]) {
+      const { wrapper } = await mountAt('/hr/employees', { wide })
+      await searchFor(wrapper)
+      await wrapper.findAll('button.list-row')[0].trigger('click')
+      await flushPromises()
+
+      const link = wrapper.find('.detail .back-link')
+      expect(link.exists(), `wide=${wide}`).toBe(true)
+      expect(link.attributes('href')).toBe('/hr/employees/import')
+      expect(link.text()).toContain('กลับไปหน้านำเข้า')
+      wrapper.unmount()
+    }
+
+    // 44px target on every width, and the visible focus ring the sheet's other
+    // controls use.
+    const style = blockFor('.back-link {')
+    expect(style).toContain('min-width: var(--tap)')
+    expect(style).toContain('min-height: var(--tap)')
+    expect(blockFor('.back-link:focus-visible {')).toContain('outline: 2px solid var(--focus)')
+    expect(blockFor('.back-link:focus-visible {')).toContain('outline-offset: 2px')
+
+    // Text and border against the darkest glass the panel can show.
+    const backdrop = panelBackdrop('--dir-glass')
+    const fill = over({ ...parseColor('#ffffff'), a: 0.72 }, backdrop)
+    const border = over(parseColor('rgba(30, 27, 75, 0.52)'), backdrop)
+    expect(contrast(parseColor('#4338ca'), backdrop)).toBeGreaterThanOrEqual(4.5)
+    expect(contrast(parseColor('#4338ca'), fill)).toBeGreaterThanOrEqual(4.5)
+    expect(contrast(border, backdrop)).toBeGreaterThanOrEqual(3)
+    // The violet ring stays an indicator, never an ink.
+    expect(blockFor('.back-link {')).not.toContain('#8b5cf6')
   })
 
   it('returns to the list with the back button', async () => {
