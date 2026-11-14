@@ -1009,7 +1009,9 @@ describe('panel text tokens', () => {
     // tile, darkened to #55696d. 4.21 -> 4.74 and 5.15 -> 6.00 on white.
     expect(contrast('#5c7176', '#e2eae9')).toBeLessThan(4.5)
     expect(contrast('#55696d', '#e2eae9')).toBeGreaterThanOrEqual(4.5)
-    expect(readSource('src/pages/HrHomePage.vue')).toContain('color: #55696d')
+    // The home page no longer has the mint caption: its muted ink is slate-600 on
+    // the glass panel, measured against the scene in tests/hr-home-page.test.js.
+    expect(readSource('src/pages/HrHomePage.vue')).toContain('--ink-muted: #475569;')
   })
 
   it('leaves the benchmark and the static fallback untouched', () => {
