@@ -164,3 +164,83 @@ Visitors without a session never mount AppBackground3D or WebGL: login, pending,
 - Equal boxes in a grid as the answer to every page.
 - Opaque white cards that make the scene pointless.
 - Status colours reused for branding, or brand colour used for a status.
+
+## I. Design process
+
+A page is designed before it is coded. The plan is short enough to read in the
+report, and specific enough that it could not belong to another page.
+
+**Write the plan first.** Four parts, a handful of lines:
+
+- **Palette.** 4 to 6 named colours from the approved palette (indigo-600
+  `#4F46E5`, indigo-700 `#4338CA`, indigo-900 `#1E1B4B`, slate-600 `#475569`,
+  slate-700 `#334155`, violet `#8B5CF6` for focus and glow only) and the job each
+  one does on this page — which colour carries the page title, which one the
+  actions, which one the quiet metadata.
+- **Type.** The faces and their roles: `Prompt` for headings and buttons,
+  `Sarabun` for body copy, `IBM Plex Sans Thai` for figures, codes and dense
+  table text.
+- **Layout.** One sentence describing the composition, plus an ASCII wireframe of
+  the page's regions (a rail, a list, a panel, the order they read in).
+- **Three principles.** Three statements that make this page specific to its job.
+  "Clear and modern" is not one of them; "the queue is the page, and filters never
+  push it down" is.
+
+**Review the plan against the brief.** If any part would fit any HR page
+unchanged — a generic card grid, a generic hero, a generic filter bar — revise it
+before coding and say what changed and why.
+
+**Spend boldness once.** One memorable element per page, and everything else
+quiet. If every section is decorated, nothing is. Cut any decoration that does
+not serve the page's job.
+
+**Build to a quality floor.** Responsive down to 360 px, visible keyboard focus
+(2px `#8B5CF6`), reduced motion respected, and every ink at 4.5:1 against its
+worst-case background (section C).
+
+**Critique after building.** Take screenshots at 390 and 1280, list one thing to
+remove, and then remove it — or justify in the report why it stays.
+
+**Motion answers an action.** Opening, expanding, confirming, switching: those
+deserve motion. A fade-and-slide entrance on every section and a hover effect on
+every card do not. One orchestrated entrance per page is the limit.
+
+**Avoid the generic tells** unless the brief asks for them:
+
+- a tracked all-caps eyebrow above every heading;
+- middle-dot metadata strings (`·` between every value);
+- labels built as "WORD — fragment";
+- a monospace face for small data labels;
+- a trailing arrow on every link;
+- identical rounded cards sharing one shadow;
+- gradient washes used as decoration;
+- accenting a single word inside a headline.
+
+**Structure must carry information.** Numbers, dividers and outlines are allowed
+when they encode something real. Numbered markers only for a real sequence;
+a rule between two things only when the boundary means something.
+
+**Watch CSS specificity.** Padding and margins on adjacent sections can cancel
+each other out while both rules look correct in the source. Test the computed
+spacing between rendered blocks, not the declarations.
+
+## J. Copy and writing
+
+- **Write from the user's side of the screen.** The employee applying for leave
+  and the HR officer reading the queue, in plain Thai. Name a thing by what the
+  user understands, not by how the system is built: "ใบลาที่รออนุมัติ", not
+  "รายการที่มีสถานะ pending".
+- **Buttons and links say exactly what happens, in the active voice.** If the
+  button says "บันทึก", the confirmation says "บันทึกแล้ว" — not "ดำเนินการสำเร็จ".
+  One action keeps one name from the button through the toast, the dialog title
+  and the empty state.
+- **Errors say what went wrong and what to do next.** No apology, no blame, and
+  never only "เกิดข้อผิดพลาด". "บันทึกไม่สำเร็จ เพราะเลขบัตรประชาชนไม่ครบ 13 หลัก
+  กรุณาตรวจสอบแล้วลองอีกครั้ง" is the shape.
+- **Empty states invite the next action.** Say what would appear here and which
+  control fills it, e.g. "ยังไม่มีใบลาในเดือนนี้ — เลือกเดือนอื่น หรือคีย์ใบลาให้พนักงาน".
+- **Each written element does one job.** Labels label, hints explain the field,
+  notes carry the exception. Remove words that repeat the heading or restate the
+  screen.
+- **Sentence case, plain verbs.** No marketing adjectives in a work tool, no
+  exclamation marks, no shouting capitals.

@@ -7,7 +7,9 @@ import {
   CLAUDE_FILE,
   DESIGN_DOC_FILE,
   DESIGN_HEADINGS,
+  DESIGN_PLAN_RULE,
   DESIGN_SKILL_FILE,
+  FRONTEND_DESIGN_SKILL_FILE,
   GUARDED_FILES,
   MANDATORY_RULE,
   REPORT_RULE,
@@ -26,6 +28,7 @@ const uiDoc = read(UI_DOC_FILE)
 const designDoc = read(DESIGN_DOC_FILE)
 const uiWrapper = read(SKILL_FILE)
 const designWrapper = read(DESIGN_SKILL_FILE)
+const frontendSkill = read(FRONTEND_DESIGN_SKILL_FILE)
 
 const files = {
   'AGENTS.md': agents,
@@ -34,6 +37,7 @@ const files = {
   'docs/ai/frontend-design.md': designDoc,
   'hr-hub-ui-motion/SKILL.md': uiWrapper,
   'hr-hub-frontend-design/SKILL.md': designWrapper,
+  'frontend-design/SKILL.md': frontendSkill,
 }
 
 function fixtureReader(overrides = {}) {
@@ -58,6 +62,7 @@ describe('UI skill guard', () => {
       expect(flat).toContain(MANDATORY_RULE.replace(/\s+/g, ' '))
       expect(flat).toContain('docs/ai/hr-hub-ui-motion.md')
       expect(flat).toContain('docs/ai/frontend-design.md')
+      expect(flat).toContain(DESIGN_PLAN_RULE.replace(/\s+/g, ' '))
       expect(flat).toContain(REPORT_RULE.replace(/\s+/g, ' '))
       for (const file of GUARDED_FILES) {
         expect(flat, `rule lists ${file}`).toContain(file)
@@ -109,6 +114,39 @@ describe('UI skill guard', () => {
     expect(designWrapper).toContain(DESIGN_DOC_FILE)
     expect(designWrapper).toMatch(/^description: .*(design|typography|colour|motion).*$/m)
     expect(designWrapper.trimEnd().split('\n').length).toBeLessThanOrEqual(12)
+  })
+
+  it('wraps the design document in a third, instruction-only skill', () => {
+    expect(frontendSkill).toMatch(/^name: frontend-design$/m)
+    expect(frontendSkill).toMatch(/^description: .*(layout|typography|colour|motion|3D).*$/m)
+    expect(frontendSkill).toContain(DESIGN_DOC_FILE)
+    expect(frontendSkill).toMatch(/sections A to J/i)
+    expect(frontendSkill).toMatch(/in full/i)
+    // It points at the document; it does not restate its rules.
+    expect(frontendSkill).not.toMatch(/4\.5:1|0\.86|tint|hover: hover/)
+    expect(frontendSkill.trimEnd().split('\n').length).toBeLessThanOrEqual(12)
+  })
+
+  it('fails when the design process section goes missing', () => {
+    const withoutSectionI = designDoc.replace('## I. Design process\n', '')
+    const problems = checkUiSkill(fixtureReader({ 'docs/ai/frontend-design.md': withoutSectionI }))
+    expect(problems.join('\n')).toMatch(/missing the heading "## I\. Design process"/)
+  })
+
+  it('fails when AGENTS.md loses the design-plan sentence', () => {
+    const withoutPlan = agents.replace(
+      'Before coding any UI change, write the design plan described in docs/ai/frontend-design.md section I, and include it in your report.',
+      ''
+    )
+    const problems = checkUiSkill(fixtureReader({ 'AGENTS.md': withoutPlan }))
+    expect(problems.join('\n')).toMatch(/AGENTS\.md does not require the section I design plan/)
+  })
+
+  it('fails when the frontend-design wrapper is missing', () => {
+    const problems = checkUiSkill(() => {
+      throw new Error('unreadable')
+    })
+    expect(problems.join('\n')).toMatch(/missing wrapper \.claude\/skills\/frontend-design\/SKILL\.md/)
   })
 
   it('fails when AGENTS.md loses the mandatory sentence', () => {

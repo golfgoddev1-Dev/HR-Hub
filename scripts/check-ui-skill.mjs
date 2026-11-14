@@ -20,9 +20,13 @@ export const UI_DOC_FILE = 'docs/ai/hr-hub-ui-motion.md'
 export const DESIGN_DOC_FILE = 'docs/ai/frontend-design.md'
 export const SKILL_FILE = '.claude/skills/hr-hub-ui-motion/SKILL.md'
 export const DESIGN_SKILL_FILE = '.claude/skills/hr-hub-frontend-design/SKILL.md'
+export const FRONTEND_DESIGN_SKILL_FILE = '.claude/skills/frontend-design/SKILL.md'
 
 export const MANDATORY_RULE =
   'Before changing any file under src/pages, src/components, src/styles.css, src/lib/background-scene.js, src/lib/motion.js, src/lib/background-quality.js, src/lib/dialog-focus.js, src/lib/lite-mode.js, or src/lib/dock-entrance.js, you MUST read docs/ai/hr-hub-ui-motion.md AND docs/ai/frontend-design.md and follow every rule in both. In your final report, list which sections you checked. If a requested change conflicts with a rule, stop and ask instead of working around it.'
+
+export const DESIGN_PLAN_RULE =
+  'Before coding any UI change, write the design plan described in docs/ai/frontend-design.md section I, and include it in your report.'
 
 export const REPORT_RULE =
   'Report contrast ratios, tier used, and screenshot paths for every UI change.'
@@ -50,6 +54,8 @@ export const DESIGN_HEADINGS = Object.freeze([
   'F. 3D and WebGL',
   'G. Performance budget',
   'H. Anti-patterns to avoid',
+  'I. Design process',
+  'J. Copy and writing',
 ])
 
 // Markdown wraps at the author's whim; compare on collapsed whitespace so a
@@ -113,6 +119,9 @@ export function checkUiSkill(read = readSource, root = projectRoot) {
     for (const file of GUARDED_FILES) {
       if (!flat.includes(file)) problems.push(`${AGENTS_FILE}/${CLAUDE_FILE} rule does not list ${file}`)
     }
+    if (!flat.includes(flatten(DESIGN_PLAN_RULE))) {
+      problems.push(`${file} does not require the section I design plan in the report`)
+    }
     if (!flat.includes(flatten(REPORT_RULE))) {
       problems.push(`${file} does not require contrast, tier and screenshot reporting`)
     }
@@ -151,6 +160,7 @@ export function checkUiSkill(read = readSource, root = projectRoot) {
   const wrappers = [
     { file: SKILL_FILE, name: 'hr-hub-ui-motion', doc: UI_DOC_FILE },
     { file: DESIGN_SKILL_FILE, name: 'hr-hub-frontend-design', doc: DESIGN_DOC_FILE },
+    { file: FRONTEND_DESIGN_SKILL_FILE, name: 'frontend-design', doc: DESIGN_DOC_FILE },
   ]
   for (const wrapper of wrappers) {
     const text = readOrNull(read, at(wrapper.file))
@@ -190,6 +200,6 @@ if (invokedDirectly) {
     process.exit(1)
   }
   console.log(
-    `UI skill check passed: ${AGENTS_FILE} and ${CLAUDE_FILE} name both documents, ${UI_DOC_FILE} has sections 1-10 in order, ${DESIGN_DOC_FILE} has headings A-H in order, and both wrappers point at their document.`
+    `UI skill check passed: ${AGENTS_FILE} and ${CLAUDE_FILE} name both documents and require the section I plan, ${UI_DOC_FILE} has sections 1-10 in order, ${DESIGN_DOC_FILE} has headings A-J in order, and all three wrappers point at their document.`
   )
 }
