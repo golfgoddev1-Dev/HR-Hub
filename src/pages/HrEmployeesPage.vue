@@ -389,13 +389,13 @@ onBeforeUnmount(() => {
   font-weight: 600;
   text-decoration: none;
   transition:
-    background-color 0.18s ease,
-    border-color 0.18s ease;
+    background-color var(--motion-release) ease,
+    border-color var(--motion-release) ease;
 }
 
 .import-arrow {
   display: inline-block;
-  transition: transform 0.18s ease;
+  transition: transform var(--motion-release) ease;
 }
 
 .results {
@@ -462,7 +462,7 @@ onBeforeUnmount(() => {
   font-size: 15px;
   line-height: 1.5;
   text-decoration: none;
-  transition: background-color 0.18s ease;
+  transition: background-color var(--motion-release) ease;
 }
 
 .list-row:last-child {
@@ -620,16 +620,16 @@ onBeforeUnmount(() => {
   }
 
   .finder {
-    animation: dir-rise 0.44s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+    animation: dir-rise var(--motion-entrance) var(--motion-ease) backwards;
   }
 
   .results {
-    animation: dir-rise 0.42s cubic-bezier(0.16, 1, 0.3, 1) 80ms backwards;
+    animation: dir-rise 0.42s var(--motion-ease) 80ms backwards;
   }
 
   .list-row {
-    animation: dir-rise 0.42s cubic-bezier(0.16, 1, 0.3, 1) backwards;
-    animation-delay: calc(var(--stagger, 0) * 50ms + 120ms);
+    animation: dir-rise 0.42s var(--motion-ease) backwards;
+    animation-delay: calc((var(--stagger, 0) + 3) * var(--motion-stagger));
   }
 }
 

@@ -369,11 +369,12 @@ describe('leave home page', () => {
       }
     }
 
-    expect(CSS).toMatch(/leave-rise 0\.44s/)
-    expect(CSS).toMatch(/leave-rise 0\.4[0-9]s/)
-    const stagger = /\* (\d+)ms \+ (\d+)ms/.exec(CSS)
-    expect(stagger).not.toBeNull()
-    expect(Number(stagger[1])).toBeLessThanOrEqual(60)
+    // The entrance duration and curve are the shared tokens; their values
+    // (440ms, the one curve) are pinned in tests/motion-system.test.js.
+    expect(CSS).toMatch(/leave-rise var\(--motion-entrance\) var\(--motion-ease\)/)
+    // The step between cards is the shared stagger token (40ms, ceiling 60ms,
+    // pinned in tests/motion-system.test.js).
+    expect(CSS).toMatch(/calc\(\(var\(--stagger, 0\) \+ 3\) \* var\(--motion-stagger\)\)/)
   })
 
   it('puts hover lift and press feedback behind a fine pointer', () => {

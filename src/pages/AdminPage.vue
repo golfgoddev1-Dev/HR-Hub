@@ -168,8 +168,7 @@ onMounted(async () => {
   background-size: 200% 100%;
   z-index: 9999;
   transform-origin: left;
-  animation: admin-progress-sweep 1.8s cubic-bezier(0.65, 0, 0.35, 1) forwards,
-    admin-gradient-move 1.5s linear infinite;
+  animation: admin-progress-sweep 1.2s var(--motion-ease) forwards;
 }
 
 .content {
@@ -182,7 +181,10 @@ onMounted(async () => {
 
 .head {
   margin-bottom: 22px;
-  animation: admin-fade-slide-down 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.05s both;
+  /* The shared entrance: var(--motion-entrance) and the one curve, so the admin head lands with
+     every other page. `backwards`, never `both`: the finished state is the
+     element's own. */
+  animation: admin-fade-slide-down var(--motion-entrance) var(--motion-ease) 0.05s backwards;
 }
 
 .eyebrow {
@@ -254,9 +256,9 @@ onMounted(async () => {
   border-radius: 14px;
   background: #ffffff;
   box-shadow: 0 1px 3px rgba(18, 52, 59, 0.05);
-  animation: admin-card-entrance 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
-  animation-delay: calc(var(--stagger, 0) * 0.08s + 0.15s);
-  transition: box-shadow 0.3s ease, border-color 0.3s ease;
+  animation: admin-card-entrance var(--motion-entrance) var(--motion-ease) backwards;
+  animation-delay: calc(var(--stagger, 0) * var(--motion-stagger));
+  transition: box-shadow var(--motion-hover) var(--motion-ease), border-color var(--motion-hover) var(--motion-ease);
 }
 
 .stat-card:hover {
@@ -384,10 +386,10 @@ onMounted(async () => {
   color: inherit;
   text-decoration: none;
   box-shadow: 0 1px 3px rgba(18, 52, 59, 0.04);
-  animation: admin-card-entrance 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
-  animation-delay: calc(var(--stagger, 0) * 0.08s + 0.3s);
-  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease,
-    border-color 0.25s ease, background-color 0.25s ease;
+  /* No second entrance on hover: the card is already on screen, so the lift is
+     a transition, and the entering animation runs once. */
+  transition: transform var(--motion-hover) var(--motion-ease), box-shadow var(--motion-hover) var(--motion-ease),
+    border-color var(--motion-hover) var(--motion-ease), background-color var(--motion-hover) var(--motion-ease);
 }
 
 a.shortcut:hover {
@@ -459,7 +461,7 @@ a.shortcut:active {
   font-size: 12.5px;
   font-weight: 600;
   color: #10504e;
-  transition: gap 0.25s ease, color 0.25s ease;
+  transition: color var(--motion-hover) var(--motion-ease);
 }
 
 .shortcut-locked .shortcut-go {
@@ -475,10 +477,6 @@ a.shortcut:active {
   100% { transform: scaleX(1); opacity: 0; }
 }
 
-@keyframes admin-gradient-move {
-  0% { background-position: 100% 0; }
-  100% { background-position: -100% 0; }
-}
 
 @keyframes admin-fade-slide-down {
   from { opacity: 0; transform: translateY(-12px); }

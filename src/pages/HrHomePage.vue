@@ -663,8 +663,8 @@ onBeforeUnmount(() => {
   line-height: 1;
   cursor: pointer;
   transition:
-    background-color 0.18s ease,
-    border-color 0.18s ease;
+    background-color var(--motion-release) ease,
+    border-color var(--motion-release) ease;
 }
 
 .step:disabled {
@@ -753,7 +753,7 @@ onBeforeUnmount(() => {
 
 .deck-arrow {
   display: inline-block;
-  transition: transform 0.18s ease;
+  transition: transform var(--motion-release) ease;
 }
 
 .deck-error {
@@ -767,8 +767,8 @@ onBeforeUnmount(() => {
 .deck-enter-active,
 .deck-leave-active {
   transition:
-    opacity 0.24s ease,
-    transform 0.24s ease;
+    opacity var(--motion-hover) ease,
+    transform var(--motion-hover) ease;
 }
 
 .deck-enter-from {
@@ -847,8 +847,8 @@ onBeforeUnmount(() => {
   color: inherit;
   text-decoration: none;
   transition:
-    background-color 0.18s ease,
-    box-shadow 0.24s ease;
+    background-color var(--motion-release) ease,
+    box-shadow var(--motion-hover) ease;
 }
 
 .task-icon {
@@ -860,8 +860,8 @@ onBeforeUnmount(() => {
   background: var(--tile);
   color: var(--accent);
   transition:
-    background-color 0.18s ease,
-    color 0.18s ease;
+    background-color var(--motion-release) ease,
+    color var(--motion-release) ease;
 }
 
 .task-icon .material-symbols-outlined {
@@ -905,7 +905,7 @@ onBeforeUnmount(() => {
 
 .go-arrow {
   display: inline-block;
-  transition: transform 0.18s ease;
+  transition: transform var(--motion-release) ease;
 }
 
 /* Full-width rows take the focus ring inside their own box. */
@@ -918,9 +918,9 @@ onBeforeUnmount(() => {
 @media (hover: hover) and (pointer: fine) {
   .task {
     transition:
-      background-color 0.18s ease,
-      box-shadow 0.24s ease,
-      transform 0.24s ease;
+      background-color var(--motion-release) ease,
+      box-shadow var(--motion-hover) ease,
+      transform var(--motion-hover) ease;
   }
 
   .task:hover {
@@ -992,12 +992,12 @@ onBeforeUnmount(() => {
   }
 
   .hero {
-    animation: home-rise 0.44s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+    animation: home-rise var(--motion-entrance) var(--motion-ease) backwards;
   }
 
   .task {
-    animation: home-rise 0.42s cubic-bezier(0.16, 1, 0.3, 1) backwards;
-    animation-delay: calc(var(--stagger, 0) * 50ms + 80ms);
+    animation: home-rise 0.42s var(--motion-ease) backwards;
+    animation-delay: calc((var(--stagger, 0) + 2) * var(--motion-stagger));
   }
 }
 

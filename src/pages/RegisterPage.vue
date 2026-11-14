@@ -903,7 +903,7 @@ onMounted(loadContext)
   font-weight: 600;
   letter-spacing: 0.1px;
   cursor: pointer;
-  transition: filter 0.15s ease, transform 0.12s ease;
+  transition: filter 0.15s ease, transform var(--motion-press) ease;
 }
 
 .submit-btn:hover:not(:disabled) {

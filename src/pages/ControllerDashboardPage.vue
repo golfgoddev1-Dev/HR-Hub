@@ -191,6 +191,12 @@ function percent(rate) {
   return `${Math.round(clamped * 1000) / 10}%`
 }
 
+function rateScale(rate) {
+  const value = Number(rate)
+  if (!Number.isFinite(value) || value <= 0) return 0
+  return Math.min(value, 1)
+}
+
 function toneOfStatus(label) {
   return STATUS_TONE[label] ?? 'muted'
 }
@@ -646,7 +652,7 @@ loadDashboard()
                       <td data-label="อัตราเข้าร่วม">
                         <div class="rate">
                           <span class="rate-track">
-                            <span class="rate-fill" :style="{ width: percent(row.rate) }"></span>
+                            <span class="rate-fill" :style="{ transform: `scaleX(${rateScale(row.rate)})` }"></span>
                           </span>
                           <span class="rate-text">{{ percent(row.rate) }}</span>
                         </div>
@@ -953,11 +959,11 @@ loadDashboard()
   to { transform: rotate(360deg); }
 }
 .fade-up {
-  animation: fadeInUp 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: fadeInUp var(--motion-entrance) var(--motion-ease) backwards;
 }
-.delay-1 { animation-delay: 80ms; }
-.delay-2 { animation-delay: 160ms; }
-.delay-3 { animation-delay: 240ms; }
+.delay-1 { animation-delay: var(--motion-stagger); }
+.delay-2 { animation-delay: calc(var(--motion-stagger) * 2); }
+.delay-3 { animation-delay: calc(var(--motion-stagger) * 3); }
 .spin { animation: spin 1s linear infinite; }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1306,7 +1312,7 @@ loadDashboard()
   border: 1px solid transparent;
   border-radius: 14px;
   background: var(--surface-low);
-  transition: transform 0.2s, background 0.2s;
+  transition: transform var(--motion-release) var(--motion-ease), background-color var(--motion-release) var(--motion-ease);
 }
 
 .metric:hover {
@@ -1411,7 +1417,8 @@ loadDashboard()
 }
 
 .donut-svg circle:not(.donut-track) {
-  transition: stroke-dasharray 0.7s ease, stroke-dashoffset 0.7s ease;
+  /* The donut segments paint at their new length in one frame: dash length is
+     a paint property, so it is not tweened. */
 }
 
 .donut-center {
@@ -1557,7 +1564,8 @@ loadDashboard()
 
 .gauge-fill {
   stroke: var(--primary);
-  transition: stroke-dashoffset 1s ease;
+  /* The value changes without a paint tween: stroke-dashoffset is a paint
+     property, so the ring steps to the new length instead of animating it. */
 }
 
 .gauge-center {
@@ -1673,7 +1681,7 @@ loadDashboard()
 
 .row-click {
   cursor: pointer;
-  transition: background 0.2s;
+  transition: background-color var(--motion-release) var(--motion-ease);
 }
 
 .row-click:hover td {
@@ -1752,10 +1760,13 @@ loadDashboard()
 
 .rate-fill {
   display: block;
+  width: 100%;
   height: 100%;
   border-radius: 999px;
   background: var(--secondary);
-  transition: width 0.8s ease-out;
+  /* scaleX, not width: the bar fills to its value with no layout per frame. */
+  transform-origin: left center;
+  transition: transform var(--motion-route) var(--motion-ease);
 }
 
 .rate-text {

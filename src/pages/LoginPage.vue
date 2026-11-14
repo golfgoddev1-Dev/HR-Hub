@@ -756,7 +756,7 @@ async function submitLogin() {
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   border: 1px solid rgba(255, 255, 255, 0.06);
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform var(--motion-hover) var(--motion-ease), opacity var(--motion-hover) var(--motion-ease), background-color var(--motion-hover) var(--motion-ease), border-color var(--motion-hover) var(--motion-ease), color var(--motion-hover) var(--motion-ease), box-shadow var(--motion-hover) var(--motion-ease);
 }
 
 .benefit:hover {
@@ -1002,7 +1002,7 @@ async function submitLogin() {
   padding: 2px 8px;
   border-radius: 4px;
   border: 1px solid rgba(255, 255, 255, 0.8);
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform var(--motion-hover) var(--motion-ease), opacity var(--motion-hover) var(--motion-ease), background-color var(--motion-hover) var(--motion-ease), border-color var(--motion-hover) var(--motion-ease), color var(--motion-hover) var(--motion-ease), box-shadow var(--motion-hover) var(--motion-ease);
 }
 
 .counter.full {
@@ -1037,7 +1037,7 @@ async function submitLogin() {
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.9);
   box-shadow: 0 2px 8px rgba(15, 33, 55, 0.03);
-  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform var(--motion-hover) var(--motion-ease), opacity var(--motion-hover) var(--motion-ease), background-color var(--motion-hover) var(--motion-ease), border-color var(--motion-hover) var(--motion-ease), color var(--motion-hover) var(--motion-ease), box-shadow var(--motion-hover) var(--motion-ease);
 }
 
 .role-option:hover {
@@ -1076,7 +1076,7 @@ async function submitLogin() {
   align-items: center;
   justify-content: center;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-  transition: all 0.2s ease;
+  transition: transform var(--motion-hover) var(--motion-ease), opacity var(--motion-hover) var(--motion-ease), background-color var(--motion-hover) var(--motion-ease), border-color var(--motion-hover) var(--motion-ease), color var(--motion-hover) var(--motion-ease), box-shadow var(--motion-hover) var(--motion-ease);
 }
 
 .role-icon .material-symbols-outlined {
@@ -1105,7 +1105,7 @@ async function submitLogin() {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  transition: all 0.2s ease;
+  transition: transform var(--motion-hover) var(--motion-ease), opacity var(--motion-hover) var(--motion-ease), background-color var(--motion-hover) var(--motion-ease), border-color var(--motion-hover) var(--motion-ease), color var(--motion-hover) var(--motion-ease), box-shadow var(--motion-hover) var(--motion-ease);
 }
 
 .role-radio--on {
@@ -1118,7 +1118,7 @@ async function submitLogin() {
   height: 6px;
   border-radius: 50%;
   background: #ffffff;
-  animation: dotPop 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: dotPop 0.2s var(--motion-ease);
 }
 
 @keyframes dotPop {
@@ -1165,7 +1165,7 @@ async function submitLogin() {
   color: #0b1c30;
   outline: none;
   box-shadow: inset 0 1px 3px rgba(15, 33, 55, 0.04);
-  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform var(--motion-hover) var(--motion-ease), opacity var(--motion-hover) var(--motion-ease), background-color var(--motion-hover) var(--motion-ease), border-color var(--motion-hover) var(--motion-ease), color var(--motion-hover) var(--motion-ease), box-shadow var(--motion-hover) var(--motion-ease);
 }
 
 .input::placeholder {
@@ -1218,7 +1218,7 @@ async function submitLogin() {
   color: #44474d;
   font-family: inherit;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: transform var(--motion-hover) var(--motion-ease), opacity var(--motion-hover) var(--motion-ease), background-color var(--motion-hover) var(--motion-ease), border-color var(--motion-hover) var(--motion-ease), color var(--motion-hover) var(--motion-ease), box-shadow var(--motion-hover) var(--motion-ease);
 }
 
 .toggle:hover {
@@ -1332,7 +1332,7 @@ async function submitLogin() {
   font-weight: 600;
   opacity: 0.7;
   cursor: not-allowed;
-  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform var(--motion-hover) var(--motion-ease), opacity var(--motion-hover) var(--motion-ease), background-color var(--motion-hover) var(--motion-ease), border-color var(--motion-hover) var(--motion-ease), color var(--motion-hover) var(--motion-ease), box-shadow var(--motion-hover) var(--motion-ease);
 }
 
 /* Glass Specular Top Highlight */
@@ -1403,21 +1403,17 @@ async function submitLogin() {
 }
 
 @keyframes shimmerSweep {
-  0% { left: -150%; }
-  35%, 100% { left: 160%; }
+  /* Transform, not left: the sweep travels the same distance without a
+     layout per frame. */
+  0% { transform: translateX(0); }
+  35%, 100% { transform: translateX(310%); }
 }
 
+/* A transform pulse, not a box-shadow pulse: the glow itself is static on the
+   button, and only the scale moves, so the ready cue costs no repaint. */
 @keyframes readyPulseGlow {
-  0%, 100% {
-    box-shadow: 
-      0 4px 16px rgba(15, 33, 55, 0.24),
-      0 0 16px rgba(49, 107, 243, 0.12);
-  }
-  50% {
-    box-shadow: 
-      0 6px 20px rgba(15, 33, 55, 0.28),
-      0 0 28px rgba(133, 248, 196, 0.24);
-  }
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.015); }
 }
 
 .submit .material-symbols-outlined {
@@ -1729,36 +1725,37 @@ async function submitLogin() {
   100% { transform: scale(1.05); }
 }
 
-/* 1) เข้าฉาก */
-.topbar { animation: m-fade-in-down 0.8s cubic-bezier(0.16, 1, 0.3, 1) both; }
+/* 1) เข้าฉาก — the shared entrance: one duration, one curve, one stagger step.
+   Nothing here invents its own rhythm; the atoms below only choose an order. */
+.topbar { animation: m-fade-in-down var(--motion-entrance) var(--motion-ease) backwards; }
 /* The panel and its heading must be readable at first paint. The remaining
    motion below the fold is decorative and does not gate the login LCP. */
 .split { animation: none; }
 
 /* 2) ฝั่งแบรนด์ ทยอยขึ้นทีละส่วน */
-.brand-top { animation: m-fade-in-up 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.15s both; }
-.brand-copy { animation: m-fade-in-up 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.25s both; }
-.benefit { animation: m-fade-in-up 0.7s cubic-bezier(0.16, 1, 0.3, 1) both; }
-.benefit:nth-child(1) { animation-delay: 0.35s; }
-.benefit:nth-child(2) { animation-delay: 0.45s; }
-.benefit:nth-child(3) { animation-delay: 0.55s; }
-.brand-footnote { animation: m-fade-in-up 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.65s both; }
+.brand-top { animation: m-fade-in-up var(--motion-entrance) var(--motion-ease) backwards; }
+.brand-copy { animation: m-fade-in-up var(--motion-entrance) var(--motion-ease) var(--motion-stagger) backwards; }
+.benefit { animation: m-fade-in-up var(--motion-entrance) var(--motion-ease) backwards; }
+.benefit:nth-child(1) { animation-delay: calc(var(--motion-stagger) * 2); }
+.benefit:nth-child(2) { animation-delay: calc(var(--motion-stagger) * 3); }
+.benefit:nth-child(3) { animation-delay: calc(var(--motion-stagger) * 4); }
+.brand-footnote { animation: m-fade-in-up var(--motion-entrance) var(--motion-ease) calc(var(--motion-stagger) * 5) backwards; }
 
 /* 3) ฝั่งฟอร์ม */
 .login-head { animation: none; }
-.form > .section { animation: m-fade-in-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) both; }
-.form > .section:nth-child(1) { animation-delay: 0.3s; }
-.form > .section:nth-child(2) { animation-delay: 0.38s; }
-.form > .section:nth-child(3) { animation-delay: 0.46s; }
-.success-alert { animation: m-slide-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) both; }
-.error-alert { animation: m-shake 0.45s cubic-bezier(0.36, 0.07, 0.19, 0.97) both; }
+.form > .section { animation: m-fade-in-up var(--motion-entrance) var(--motion-ease) backwards; }
+.form > .section:nth-child(1) { animation-delay: var(--motion-stagger); }
+.form > .section:nth-child(2) { animation-delay: calc(var(--motion-stagger) * 2); }
+.form > .section:nth-child(3) { animation-delay: calc(var(--motion-stagger) * 3); }
+.success-alert { animation: m-slide-in var(--motion-route) var(--motion-ease) backwards; }
+.error-alert { animation: m-shake var(--motion-route) var(--motion-ease) backwards; }
 
 /* 4) ตัวเลือกและช่องกรอก */
-.role-option--selected { animation: m-role-pop 0.35s cubic-bezier(0.16, 1, 0.3, 1); }
-.input-icon { transition: color 0.25s ease, transform 0.25s ease; }
+.role-option--selected { animation: m-role-pop var(--motion-route) var(--motion-ease); }
+.input-icon { transition: color var(--motion-hover) var(--motion-ease), transform var(--motion-hover) var(--motion-ease); }
 .input-wrap:focus-within .input-icon { transform: scale(1.1); }
-.counter { transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), background-color 0.25s ease, color 0.25s ease; }
-.counter.full { animation: m-counter-pop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+.counter { transition: transform var(--motion-hover) var(--motion-ease), background-color var(--motion-hover) var(--motion-ease), color var(--motion-hover) var(--motion-ease); }
+.counter.full { animation: m-counter-pop var(--motion-route) var(--motion-ease) backwards; }
 
 /* 5) ปิดแอนิเมชันเมื่อผู้ใช้ตั้งค่า reduced motion */
 @media (prefers-reduced-motion: reduce) {

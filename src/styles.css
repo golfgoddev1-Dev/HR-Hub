@@ -200,11 +200,23 @@ h1, h2, h3 { font-family: 'Prompt', sans-serif; }
   .app-layout-inner > main > :nth-child(n + 7) { animation-delay: calc(var(--motion-stagger) * 6); }
 }
 
+/* Public pages have no shell, so they get the same entrance from the same
+   tokens: one rise and fade of the route's own container. They are single-panel
+   pages, so there is nothing to stagger — one orchestrated entrance is the
+   whole motion on /login, /pending, /set-pin, /approve/:token and the anonymous
+   /meeting/register. */
+@media (prefers-reduced-motion: no-preference) {
+  :is(.v-main > .page, .v-main > .pending-page, .v-main > .approve-page) {
+    animation: panel-rise var(--motion-entrance) var(--motion-ease) backwards;
+  }
+}
+
 /* Reduced motion is the finished page: no animation, no transition, the final
    state already painted. This block is the one place it is applied app-wide, so
    no page has to remember it. */
 @media (prefers-reduced-motion: reduce) {
-  .app-layout-inner > main > * {
+  .app-layout-inner > main > *,
+  :is(.v-main > .page, .v-main > .pending-page, .v-main > .approve-page) {
     animation: none;
     opacity: 1;
     transform: none;

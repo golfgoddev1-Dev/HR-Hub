@@ -688,7 +688,7 @@ onBeforeUnmount(() => window.clearTimeout(debounceTimer))
   height: 26px;
   border-radius: 999px;
   background: #cfdad8;
-  transition: background-color 0.18s ease;
+  transition: background-color var(--motion-release) ease;
 }
 
 .switch-knob {
@@ -699,7 +699,7 @@ onBeforeUnmount(() => window.clearTimeout(debounceTimer))
   border-radius: 50%;
   background: #ffffff;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-  transition: transform 0.18s ease;
+  transition: transform var(--motion-release) ease;
 }
 
 .switch-input:checked + .switch-track {

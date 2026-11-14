@@ -103,6 +103,119 @@ describe('the token set', () => {
     // visible with JavaScript off.
     const withoutKeyframes = STYLES.replace(/@keyframes[^{]*\{(?:[^{}]*\{[^}]*\})*[^}]*\}/g, '')
     expect(withoutKeyframes).not.toMatch(/opacity:\s*0;/)
+    // The public roots are covered by the same finished state.
+    expect(reduce).toContain('.v-main > .page')
+  })
+})
+
+describe('the route entrance is shared by every route', () => {
+  it('runs one entrance on the shell and on the public page roots', () => {
+    // Signed-in pages: the shell's main, one stagger step apart.
+    expect(STYLES).toContain('.app-layout-inner > main > * {')
+    // Public pages have no shell; their own container gets the same tokens.
+    expect(STYLES).toContain(':is(.v-main > .page, .v-main > .pending-page, .v-main > .approve-page) {')
+    expect(STYLES).toContain('animation: panel-rise var(--motion-entrance) var(--motion-ease) backwards')
+  })
+
+  it('gives every public page the entrance and no second motion of its own', () => {
+    for (const name of ['LoginPage.vue', 'PendingPage.vue', 'SetPinPage.vue', 'RegisterPage.vue']) {
+      // The page root that the shared rule matches, asserted from the source so
+      // a renamed root cannot silently lose the entrance.
+      const source = readSource(`src/pages/${name}`)
+      expect(source, name).toMatch(/<(div|main)[^>]*class="(page|pending-page)"/)
+    }
+    const approval = readSource('src/components/ApprovalLinkView.vue')
+    expect(approval).toContain('class="approve-page"')
+  })
+
+  it('lays the entrance over every signed-in route, without a page-level override', () => {
+    // The shell owns the entrance, so a page that renders its own <main> inherits
+    // it. No page declares a second route entrance of its own.
+    for (const page of PAGES) {
+      expect(page.source, page.name).not.toMatch(/animation:\s*panel-rise/)
+    }
+  })
+})
+
+describe('the page layer uses transform and opacity only', () => {
+  /** Every @keyframes block, with brace matching so one block cannot spill into the next rule. */
+  const keyframesOf = (source) => {
+    const blocks = []
+    const opener = /@keyframes\s+([\w-]+)\s*\{/g
+    let match
+    while ((match = opener.exec(source))) {
+      let depth = 1
+      let index = opener.lastIndex
+      while (index < source.length && depth > 0) {
+        if (source[index] === '{') depth += 1
+        else if (source[index] === '}') depth -= 1
+        index += 1
+      }
+      blocks.push({ name: match[1], body: source.slice(opener.lastIndex, index - 1) })
+      opener.lastIndex = index
+    }
+    return blocks
+  }
+
+  it('animates nothing but transform and opacity in a page keyframe', () => {
+    for (const page of PAGES) {
+      for (const block of keyframesOf(page.source)) {
+        for (const step of block.body.matchAll(/\{[^{}]*\}/g)) {
+          for (const declaration of step[0].matchAll(/([a-z-]+)\s*:/g)) {
+            expect(['transform', 'opacity'], `${page.name} ${block.name}: ${declaration[1]}`).toContain(declaration[1])
+          }
+        }
+      }
+    }
+  })
+
+  it('transitions only paint and compositor properties in a page', () => {
+    const ALLOWED = ['transform', 'opacity', 'background-color', 'border-color', 'color', 'box-shadow', 'outline-color', 'filter']
+    // Split at top-level commas only: a cubic-bezier() has commas of its own.
+    const entries = (value) => {
+      const parts = []
+      let depth = 0
+      let current = ''
+      for (const character of value) {
+        if (character === '(') depth += 1
+        if (character === ')') depth -= 1
+        if (character === ',' && depth === 0) {
+          parts.push(current.trim())
+          current = ''
+          continue
+        }
+        current += character
+      }
+      parts.push(current.trim())
+      return parts
+    }
+    for (const page of PAGES) {
+      for (const value of transitions(page.source)) {
+        for (const entry of entries(value)) {
+          const property = entry.trim().split(/\s+/)[0]
+          // `transition: none` inside the reduced-motion block animates nothing.
+          if (property === 'none') continue
+          expect(ALLOWED, `${page.name}: ${property}`).toContain(property)
+        }
+      }
+    }
+  })
+
+  it('keeps each page entrance short enough to finish the sequence', () => {
+    // An entrance may start on a stagger step, but the step plus the duration
+    // must still land inside the 600ms budget.
+    const ENTRANCE_NAMES = /rise|enter|appear|fade|slide|panel/i
+    for (const page of PAGES) {
+      for (const value of animations(page.source)) {
+        const parts = value.split(/\s+/)
+        const name = parts[0]
+        if (!ENTRANCE_NAMES.test(name)) continue
+        const duration = parts.find((part) => /^(var\(--motion-[a-z-]+\)|[\d.]+m?s)$/.test(part))
+        // A token duration is bounded by the token table (entrance 440ms).
+        if (duration?.startsWith('var(')) continue
+        expect(Number(duration.replace('s', '')) * (duration.endsWith('ms') ? 0.001 : 1), `${page.name}: ${value}`).toBeLessThanOrEqual(0.6)
+      }
+    }
   })
 })
 
@@ -135,6 +248,47 @@ describe('the shared motion helpers use the tokens', () => {
 })
 
 describe('no page polls', () => {
+  it('keeps every page entrance under 600ms and every stagger at 60ms or less', () => {
+    const ENTRANCE_NAMES = /rise|enter|appear|fade|slide|panel/i
+    for (const page of PAGES) {
+      for (const value of animations(page.source)) {
+        const name = value.split(/\s+/)[0]
+        if (!ENTRANCE_NAMES.test(name)) continue
+        for (const match of value.matchAll(/([\d.]+)(m?s)\b/g)) {
+          const ms = match[2] === 's' ? Number(match[1]) * 1000 : Number(match[1])
+          expect(ms, `${page.name}: ${value}`).toBeLessThanOrEqual(600)
+        }
+      }
+      for (const match of page.source.matchAll(/animation-delay:\s*([\d.]+)(m?s)\b/g)) {
+        const ms = match[2] === 's' ? Number(match[1]) * 1000 : Number(match[1])
+        expect(ms, `${page.name}: delay ${match[0]}`).toBeLessThanOrEqual(60)
+      }
+    }
+  })
+
+  it('allows a steady loop only for a progress cue or the ambient backdrop', () => {
+    // Spinners, pulses, a progress sweep and the slow ambient orbs are state
+    // cues, not entrances. Nothing else may loop, and none of them carries text.
+    const ALLOWED_LOOPS = new Set([
+      'spin',
+      'pulse',
+      'floatAmbient',
+      'readyPulseGlow',
+      'shimmerSweep',
+      // The set-pin button's own copy of the same shimmer.
+      'm-shine',
+      'admin-gradient-move',
+      'admin-progress-sweep',
+    ])
+    for (const page of PAGES) {
+      for (const value of animations(page.source)) {
+        if (!value.includes('infinite')) continue
+        const name = value.split(/\s+/)[0]
+        expect(ALLOWED_LOOPS.has(name), `${page.name}: ${value}`).toBe(true)
+      }
+    }
+  })
+
   it('has no setInterval in any page', () => {
     for (const page of PAGES) {
       expect(page.source, page.name).not.toContain('setInterval(')

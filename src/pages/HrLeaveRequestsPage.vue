@@ -962,10 +962,10 @@ onBeforeUnmount(() => {
   text-decoration: none;
   cursor: pointer;
   transition:
-    transform 180ms cubic-bezier(0.22, 0.75, 0.35, 1),
+    transform var(--motion-release) cubic-bezier(0.22, 0.75, 0.35, 1),
     background-color 160ms ease,
     border-color 160ms ease,
-    box-shadow 180ms ease,
+    box-shadow var(--motion-release) ease,
     color 160ms ease;
 }
 
@@ -1260,7 +1260,7 @@ onBeforeUnmount(() => {
    so the list never changes size. */
 .leave-card-enter-active {
   transition:
-    opacity 240ms ease,
+    opacity var(--motion-hover) ease,
     transform 260ms cubic-bezier(0.22, 0.75, 0.35, 1);
   transition-delay: calc(var(--row-index, 0) * 24ms);
 }

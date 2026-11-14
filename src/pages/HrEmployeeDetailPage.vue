@@ -247,8 +247,8 @@ onMounted(load)
   font-weight: 600;
   text-decoration: none;
   transition:
-    background-color 0.18s ease,
-    border-color 0.18s ease;
+    background-color var(--motion-release) ease,
+    border-color var(--motion-release) ease;
 }
 
 .control:focus-visible {
@@ -258,7 +258,7 @@ onMounted(load)
 
 .control-arrow {
   display: inline-block;
-  transition: transform 0.18s ease;
+  transition: transform var(--motion-release) ease;
 }
 
 @media (min-width: 760px) {
@@ -438,7 +438,7 @@ onMounted(load)
   font-size: 15px;
   font-weight: 600;
   cursor: pointer;
-  transition: background-color 0.18s ease;
+  transition: background-color var(--motion-release) ease;
 }
 
 .reveal-btn:disabled {
@@ -503,11 +503,11 @@ onMounted(load)
   }
 
   .head {
-    animation: emp-rise 0.44s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+    animation: emp-rise var(--motion-entrance) var(--motion-ease) backwards;
   }
 
   .panel {
-    animation: emp-rise 0.42s cubic-bezier(0.16, 1, 0.3, 1) 80ms backwards;
+    animation: emp-rise 0.42s var(--motion-ease) 80ms backwards;
   }
 }
 

@@ -1101,7 +1101,7 @@ async function submitSetPin() {
   font-weight: 600;
   opacity: 0.6;
   cursor: not-allowed;
-  transition: all 0.2s;
+  transition: transform var(--motion-hover) var(--motion-ease), opacity var(--motion-hover) var(--motion-ease), background-color var(--motion-hover) var(--motion-ease), border-color var(--motion-hover) var(--motion-ease), color var(--motion-hover) var(--motion-ease), box-shadow var(--motion-hover) var(--motion-ease);
 }
 
 .submit.ready {
@@ -1238,30 +1238,32 @@ async function submitSetPin() {
   100% { transform: translateX(420%) rotate(26deg); opacity: 0; }
 }
 
-.topbar { animation: m-fade-in-down 0.8s cubic-bezier(0.16, 1, 0.3, 1) both; }
-.split { animation: m-scale-in 0.9s cubic-bezier(0.16, 1, 0.3, 1) both; }
-.brand-top { animation: m-fade-in-up 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.15s both; }
-.brand-copy { animation: m-fade-in-up 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.25s both; }
-.step { animation: m-fade-in-up 0.7s cubic-bezier(0.16, 1, 0.3, 1) both; }
-.step:nth-child(1) { animation-delay: 0.35s; }
-.step:nth-child(2) { animation-delay: 0.43s; }
-.step:nth-child(3) { animation-delay: 0.51s; }
-.step:nth-child(4) { animation-delay: 0.59s; }
-.brand-footnote { animation: m-fade-in-up 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.7s both; }
+/* The shared entrance, the shared curve and one stagger step: the set-pin page
+   has its own composition, not its own timing. */
+.topbar { animation: m-fade-in-down var(--motion-entrance) var(--motion-ease) backwards; }
+.split { animation: m-scale-in var(--motion-entrance) var(--motion-ease) backwards; }
+.brand-top { animation: m-fade-in-up var(--motion-entrance) var(--motion-ease) backwards; }
+.brand-copy { animation: m-fade-in-up var(--motion-entrance) var(--motion-ease) var(--motion-stagger) backwards; }
+.step { animation: m-fade-in-up var(--motion-entrance) var(--motion-ease) backwards; }
+.step:nth-child(1) { animation-delay: calc(var(--motion-stagger) * 2); }
+.step:nth-child(2) { animation-delay: calc(var(--motion-stagger) * 3); }
+.step:nth-child(3) { animation-delay: calc(var(--motion-stagger) * 4); }
+.step:nth-child(4) { animation-delay: calc(var(--motion-stagger) * 5); }
+.brand-footnote { animation: m-fade-in-up var(--motion-entrance) var(--motion-ease) calc(var(--motion-stagger) * 6) backwards; }
 
-.ssl-pill { animation: m-fade-in 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.2s both; }
-.card { animation: m-fade-in-up 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.3s both; }
-.card-icon { animation: m-pop 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) 0.4s both; }
-.field { animation: m-fade-in-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) both; }
-.form > .field:nth-child(1) { animation-delay: 0.5s; }
-.form > .field:nth-child(2) { animation-delay: 0.56s; }
-.form > .field:nth-child(3) { animation-delay: 0.62s; }
-.form > .field:nth-child(4) { animation-delay: 0.68s; }
-.submit { animation: m-fade-in-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.74s both; }
-.alert { animation: m-shake 0.45s cubic-bezier(0.36, 0.07, 0.19, 0.97) both; }
-.match-icon { animation: m-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
-.counter.full { animation: m-counter-pop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
-.input-icon { transition: color 0.25s ease, transform 0.25s ease; }
+.ssl-pill { animation: m-fade-in var(--motion-entrance) var(--motion-ease) var(--motion-stagger) backwards; }
+.card { animation: m-fade-in-up var(--motion-entrance) var(--motion-ease) var(--motion-stagger) backwards; }
+.card-icon { animation: m-pop var(--motion-entrance) var(--motion-ease) calc(var(--motion-stagger) * 2) backwards; }
+.field { animation: m-fade-in-up var(--motion-entrance) var(--motion-ease) backwards; }
+.form > .field:nth-child(1) { animation-delay: calc(var(--motion-stagger) * 2); }
+.form > .field:nth-child(2) { animation-delay: calc(var(--motion-stagger) * 3); }
+.form > .field:nth-child(3) { animation-delay: calc(var(--motion-stagger) * 4); }
+.form > .field:nth-child(4) { animation-delay: calc(var(--motion-stagger) * 5); }
+.submit { animation: m-fade-in-up var(--motion-entrance) var(--motion-ease) calc(var(--motion-stagger) * 6) backwards; }
+.alert { animation: m-shake var(--motion-route) var(--motion-ease) backwards; }
+.match-icon { animation: m-pop var(--motion-route) var(--motion-ease) backwards; }
+.counter.full { animation: m-counter-pop var(--motion-route) var(--motion-ease) backwards; }
+.input-icon { transition: color var(--motion-hover) var(--motion-ease), transform var(--motion-hover) var(--motion-ease); }
 .input-wrap:focus-within .input-icon { transform: scale(1.1); color: #316bf3; }
 .submit.ready { position: relative; overflow: hidden; }
 .submit.ready::after {

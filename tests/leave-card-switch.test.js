@@ -575,7 +575,9 @@ describe('leave home card stack', () => {
     for (const entry of transition[1].split(';')[0].split('transition:')[1].split(',')) {
       const [property, duration] = entry.trim().split(/\s+/)
       expect(['transform', 'opacity']).toContain(property)
-      expect(Number(duration.replace('s', ''))).toBeLessThan(0.6)
+      // The duration is the shared token now; its 440ms value is asserted in
+      // tests/motion-system.test.js, and 440ms is under the 600ms ceiling.
+      expect(duration).toMatch(/^var\(--motion-(entrance|route|hover|hover-out|release)\)$/)
     }
 
     // The stack is the page's glass, on the tier's blur: never a solid card.

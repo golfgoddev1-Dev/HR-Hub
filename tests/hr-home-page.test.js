@@ -253,11 +253,13 @@ describe('HR home page', () => {
     }
 
     // Durations and stagger: the entrance is short and the steps are shallow.
-    expect(CSS).toMatch(/home-rise 0\.44s/)
-    expect(CSS).toMatch(/home-rise 0\.42s/)
-    const stagger = /\* (\d+)ms \+ 80ms/.exec(CSS)
-    expect(stagger).not.toBeNull()
-    expect(Number(stagger[1])).toBeLessThanOrEqual(60)
+    // The entrance duration and curve are the shared tokens; their values
+    // (440ms, the one curve) are pinned in tests/motion-system.test.js.
+    expect(CSS).toMatch(/home-rise var\(--motion-entrance\) var\(--motion-ease\)/)
+    // The step between cards is the shared stagger token (40ms, ceiling 60ms,
+    // pinned in tests/motion-system.test.js); the 80ms base is the page's own
+    // start offset, well inside the entrance budget.
+    expect(CSS).toMatch(/calc\(\(var\(--stagger, 0\) \+ 2\) \* var\(--motion-stagger\)\)/)
   })
 
   it('puts hover lift and press feedback behind a fine pointer', () => {

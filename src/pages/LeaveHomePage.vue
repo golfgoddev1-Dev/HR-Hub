@@ -729,13 +729,13 @@ onBeforeUnmount(() => {
   text-decoration: none;
   white-space: nowrap;
   transition:
-    background-color 0.18s ease,
-    box-shadow 0.24s ease;
+    background-color var(--motion-release) ease,
+    box-shadow var(--motion-hover) ease;
 }
 
 .primary-arrow {
   display: inline-block;
-  transition: transform 0.18s ease;
+  transition: transform var(--motion-release) ease;
 }
 
 /* The two counts are the page's headline numbers, on a hairline under the desk. */
@@ -867,8 +867,8 @@ onBeforeUnmount(() => {
   line-height: 1;
   cursor: pointer;
   transition:
-    background-color 0.18s ease,
-    border-color 0.18s ease;
+    background-color var(--motion-release) ease,
+    border-color var(--motion-release) ease;
 }
 
 .stack-step:focus-visible {
@@ -988,8 +988,8 @@ onBeforeUnmount(() => {
   font-weight: 600;
   cursor: pointer;
   transition:
-    background-color 0.18s ease,
-    border-color 0.18s ease;
+    background-color var(--motion-release) ease,
+    border-color var(--motion-release) ease;
 }
 
 .stack-toggle:focus-visible {
@@ -1002,8 +1002,8 @@ onBeforeUnmount(() => {
 .stack-enter-active,
 .stack-leave-active {
   transition:
-    opacity 0.24s ease-out,
-    transform 0.4s ease-out;
+    opacity var(--motion-route) var(--motion-ease),
+    transform var(--motion-route) var(--motion-ease);
 }
 
 .stack-enter-from {
@@ -1334,20 +1334,20 @@ onBeforeUnmount(() => {
   }
 
   .hero {
-    animation: leave-rise 0.44s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+    animation: leave-rise var(--motion-entrance) var(--motion-ease) backwards;
   }
 
   .rail {
-    animation: leave-rise 0.42s cubic-bezier(0.16, 1, 0.3, 1) 60ms backwards;
+    animation: leave-rise 0.42s var(--motion-ease) 60ms backwards;
   }
 
   .list-panel {
-    animation: leave-rise 0.42s cubic-bezier(0.16, 1, 0.3, 1) 100ms backwards;
+    animation: leave-rise 0.42s var(--motion-ease) 100ms backwards;
   }
 
   .row {
-    animation: leave-rise 0.42s cubic-bezier(0.16, 1, 0.3, 1) backwards;
-    animation-delay: calc(var(--stagger, 0) * 50ms + 120ms);
+    animation: leave-rise 0.42s var(--motion-ease) backwards;
+    animation-delay: calc((var(--stagger, 0) + 3) * var(--motion-stagger));
   }
 }
 
