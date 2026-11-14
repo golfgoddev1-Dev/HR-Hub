@@ -326,6 +326,24 @@ describe('worst-case contrast on glass', () => {
     }
   })
 
+  it('holds every status badge at 5.5:1 against its own fill', () => {
+    const badges = [
+      ['pending', '#8a4b06', '#fff2df'],
+      ['approved', '#1c6b3f', '#e6f4ec'],
+      ['rejected', '#a01b1b', '#fdecec'],
+      ['cancelled', '#5f5f5f', '#f1f1f1'],
+    ]
+    for (const [status, ink, fill] of badges) {
+      const ratio = contrast(parseColor(ink), parseColor(fill))
+      expect(ratio, `${status} badge: ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(5.5)
+    }
+    // And those are the pairs the page actually paints.
+    expect(PAGE_SOURCE).toContain('.badge-pending { background: #fff2df; color: #8a4b06; }')
+    expect(PAGE_SOURCE).toContain('.badge-approved { background: #e6f4ec; color: #1c6b3f; }')
+    expect(PAGE_SOURCE).toContain('.badge-rejected { background: #fdecec; color: #a01b1b; }')
+    expect(PAGE_SOURCE).toContain('.badge-cancelled { background: #f1f1f1; color: #5f5f5f; }')
+  })
+
   it('keeps the cancelled badge at 5.5:1 after darkening its ink', () => {
     // #6a6a6a on #f1f1f1 was 4.79:1; the ink is now #5f5f5f.
     const ratio = contrast(parseColor('#5f5f5f'), parseColor('#f1f1f1'))

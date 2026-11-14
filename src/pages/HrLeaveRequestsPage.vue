@@ -86,6 +86,24 @@ const detail = ref(null)
 // The dialog's focus contract: focus enters on the close button, Tab stays
 // inside the panel, Escape closes, and closing returns focus to the row that
 // opened it (see src/lib/dialog-focus.js).
+// The decorative band is for tablets and up. Below 600px the masthead and its
+// counts carry the page, so the scene is never created there: no canvas, no
+// gradient, no frames. matchMedia (not CSS) keeps the component unmounted, and a
+// resize re-checks it.
+const PHONE_QUERY = '(max-width: 599px)'
+let bandQuery = null
+
+function phoneViewport() {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false
+  return window.matchMedia(PHONE_QUERY).matches === true
+}
+
+const showBand = ref(!phoneViewport())
+
+function onBandChange(event) {
+  showBand.value = !event.matches
+}
+
 const detailPanel = ref(null)
 const detailClose = ref(null)
 let detailOpener = null
@@ -293,6 +311,11 @@ function previousPage() {
 
 onMounted(async () => {
   document.addEventListener('keydown', onDetailKeydown)
+  if (typeof window.matchMedia === 'function') {
+    bandQuery = window.matchMedia(PHONE_QUERY)
+    showBand.value = !bandQuery.matches
+    bandQuery.addEventListener?.('change', onBandChange)
+  }
   // Read once on mount: a lite device keeps the list flat for the whole visit.
   tiltEnabled.value = allowsPointerTilt()
   await loadOptions()
@@ -301,6 +324,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   document.removeEventListener('keydown', onDetailKeydown)
+  bandQuery?.removeEventListener?.('change', onBandChange)
 })
 </script>
 
@@ -340,8 +364,9 @@ onBeforeUnmount(() => {
       </div>
     </header>
 
-    <!-- Decorative only: lite devices keep the gradient, never a canvas. -->
-    <HrLeave3DScene class="hero-scene" />
+    <!-- Decorative only, and never mounted below 600px: lite devices keep the
+         gradient, phones keep nothing. -->
+    <HrLeave3DScene v-if="showBand" class="hero-scene" />
 
     <div class="console">
       <aside class="rail">
@@ -801,8 +826,8 @@ onBeforeUnmount(() => {
   background: #dc2626;
 }
 
-/* ---- The decorative band keeps its own place under the masthead, and is
-   dropped entirely on phones (see the 599px block below) ---- */
+/* ---- The decorative band keeps its own place under the masthead. It is not
+   rendered below 600px (v-if="showBand"), so there is no phone rule here. ---- */
 .hero-scene {
   display: block;
   margin-bottom: 16px;
@@ -1545,12 +1570,6 @@ onBeforeUnmount(() => {
 /* Below 600px the detail dialog is a full-screen sheet: no chance of a sideways
    overflow, and the page underneath cannot be tapped by accident. */
 @media (max-width: 599px) {
-  /* Phones drop the decorative band: the masthead and its counts carry the page,
-     and the 132px it used belongs to the filters and the list. */
-  .hero-scene {
-    display: none;
-  }
-
   .masthead {
     padding: 18px 16px;
   }

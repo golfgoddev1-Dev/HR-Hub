@@ -186,7 +186,13 @@ vi.mock('three', () => {
 
 const raf = { nextId: 0, pending: new Map(), scheduled: 0, cancelled: 0 }
 
+const PHONE_QUERY = '(max-width: 599px)'
+
 function stubEnvironment({ width = 1280, coarse = false, reduced = false, memory = 8, cores = 8, pixelRatio = 2 } = {}) {
+  // The page listens for the phone breakpoint, so the stub has to answer it and
+  // be able to fire a change when the window is resized.
+  const phoneListeners = new Set()
+  const listenersFor = (query) => (query === PHONE_QUERY ? phoneListeners : new Set())
   vi.stubGlobal(
     'matchMedia',
     vi.fn((query) => ({
@@ -195,11 +201,21 @@ function stubEnvironment({ width = 1280, coarse = false, reduced = false, memory
         ? reduced
         : query.includes('pointer: coarse')
           ? coarse
-          : false,
-      addEventListener() {},
-      removeEventListener() {},
-      addListener() {},
-      removeListener() {},
+          : query === PHONE_QUERY
+            ? width < 600
+            : false,
+      addEventListener(type, listener) {
+        if (type === 'change') listenersFor(query).add(listener)
+      },
+      removeEventListener(type, listener) {
+        if (type === 'change') listenersFor(query).delete(listener)
+      },
+      addListener(listener) {
+        listenersFor(query).add(listener)
+      },
+      removeListener(listener) {
+        listenersFor(query).delete(listener)
+      },
       dispatchEvent: () => false,
     }))
   )
@@ -211,6 +227,21 @@ function stubEnvironment({ width = 1280, coarse = false, reduced = false, memory
   })
   Object.defineProperty(window.navigator, 'deviceMemory', { configurable: true, value: memory })
   Object.defineProperty(window.navigator, 'hardwareConcurrency', { configurable: true, value: cores })
+
+  return {
+    /** Move the viewport and fire the same event a real resize would. */
+    resize(nextWidth) {
+      width = nextWidth
+      Object.defineProperty(window, 'innerWidth', {
+        configurable: true,
+        writable: true,
+        value: nextWidth,
+      })
+      for (const listener of [...phoneListeners]) {
+        listener({ matches: nextWidth < 600, media: PHONE_QUERY })
+      }
+    },
+  }
 }
 
 /** A fake window for the pure detection function, with one trigger switched on. */
@@ -573,18 +604,37 @@ describe('scene redesign', () => {
     wrapper.unmount()
   })
 
-  it('hides the band on phones and keeps it from 600px up', () => {
-    // Phones do not render the decorative band at all: the page hides it below
-    // 600px, and the masthead with its counts stays.
-    const phoneBlock = mediaBlock(PAGE_SOURCE, 599)
-    expect(phoneBlock).toMatch(/\.hero-scene\s*\{\s*display:\s*none/)
-    expect(phoneBlock).toContain('@media (max-width: 599px)')
+  it('does not mount the band below 600px and mounts it on desktop', async () => {
+    stubEnvironment({ width: 390, coarse: true, reduced: true })
+    stubFetch()
+    const phone = mountPage()
+    await flushPromises()
+    expect(phone.find('.hero-scene').exists()).toBe(false)
+    phone.unmount()
 
-    // The component still sizes itself for the widths that do show it.
-    expect(SCENE_SOURCE).toContain('@media (min-width: 600px)')
-    expect(SCENE_SOURCE).toContain('height: 168px')
-    expect(SCENE_SOURCE).toContain('@media (min-width: 960px)')
-    expect(SCENE_SOURCE).toContain('height: 216px')
+    stubEnvironment({ width: 1280 })
+    stubFetch()
+    const desktop = mountPage()
+    await flushPromises()
+    expect(desktop.find('.hero-scene').exists()).toBe(true)
+    desktop.unmount()
+  })
+
+  it('follows a resize across the 600px line', async () => {
+    const env = stubEnvironment({ width: 1280 })
+    stubFetch()
+    const wrapper = mountPage()
+    await flushPromises()
+    expect(wrapper.find('.hero-scene').exists()).toBe(true)
+
+    env.resize(390)
+    await flushPromises()
+    expect(wrapper.find('.hero-scene').exists()).toBe(false)
+
+    env.resize(1024)
+    await flushPromises()
+    expect(wrapper.find('.hero-scene').exists()).toBe(true)
+    wrapper.unmount()
   })
 
   it('draws the indigo-to-violet gradient in lite mode, never an empty box', () => {

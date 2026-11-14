@@ -379,7 +379,8 @@ onMounted(async () => {
 
 .badge-cancelled {
   background: #f1f1f1;
-  color: #6a6a6a;
+  /* 5.65:1 on the fill; #6a6a6a was 4.79:1. */
+  color: #5f5f5f;
 }
 
 .facts {
