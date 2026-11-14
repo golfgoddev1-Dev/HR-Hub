@@ -76,7 +76,7 @@ async function settle(wrapper) {
 }
 
 function cardText(wrapper, label) {
-  const item = wrapper.findAll('.summary-item').find((node) => node.text().includes(label))
+  const item = wrapper.findAll('.stat').find((node) => node.text().includes(label))
   expect(item, label).toBeTruthy()
   return item.text()
 }

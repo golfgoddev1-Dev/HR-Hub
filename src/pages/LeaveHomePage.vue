@@ -131,50 +131,73 @@ onMounted(async () => {
 </script>
 
 <template>
-    <main class="content">
-      <div class="head">
-        <div>
-          <h1 class="title">ใบลาของฉัน</h1>
+  <main class="page">
+    <!-- The desk: the page's own two numbers and the one action that starts work. -->
+    <section class="hero" aria-labelledby="leave-title">
+      <div class="hero-head">
+        <div class="hero-copy">
+          <p class="eyebrow">พนักงาน</p>
+          <h1 id="leave-title" class="title">ใบลาของฉัน</h1>
           <p class="sub">ดูสถานะใบลาที่เคยยื่นไว้ · คำนวณวันทำการและวันกลับมาทำงานโดยระบบ</p>
         </div>
-        <RouterLink to="/leave/new" class="primary-link">ยื่นใบลาใหม่ →</RouterLink>
+        <RouterLink to="/leave/new" class="primary-link">
+          <span>ยื่นใบลาใหม่</span>
+          <span class="primary-arrow" aria-hidden="true">→</span>
+        </RouterLink>
       </div>
 
-      <section class="summary">
-        <div class="summary-item">
-          <span class="summary-label">ใบลารออนุมัติ</span>
-          <span ref="pendingValue" class="summary-value">{{ counts.pending }}</span>
+      <dl class="stats">
+        <div class="stat stat-pending">
+          <dt class="stat-label">ใบลารออนุมัติ</dt>
+          <dd class="stat-figure">
+            <span ref="pendingValue" class="stat-value">{{ counts.pending }}</span>
+            <span class="stat-unit">ใบ</span>
+          </dd>
         </div>
-        <div class="summary-item">
-          <span class="summary-label">ใบลาอนุมัติแล้ว</span>
-          <span ref="approvedValue" class="summary-value">{{ counts.approved }}</span>
+        <div class="stat stat-approved">
+          <dt class="stat-label">ใบลาอนุมัติแล้ว</dt>
+          <dd class="stat-figure">
+            <span ref="approvedValue" class="stat-value">{{ counts.approved }}</span>
+            <span class="stat-unit">ใบ</span>
+          </dd>
         </div>
-      </section>
+      </dl>
+    </section>
 
+    <!-- Notifications sit beside the list on a wide screen, above it on a phone. -->
+    <section class="rail" aria-label="การแจ้งเตือน">
       <PushToggle />
+    </section>
 
-      <p v-if="loading" class="hint">กำลังโหลด…</p>
+    <!-- The shelf: every request as one row, newest first (the Worker's order). -->
+    <section class="list-panel" aria-labelledby="requests-title">
+      <div class="panel-head">
+        <h2 id="requests-title" class="panel-title">รายการใบลา</h2>
+      </div>
+
+      <p v-if="loading" class="status-line">กำลังโหลด…</p>
 
       <v-alert v-else-if="errorMessage" type="error" variant="tonal" class="mb-4">
         {{ errorMessage }}
       </v-alert>
 
-      <p v-else-if="results.length === 0" class="empty">{{ EMPTY }}</p>
+      <p v-else-if="results.length === 0" class="empty-line">{{ EMPTY }}</p>
 
-      <section v-else class="list">
+      <div v-else class="rows">
         <article
-          v-for="item in results"
+          v-for="(item, index) in results"
           :key="item.id"
-          :class="['card', { 'card-focus': item.id === focusId }]"
+          :class="['row', { 'card-focus': item.id === focusId }]"
+          :style="{ '--stagger': index }"
         >
-          <div class="card-head">
-            <div>
+          <header class="row-head">
+            <div class="row-id">
               <span class="code">{{ item.requestCode || '—' }}</span>
-              <h2 class="type">{{ item.leaveTypeName || 'ไม่ระบุประเภท' }}</h2>
+              <h3 class="type">{{ item.leaveTypeName || 'ไม่ระบุประเภท' }}</h3>
               <p v-if="item.otherTypeDetail" class="detail">{{ item.otherTypeDetail }}</p>
             </div>
             <span class="badge" :class="statusClass(item.status)">{{ statusLabel(item.status) }}</span>
-          </div>
+          </header>
 
           <dl class="facts">
             <div class="fact">
@@ -217,148 +240,407 @@ onMounted(async () => {
             เหตุผลจากผู้อนุมัติ: {{ item.decisionNote }}
           </p>
         </article>
-      </section>
-    </main>
+      </div>
+    </section>
+  </main>
 </template>
 
-<style scoped>
-
-.content {
-  max-width: 1120px;
-  margin: 0 auto;
-  padding: 28px 20px 64px;
+<!-- Glass tiers. Unscoped so the tint and blur can live on :root next to the tier
+     flag AppBackground3D.vue publishes (data-bg-tier). Tint 0.88: low enough that
+     the field reads through the glass, high enough that slate-600 keeps 4.5:1 over
+     the darkest scene pixel (measured in tests/leave-home-ux.test.js). Blur follows
+     the tier: 18px at high, 8px at medium and low, none at static. -->
+<style>
+:root {
+  --leave-home-glass: rgba(255, 255, 255, 0.88);
+  --leave-home-blur: 18px;
+  --leave-home-filter: blur(var(--leave-home-blur)) saturate(1.1);
+  --leave-home-edge: rgba(255, 255, 255, 0.66);
+  --leave-home-shadow: 0 16px 38px rgba(23, 32, 84, 0.13);
 }
 
-.head {
+:root[data-bg-tier='medium'],
+:root[data-bg-tier='low'] {
+  --leave-home-blur: 8px;
+}
+
+/* No scene to frost on the static tier: the same contrast floor, a slightly
+   stronger tint and no backdrop filter at all. */
+:root[data-bg-tier='static'] {
+  --leave-home-blur: 0px;
+  --leave-home-filter: none;
+  --leave-home-glass: rgba(255, 255, 255, 0.9);
+}
+</style>
+
+<style scoped>
+.page {
+  /* The page palette, declared once. Contrast (WCAG AA, normal text) is asserted
+     in tests/leave-home-ux.test.js, against the frosted backdrop over the darkest
+     scene pixel and against every opaque fill:
+       indigo-900 on glass 13.4, slate-700 8.4, slate-600 6.2
+       pending #8a4b06 on glass 5.5, approved #1c6b3f on glass 5.2
+       indigo-700 on glass 6.4, white on indigo-600 6.29
+       status pairs on their own fills: 6.16 / 5.74 / 6.89 / 5.65 */
+  --ink: #1e1b4b;
+  --ink-body: #334155;
+  --ink-muted: #475569;
+  --accent: #4f46e5;
+  --accent-deep: #4338ca;
+  --focus: #8b5cf6;
+  --line: rgba(30, 27, 75, 0.12);
+  --pending-ink: #8a4b06;
+  --approved-ink: #1c6b3f;
+  --danger: #a01b1b;
+  --warning: #92400e;
+  --tap: 44px;
+  --radius-panel: 22px;
+  --radius-row: 14px;
+
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 28px 0 64px;
+  color: var(--ink);
+  /* No page background: the field is the backdrop and every block of text sits
+     on the frosted panels below. */
+  background: transparent;
+}
+
+/* Wide screens put the notifications in a rail beside the list; the desk spans
+   both columns above them. */
+@media (min-width: 1024px) {
+  .page {
+    grid-template-columns: 340px minmax(0, 1fr);
+    grid-template-areas:
+      'hero hero'
+      'rail list';
+    align-items: start;
+    column-gap: 24px;
+    row-gap: 20px;
+    padding-top: 32px;
+  }
+
+  .hero {
+    grid-area: hero;
+  }
+
+  .rail {
+    grid-area: rail;
+  }
+
+  .list-panel {
+    grid-area: list;
+  }
+}
+
+.hero,
+.list-panel {
+  position: relative;
+  background-color: var(--leave-home-glass);
+  background-image: linear-gradient(150deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0) 60%);
+  border: 1px solid var(--leave-home-edge);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--leave-home-shadow);
+  -webkit-backdrop-filter: var(--leave-home-filter);
+  backdrop-filter: var(--leave-home-filter);
+}
+
+.hero {
+  display: grid;
+  gap: 20px;
+  overflow: hidden;
+  padding: 26px 28px;
+}
+
+/* Decoration only: a soft violet glow in the empty corner of the desk. */
+.hero::after {
+  content: '';
+  position: absolute;
+  right: -70px;
+  top: -80px;
+  width: 240px;
+  height: 240px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(139, 92, 246, 0.2) 0%,
+    rgba(79, 70, 229, 0.09) 45%,
+    rgba(255, 255, 255, 0) 70%
+  );
+  pointer-events: none;
+}
+
+.hero-head {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
   align-items: flex-start;
   justify-content: space-between;
-  margin-bottom: 18px;
+  gap: 16px 24px;
+}
+
+.hero-copy {
+  min-width: 0;
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  font-family: 'IBM Plex Sans Thai', 'Sarabun', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: 0.08em;
+  color: var(--ink-muted);
 }
 
 .title {
-  font-size: 24px;
-  font-weight: 700;
-  color: #12343b;
-  margin: 0 0 6px;
+  margin: 0 0 8px;
+  font-family: 'Prompt', sans-serif;
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  color: var(--ink);
 }
 
 .sub {
   margin: 0;
-  max-width: 640px;
-  font-size: 13px;
-  color: #5c7176;
+  max-width: 56ch;
+  font-size: 16px;
   line-height: 1.6;
+  color: var(--ink-body);
 }
 
+/* The page's one primary action: indigo, 44px tall, and reachable by thumb. */
 .primary-link {
   display: inline-flex;
   align-items: center;
-  min-height: 42px;
-  padding: 0 18px;
-  border-radius: 10px;
-  background: #10504e;
+  justify-content: center;
+  gap: 8px;
+  min-height: var(--tap);
+  padding: 0 20px;
+  border-radius: 12px;
+  background: var(--accent);
   color: #ffffff;
-  font-size: 14px;
+  font-family: 'Prompt', sans-serif;
+  font-size: 15px;
   font-weight: 600;
   text-decoration: none;
+  white-space: nowrap;
+  transition:
+    background-color 0.18s ease,
+    box-shadow 0.24s ease;
 }
 
-.hint,
-.empty {
-  font-size: 14px;
-  color: #5c7176;
-  padding: 8px 4px;
+.primary-arrow {
+  display: inline-block;
+  transition: transform 0.18s ease;
 }
 
-.summary {
+/* The two counts are the page's headline numbers, on a hairline under the desk. */
+.stats {
   display: grid;
-  gap: 12px;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  margin-bottom: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 20px;
+  margin: 0;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
 }
 
-.summary-item {
-  display: flex;
-  flex-direction: column;
+.stat {
+  display: grid;
   gap: 4px;
-  padding: 14px 16px;
-  border-radius: 12px;
-  background: #ffffff;
-  border: 1px solid #e0e8e6;
+  min-width: 0;
 }
 
-.summary-label {
-  font-size: 12.5px;
-  color: #5c7176;
+.stat-label {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--ink-muted);
 }
 
-.summary-value {
-  font-size: 22px;
-  font-weight: 700;
-  color: #12343b;
-}
-
-.summary-link {
-  font-size: 17px;
-  font-weight: 700;
-  color: #10504e;
-  text-decoration: none;
-}
-
-.card-focus {
-  border-color: #10504e;
-  box-shadow: 0 0 0 2px rgba(16, 80, 78, 0.18);
-}
-
-.list {
-  display: grid;
-  gap: 14px;
-}
-
-.card {
-  background: #ffffff;
-  border: 1px solid #e0e8e6;
-  border-radius: 14px;
-  padding: 16px 20px;
-}
-
-.card-head {
+.stat-figure {
   display: flex;
-  gap: 12px;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0;
+}
+
+.stat-value {
+  font-family: 'IBM Plex Sans Thai', 'Sarabun', sans-serif;
+  font-size: 34px;
+  font-weight: 600;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-pending .stat-value {
+  color: var(--pending-ink);
+}
+
+.stat-approved .stat-value {
+  color: var(--approved-ink);
+}
+
+.stat-unit {
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+
+/* Notifications are a component of their own; the page gives it the same glass
+   and readable inks as its panels, without touching the component. */
+.rail :deep(.push-card) {
+  margin-bottom: 0;
+  padding: 18px 20px;
+  background-color: var(--leave-home-glass);
+  background-image: linear-gradient(150deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0) 60%);
+  border: 1px solid var(--leave-home-edge);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--leave-home-shadow);
+  -webkit-backdrop-filter: var(--leave-home-filter);
+  backdrop-filter: var(--leave-home-filter);
+}
+
+.rail :deep(.push-title) {
+  font-size: 16px;
+  color: var(--ink);
+}
+
+.rail :deep(.push-text),
+.rail :deep(.push-hint) {
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+
+.rail :deep(.push-warning) {
+  font-size: 13px;
+  color: var(--warning);
+}
+
+.rail :deep(.push-error) {
+  font-size: 13px;
+  color: var(--danger);
+}
+
+/* The switch is one action on this page, so it takes the page's 44px tap target
+   and a boundary that is visible against the glass. */
+.rail :deep(.notify-state) {
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+
+.rail :deep(.notify-switch) {
+  height: var(--tap);
+  min-width: var(--tap);
+  border-color: var(--ink-muted);
+  background: #e2e8f0;
+}
+
+.rail :deep(.notify-switch-on) {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.rail :deep(.notify-thumb) {
+  top: 50%;
+  margin-top: -10px;
+}
+
+.list-panel {
+  padding: 20px 8px 8px;
+}
+
+.panel-head {
+  padding: 0 14px 12px;
+}
+
+.panel-title {
+  margin: 0;
+  font-family: 'Prompt', sans-serif;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--ink);
+}
+
+.status-line,
+.empty-line {
+  margin: 0;
+  padding: 10px 14px 14px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--ink-muted);
+}
+
+.rows {
+  display: grid;
+}
+
+.row {
+  padding: 16px 14px;
+  border-radius: var(--radius-row);
+}
+
+.row + .row {
+  border-top: 1px solid var(--line);
+}
+
+/* The row linked from ?focus= keeps a violet ring, decoration only. */
+.card-focus {
+  box-shadow: inset 0 0 0 2px var(--focus);
+}
+
+.row-head {
+  display: flex;
   align-items: flex-start;
   justify-content: space-between;
+  gap: 12px;
+}
+
+.row-id {
+  min-width: 0;
 }
 
 .code {
   display: block;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
+  font-size: 13px;
+  line-height: 1.4;
   letter-spacing: 0.03em;
-  color: #5c7176;
+  color: var(--ink-muted);
+  overflow-wrap: anywhere;
 }
 
 .type {
-  margin: 4px 0 0;
+  margin: 2px 0 0;
+  font-family: 'Prompt', sans-serif;
   font-size: 17px;
-  font-weight: 700;
-  color: #12343b;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--ink);
+  overflow-wrap: anywhere;
 }
 
 .detail {
-  margin: 4px 0 0;
+  margin: 2px 0 0;
   font-size: 13px;
-  color: #5c7176;
+  line-height: 1.5;
+  color: var(--ink-muted);
+  overflow-wrap: anywhere;
 }
 
 .badge {
   display: inline-block;
+  flex: 0 0 auto;
   padding: 4px 10px;
   border-radius: 999px;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
+  line-height: 1.5;
   white-space: nowrap;
 }
 
@@ -383,31 +665,171 @@ onMounted(async () => {
   color: #5f5f5f;
 }
 
+/* Two facts per line, four on a wide row: the dates are the longest value. */
 .facts {
   display: grid;
-  gap: 10px;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 16px;
   margin: 14px 0 0;
-  padding: 12px 14px;
-  border-radius: 12px;
-  background: #f6faf9;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+@media (min-width: 720px) {
+  .facts {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.fact {
+  min-width: 0;
 }
 
 .fact dt {
-  font-size: 12px;
-  color: #5c7176;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--ink-muted);
 }
 
 .fact dd {
   margin: 2px 0 0;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
-  color: #12343b;
+  line-height: 1.45;
+  color: var(--ink);
+  overflow-wrap: anywhere;
 }
 
 .note {
   margin: 12px 0 0;
   font-size: 13px;
-  color: #5c7176;
+  line-height: 1.5;
+  color: var(--ink-muted);
+}
+
+.note a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
+  color: var(--accent-deep);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.note-sub {
+  margin-left: 2px;
+  color: var(--ink-muted);
+}
+
+/* Hover and press are for a real mouse only: a finger gets no hover state. */
+@media (hover: hover) and (pointer: fine) {
+  .primary-link:hover {
+    background: var(--accent-deep);
+    box-shadow: 0 10px 24px rgba(23, 32, 84, 0.18);
+    transform: translateY(-1px);
+  }
+
+  .primary-link:hover .primary-arrow {
+    transform: translateX(3px);
+  }
+
+  .primary-link:active {
+    transform: scale(0.98);
+  }
+
+  .note a:hover {
+    color: var(--ink);
+  }
+}
+
+/* Phones: one column, the action is a full-width thumb target, and the numbers
+   stay the largest thing on the page after the title. */
+@media (max-width: 599px) {
+  .page {
+    gap: 16px;
+    padding: 20px 0 56px;
+  }
+
+  .hero {
+    gap: 16px;
+    padding: 18px;
+    border-radius: 18px;
+  }
+
+  .hero-head {
+    gap: 14px;
+  }
+
+  .title {
+    font-size: 28px;
+  }
+
+  .primary-link {
+    width: 100%;
+  }
+
+  .stats {
+    padding-top: 14px;
+  }
+
+  .stat-value {
+    font-size: 30px;
+  }
+
+  .list-panel {
+    padding: 16px 6px 6px;
+    border-radius: 18px;
+  }
+
+  .row {
+    padding: 14px 10px;
+  }
+
+  .fact dd {
+    font-size: 16px;
+  }
+}
+
+/* The entrance: a short rise and fade, 50ms apart. It lives entirely inside
+   no-preference, so a reduced-motion visitor gets the finished page with no
+   animation at all. Transform and opacity only, and the content is already in
+   the DOM at its final state (backwards fill). */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes leave-rise {
+    from {
+      opacity: 0;
+      transform: translate3d(0, 12px, 0);
+    }
+  }
+
+  .hero {
+    animation: leave-rise 0.44s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  }
+
+  .rail {
+    animation: leave-rise 0.42s cubic-bezier(0.16, 1, 0.3, 1) 60ms backwards;
+  }
+
+  .list-panel {
+    animation: leave-rise 0.42s cubic-bezier(0.16, 1, 0.3, 1) 100ms backwards;
+  }
+
+  .row {
+    animation: leave-rise 0.42s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+    animation-delay: calc(var(--stagger, 0) * 50ms + 120ms);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero,
+  .rail,
+  .list-panel,
+  .row,
+  .primary-link,
+  .note a {
+    animation: none;
+    transition: none;
+  }
 }
 </style>
