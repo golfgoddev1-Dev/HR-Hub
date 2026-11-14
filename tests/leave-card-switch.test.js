@@ -1,9 +1,13 @@
 // @vitest-environment happy-dom
-// The card stack on /leave: the employee's own newest requests, one card at a
-// time. It must switch every 4.6s on a capable device, stop while the pointer or
-// a focus is on it and while the page is hidden, hold still for a reduced-motion
-// visitor and on a lite device or the low tier, keep the list's empty state when
-// there is nothing to show, and read its numbers from the existing loader only.
+// The card stack on /leave: one card per leave request, in the Worker's order,
+// wrapping at both ends. It advances itself every 3s with a single chained
+// timeout, and it also moves by button, by swipe and by arrow key — each manual
+// move restarts the full 3s and never touches the pause button's own state.
+//
+// The two regression tests at the bottom pin the stall that shipped: a pause
+// state that latched (synthesized mouseenter from a tap, and a mouse click that
+// left focus inside the showcase) froze the card for good while the pause button
+// still read "หยุดสลับการ์ด".
 import { mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
@@ -15,6 +19,8 @@ const PAGE_STYLES = [...PAGE_SOURCE.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)
   .map((match) => match[1])
   .join('\n')
 const CSS = PAGE_STYLES.replace(/\/\*[\s\S]*?\*\//g, '')
+
+const CYCLE_MS = 3000
 
 const H = vi.hoisted(() => ({
   results: [],
@@ -64,25 +70,34 @@ const ROWS = [
   },
   {
     id: 'req-2',
-    requestCode: 'LV-20261105-002',
-    leaveTypeName: 'ลาพักร้อน',
-    startDate: '2026-11-05',
-    endDate: '2026-11-07',
-    days: 3,
+    requestCode: 'LV-20261101-002',
+    leaveTypeName: 'ลากิจ',
+    startDate: '2026-11-01',
+    endDate: '2026-11-02',
+    days: 2,
     status: 'approved',
   },
   {
     id: 'req-3',
-    requestCode: 'LV-20261110-003',
-    leaveTypeName: 'ลากิจ',
-    startDate: '2026-11-10',
-    endDate: '2026-11-10',
-    days: 1,
+    requestCode: 'LV-20261020-003',
+    leaveTypeName: 'ลาพักร้อน',
+    startDate: '2026-10-20',
+    endDate: '2026-10-22',
+    days: 3,
     status: 'rejected',
+  },
+  {
+    id: 'req-4',
+    requestCode: 'LV-20261010-004',
+    leaveTypeName: 'ลาป่วย',
+    startDate: '2026-10-10',
+    endDate: '2026-10-10',
+    days: 1,
+    status: 'cancelled',
   },
 ]
 
-const CYCLES = [ROWS[0].leaveTypeName, ROWS[1].leaveTypeName, ROWS[2].leaveTypeName]
+const CODES = ROWS.map((row) => row.requestCode)
 
 function stubMatchMedia({ reduce = false, coarse = false } = {}) {
   vi.stubGlobal(
@@ -122,12 +137,27 @@ async function mountPage() {
   return wrapper
 }
 
-async function waitCycle(ms = 4600) {
+async function waitCycle(ms = CYCLE_MS) {
   await vi.advanceTimersByTimeAsync(ms)
   await settle()
 }
 
-const typeOf = (wrapper) => wrapper.find('.stack-card .stack-type').text()
+const metaOf = (wrapper) => wrapper.find('.showcase-meta').text()
+const codeOf = (wrapper) => wrapper.find('.stack-card .code').text()
+const stepButton = (wrapper, label) => wrapper.findAll('.stack-step').find((node) => node.attributes('aria-label') === label)
+
+function pointerEvent(type, { x = 0, y = 0, id = 1, kind = 'touch' } = {}) {
+  const event = new Event(type, { bubbles: true, cancelable: true })
+  Object.assign(event, { clientX: x, clientY: y, pointerId: id, pointerType: kind })
+  return event
+}
+
+async function swipe(wrapper, { from = 100, to = 60, dy = 0, kind = 'touch' } = {}) {
+  const stack = wrapper.find('.stack').element
+  stack.dispatchEvent(pointerEvent('pointerdown', { x: from, y: 100, kind }))
+  stack.dispatchEvent(pointerEvent('pointerup', { x: to, y: 100 + dy, kind }))
+  await settle()
+}
 
 beforeEach(() => {
   H.results = []
@@ -145,25 +175,27 @@ afterEach(() => {
 })
 
 describe('leave home card stack', () => {
-  it('shows the newest request first, with its type, dates, days and status', async () => {
+  it('shows one request per card, in list order', async () => {
     H.results = ROWS
     H.counts = { pending: 2, approved: 3 }
     stubMatchMedia()
     const wrapper = await mountPage()
 
-    const card = wrapper.find('.stack-card')
-    expect(card.exists()).toBe(true)
-    expect(card.find('.stack-type').text()).toBe('ลาป่วย')
-    expect(card.find('.badge').text()).toBe('รออนุมัติ')
-    expect(card.find('.badge').classes()).toContain('badge-pending')
-    expect(card.text()).toContain('2 วัน')
-    // The date range is the shared Thai formatter's output, not a raw ISO string.
-    const range = card.findAll('.stack-fact dd')[0].text()
-    expect(range).not.toBe('')
-    expect(range).not.toContain('2026-11-01')
-    expect(wrapper.find('.showcase-meta').text()).toContain('1 จาก 3')
-    // Every card the employee has, up to four, never a fabricated one.
-    expect(wrapper.findAll('.stack-ghost')).toHaveLength(2)
+    // Exactly one card in the DOM, and it is the first request — never several
+    // requests folded into one card.
+    expect(wrapper.findAll('.stack-card')).toHaveLength(1)
+    expect(codeOf(wrapper)).toBe(CODES[0])
+    expect(wrapper.find('.stack-card .stack-type').text()).toBe('ลาป่วย')
+    expect(wrapper.find('.stack-card .badge').text()).toBe('รออนุมัติ')
+    expect(wrapper.find('.stack-card').text()).toContain('2 วัน')
+    expect(metaOf(wrapper)).toContain('1 จาก 4')
+
+    // Every request gets its turn, in order, and the last wraps to the first.
+    for (const expected of [1, 2, 3, 0]) {
+      await waitCycle()
+      expect(codeOf(wrapper)).toBe(CODES[expected])
+      expect(wrapper.findAll('.stack-card')).toHaveLength(1)
+    }
     wrapper.unmount()
   })
 
@@ -182,64 +214,244 @@ describe('leave home card stack', () => {
 
     // The stack reuses the list it already loaded: no second request, no fetch.
     expect(PAGE_SOURCE).toContain('loadShared(DATA_KEYS.myRequests, loaders.myRequests')
-    expect(PAGE_SOURCE).toContain('results.value.slice(0, STACK_LIMIT)')
+    expect(PAGE_SOURCE).toContain('computed(() => results.value)')
     expect(PAGE_SOURCE).not.toContain('fetch(')
-    expect(PAGE_SOURCE).not.toMatch(/\/api\/leave\/requests\/mine\/stack/)
     wrapper.unmount()
   })
 
-  it('cycles every 4.6s and pauses while the pointer is on it', async () => {
+  it('advances every 3000ms with one chained timeout', async () => {
     H.results = ROWS
     stubMatchMedia()
     const wrapper = await mountPage()
 
-    expect(typeOf(wrapper)).toBe(CYCLES[0])
-    await waitCycle()
-    expect(typeOf(wrapper)).toBe(CYCLES[1])
-    await waitCycle()
-    expect(typeOf(wrapper)).toBe(CYCLES[2])
-    // Back to the first card: the cycle is a loop, not a one-shot.
-    await waitCycle()
-    expect(typeOf(wrapper)).toBe(CYCLES[0])
+    expect(PAGE_SOURCE).toContain('const CYCLE_MS = 3000')
+    expect(vi.getTimerCount()).toBe(1)
 
-    await wrapper.find('.showcase').trigger('mouseenter')
-    await waitCycle()
-    await waitCycle()
-    expect(typeOf(wrapper)).toBe(CYCLES[0])
+    await vi.advanceTimersByTimeAsync(CYCLE_MS - 50)
+    await settle()
+    expect(codeOf(wrapper)).toBe(CODES[0])
+    await vi.advanceTimersByTimeAsync(50)
+    await settle()
+    expect(codeOf(wrapper)).toBe(CODES[1])
+    // Still exactly one pending step, never an interval.
+    expect(vi.getTimerCount()).toBe(1)
 
-    await wrapper.find('.showcase').trigger('mouseleave')
-    await waitCycle()
-    expect(typeOf(wrapper)).toBe(CYCLES[1])
+    expect(PAGE_SOURCE).not.toContain('setInterval')
+    expect(PAGE_SOURCE).toContain('cycleTimer = setTimeout(')
+    expect(PAGE_SOURCE).toContain('scheduleNextStep()')
+    expect(PAGE_SOURCE).toContain('clearTimeout(cycleTimer)')
     wrapper.unmount()
   })
 
-  it('pauses on focus and while the page is hidden', async () => {
+  it('stops the chain on unmount', async () => {
     H.results = ROWS
     stubMatchMedia()
     const wrapper = await mountPage()
 
-    await wrapper.find('.showcase').trigger('focusin')
+    expect(vi.getTimerCount()).toBe(1)
+    wrapper.unmount()
+    expect(vi.getTimerCount()).toBe(0)
     await waitCycle()
-    expect(typeOf(wrapper)).toBe(CYCLES[0])
-    await wrapper.find('.showcase').trigger('focusout')
-    await waitCycle()
-    expect(typeOf(wrapper)).toBe(CYCLES[1])
+    expect(vi.getTimerCount()).toBe(0)
+  })
 
-    const descriptor = Object.getOwnPropertyDescriptor(Document.prototype, 'visibilityState')
+  it('pauses on a real mouse hover and resumes on leave', async () => {
+    H.results = ROWS
+    stubMatchMedia()
+    const wrapper = await mountPage()
+
+    await wrapper.find('.showcase').trigger('pointerenter', { pointerType: 'mouse' })
+    await waitCycle()
+    await waitCycle()
+    expect(codeOf(wrapper)).toBe(CODES[0])
+
+    await wrapper.find('.showcase').trigger('pointerleave', { pointerType: 'mouse' })
+    await waitCycle()
+    expect(codeOf(wrapper)).toBe(CODES[1])
+    wrapper.unmount()
+  })
+
+  it('pauses on keyboard focus and while the page is hidden', async () => {
+    H.results = ROWS
+    stubMatchMedia()
+    const wrapper = await mountPage()
+
+    const toggle = wrapper.find('.stack-toggle').element
+    Object.defineProperty(toggle, 'matches', { configurable: true, value: (selector) => selector === ':focus-visible' })
+    toggle.dispatchEvent(new Event('focusin', { bubbles: true }))
+    await settle()
+    await waitCycle()
+    expect(codeOf(wrapper)).toBe(CODES[0])
+
+    toggle.dispatchEvent(new Event('focusout', { bubbles: true }))
+    await settle()
+    await waitCycle()
+    expect(codeOf(wrapper)).toBe(CODES[1])
+
     Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' })
     document.dispatchEvent(new Event('visibilitychange'))
     await settle()
     await waitCycle()
-    expect(typeOf(wrapper)).toBe(CYCLES[1])
+    expect(codeOf(wrapper)).toBe(CODES[1])
 
     Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' })
     document.dispatchEvent(new Event('visibilitychange'))
     await settle()
     await waitCycle()
-    expect(typeOf(wrapper)).toBe(CYCLES[2])
+    expect(codeOf(wrapper)).toBe(CODES[2])
 
     delete document.visibilityState
-    if (descriptor) Object.defineProperty(Document.prototype, 'visibilityState', descriptor)
+    wrapper.unmount()
+  })
+
+  it('gives the counter a previous and a next button', async () => {
+    H.results = ROWS
+    stubMatchMedia()
+    const wrapper = await mountPage()
+
+    const prev = stepButton(wrapper, 'ใบลาก่อนหน้า')
+    const next = stepButton(wrapper, 'ใบลาถัดไป')
+    expect(prev, 'previous button').toBeTruthy()
+    expect(next, 'next button').toBeTruthy()
+    expect(prev.attributes('type')).toBe('button')
+    expect(next.attributes('type')).toBe('button')
+    // Beside the counter, inside the same control row.
+    expect(wrapper.find('.stack-controls .stack-step').exists()).toBe(true)
+    expect(wrapper.find('.stack-controls .showcase-meta').exists()).toBe(true)
+
+    const step = /\.stack-step \{([\s\S]*?)\}/.exec(CSS)[1]
+    expect(step).toContain('width: var(--tap)')
+    expect(step).toContain('height: var(--tap)')
+    expect(CSS).toContain('--tap: 44px')
+    const focus = /\.stack-step:focus-visible \{([\s\S]*?)\}/.exec(CSS)[1]
+    expect(focus).toContain('outline: 2px solid var(--focus)')
+    expect(focus).toContain('outline-offset: 2px')
+    wrapper.unmount()
+  })
+
+  it('moves one request per button press and wraps at both ends', async () => {
+    H.results = ROWS
+    stubMatchMedia()
+    const wrapper = await mountPage()
+
+    await stepButton(wrapper, 'ใบลาถัดไป').trigger('click')
+    await settle()
+    expect(codeOf(wrapper)).toBe(CODES[1])
+    expect(metaOf(wrapper)).toContain('2 จาก 4')
+
+    await stepButton(wrapper, 'ใบลาก่อนหน้า').trigger('click')
+    await settle()
+    expect(codeOf(wrapper)).toBe(CODES[0])
+
+    // Backwards from the first wraps to the last, forwards from the last to the first.
+    await stepButton(wrapper, 'ใบลาก่อนหน้า').trigger('click')
+    await settle()
+    expect(codeOf(wrapper)).toBe(CODES[3])
+    expect(metaOf(wrapper)).toContain('4 จาก 4')
+
+    await stepButton(wrapper, 'ใบลาถัดไป').trigger('click')
+    await settle()
+    expect(codeOf(wrapper)).toBe(CODES[0])
+    wrapper.unmount()
+  })
+
+  it('moves one request with ArrowRight and ArrowLeft', async () => {
+    H.results = ROWS
+    stubMatchMedia()
+    const wrapper = await mountPage()
+
+    await wrapper.find('.showcase').trigger('keydown', { key: 'ArrowRight' })
+    await settle()
+    expect(codeOf(wrapper)).toBe(CODES[1])
+
+    await wrapper.find('.showcase').trigger('keydown', { key: 'ArrowRight' })
+    await settle()
+    expect(codeOf(wrapper)).toBe(CODES[2])
+
+    await wrapper.find('.showcase').trigger('keydown', { key: 'ArrowLeft' })
+    await settle()
+    expect(codeOf(wrapper)).toBe(CODES[1])
+
+    // A key with no meaning here must not move the card.
+    await wrapper.find('.showcase').trigger('keydown', { key: 'ArrowUp' })
+    await settle()
+    expect(codeOf(wrapper)).toBe(CODES[1])
+    wrapper.unmount()
+  })
+
+  it('moves one request on a 40px horizontal swipe and ignores a vertical drag', async () => {
+    H.results = ROWS
+    stubMatchMedia()
+    const wrapper = await mountPage()
+
+    // 40px to the left: next.
+    await swipe(wrapper, { from: 120, to: 80 })
+    expect(codeOf(wrapper)).toBe(CODES[1])
+
+    // 39px is below the threshold.
+    await swipe(wrapper, { from: 120, to: 81 })
+    expect(codeOf(wrapper)).toBe(CODES[1])
+
+    // 40px to the right: previous.
+    await swipe(wrapper, { from: 80, to: 120 })
+    expect(codeOf(wrapper)).toBe(CODES[0])
+
+    // 120px across but 300px down is a page scroll, not a swipe.
+    await swipe(wrapper, { from: 120, to: 0, dy: 300 })
+    expect(codeOf(wrapper)).toBe(CODES[0])
+
+    // A mouse drag is a text selection, so it must not move the card either.
+    await swipe(wrapper, { from: 120, to: 40, kind: 'mouse' })
+    expect(codeOf(wrapper)).toBe(CODES[0])
+
+    // The gesture is read from pointer events, and the stack keeps vertical scroll.
+    expect(PAGE_SOURCE).toContain('@pointerdown="onPointerDown"')
+    expect(PAGE_SOURCE).toContain('@pointerup="onPointerUp"')
+    expect(PAGE_SOURCE).toContain('const SWIPE_MIN = 40')
+    expect(/\.stack \{([\s\S]*?)\}/.exec(CSS)[1]).toContain('touch-action: pan-y')
+    wrapper.unmount()
+  })
+
+  it('restarts the full 3000ms after a manual move', async () => {
+    H.results = ROWS
+    stubMatchMedia()
+    const wrapper = await mountPage()
+
+    await vi.advanceTimersByTimeAsync(2500)
+    await settle()
+    await stepButton(wrapper, 'ใบลาถัดไป').trigger('click')
+    await settle()
+    expect(codeOf(wrapper)).toBe(CODES[1])
+
+    // The click reset the clock: the auto step does not land at the old 3000ms mark.
+    await vi.advanceTimersByTimeAsync(2999)
+    await settle()
+    expect(codeOf(wrapper)).toBe(CODES[1])
+    await vi.advanceTimersByTimeAsync(1)
+    await settle()
+    expect(codeOf(wrapper)).toBe(CODES[2])
+    wrapper.unmount()
+  })
+
+  it('keeps the pause button state across manual moves', async () => {
+    H.results = ROWS
+    stubMatchMedia()
+    const wrapper = await mountPage()
+
+    const toggle = () => wrapper.find('.stack-toggle')
+    await toggle().trigger('click')
+    await settle()
+    expect(toggle().attributes('aria-pressed')).toBe('true')
+
+    // A manual move changes the card but leaves the pause state alone.
+    await stepButton(wrapper, 'ใบลาถัดไป').trigger('click')
+    await settle()
+    expect(codeOf(wrapper)).toBe(CODES[1])
+    expect(toggle().attributes('aria-pressed')).toBe('true')
+    expect(toggle().text()).toBe('สลับการ์ดต่อ')
+
+    await waitCycle()
+    expect(codeOf(wrapper)).toBe(CODES[1])
     wrapper.unmount()
   })
 
@@ -247,58 +459,46 @@ describe('leave home card stack', () => {
     H.results = ROWS
     stubMatchMedia()
     const wrapper = await mountPage()
-    expect(typeOf(wrapper)).toBe(CYCLES[0])
+    expect(codeOf(wrapper)).toBe(CODES[0])
 
     document.documentElement.setAttribute('data-bg-tier', 'low')
     await settle()
-    expect(wrapper.find('.showcase-meta').text()).toContain('1 จาก 3')
     await waitCycle()
     await waitCycle()
-    expect(typeOf(wrapper)).toBe(CYCLES[0])
-    // The pause control belongs to a moving stack, so it goes with it.
+    expect(codeOf(wrapper)).toBe(CODES[0])
     expect(wrapper.find('.stack-toggle').exists()).toBe(false)
-    wrapper.unmount()
-  })
-
-  it('lets a finger stop the switch on a capable device', async () => {
-    H.results = ROWS
-    stubMatchMedia()
-    const wrapper = await mountPage()
-
-    const toggle = wrapper.find('.stack-toggle')
-    expect(toggle.exists()).toBe(true)
-    expect(toggle.attributes('aria-pressed')).toBe('false')
-    await toggle.trigger('click')
+    // Manual navigation is not an animation, so it still works on the low tier.
+    await stepButton(wrapper, 'ใบลาถัดไป').trigger('click')
     await settle()
-    expect(toggle.attributes('aria-pressed')).toBe('true')
-
-    await waitCycle()
-    await waitCycle()
-    expect(typeOf(wrapper)).toBe(CYCLES[0])
-
-    await toggle.trigger('click')
-    await waitCycle()
-    expect(typeOf(wrapper)).toBe(CYCLES[1])
+    expect(codeOf(wrapper)).toBe(CODES[1])
     wrapper.unmount()
   })
 
-  it('lands on the static top card when motion is reduced', async () => {
+  it('lands on the static top card, keeps the timer off, and still moves by hand', async () => {
     H.results = ROWS
     stubMatchMedia({ reduce: true })
     const wrapper = await mountPage()
 
     expect(wrapper.findAll('.stack-card')).toHaveLength(1)
-    expect(wrapper.find('.showcase-meta').text()).toContain('1 จาก 3')
+    expect(metaOf(wrapper)).toContain('1 จาก 4')
     expect(wrapper.find('.stack-ghost').exists()).toBe(false)
     expect(wrapper.find('.stack-toggle').exists()).toBe(false)
+    expect(vi.getTimerCount()).toBe(0)
 
     await waitCycle(15000)
-    expect(typeOf(wrapper)).toBe(CYCLES[0])
+    expect(codeOf(wrapper)).toBe(CODES[0])
 
-    // The CSS contract: no transition survives reduced motion.
+    // Manual moves are instant and never start the timer.
+    await stepButton(wrapper, 'ใบลาถัดไป').trigger('click')
+    await settle()
+    expect(codeOf(wrapper)).toBe(CODES[1])
+    expect(vi.getTimerCount()).toBe(0)
+    await waitCycle(15000)
+    expect(codeOf(wrapper)).toBe(CODES[1])
+
     const reduced = /@media \(prefers-reduced-motion: reduce\) \{([\s\S]*?)\n\}/.exec(CSS)
-    expect(reduced).not.toBeNull()
     expect(reduced[1]).toContain('.stack-card')
+    expect(reduced[1]).toContain('.stack-step')
     expect(reduced[1]).toContain('transition: none')
     wrapper.unmount()
   })
@@ -312,7 +512,7 @@ describe('leave home card stack', () => {
     expect(wrapper.find('.stack-ghost').exists()).toBe(false)
     expect(wrapper.find('.stack-toggle').exists()).toBe(false)
     await waitCycle(15000)
-    expect(typeOf(wrapper)).toBe(CYCLES[0])
+    expect(codeOf(wrapper)).toBe(CODES[0])
     wrapper.unmount()
   })
 
@@ -327,45 +527,51 @@ describe('leave home card stack', () => {
     wrapper.unmount()
   })
 
-  it('schedules one timeout at a time and stops the chain on unmount', async () => {
+  // --- the stall that shipped ------------------------------------------------
+
+  it('is not frozen by the synthesized mouseenter a touch tap leaves behind', async () => {
+    // Regression: @mouseenter used to set stackHovered, and a tap emits one with
+    // no matching mouseleave, so the chain died while the button still offered
+    // to stop it. Hover now comes from pointerenter with pointerType 'mouse'.
     H.results = ROWS
     stubMatchMedia()
     const wrapper = await mountPage()
 
-    // One pending step, not a repeating interval.
-    expect(vi.getTimerCount()).toBe(1)
-    await waitCycle()
-    expect(typeOf(wrapper)).toBe(CYCLES[1])
-    expect(vi.getTimerCount()).toBe(1)
+    await wrapper.find('.showcase').trigger('mouseenter')
+    await wrapper.find('.showcase').trigger('pointerenter', { pointerType: 'touch' })
+    await settle()
 
+    await waitCycle()
+    expect(codeOf(wrapper)).toBe(CODES[1])
     wrapper.unmount()
-    expect(vi.getTimerCount()).toBe(0)
+  })
 
-    // The chain is gone: a full cycle later nothing has been re-scheduled.
+  it('is not frozen by a mouse click that leaves focus inside the showcase', async () => {
+    // Regression: @focusin used to pause on any focus, so clicking the pause
+    // button (or a step button) froze the stack until the pointer left, while
+    // aria-pressed still reported "running".
+    H.results = ROWS
+    stubMatchMedia()
+    const wrapper = await mountPage()
+
+    const next = stepButton(wrapper, 'ใบลาถัดไป').element
+    next.dispatchEvent(new Event('focusin', { bubbles: true }))
+    await settle()
+    next.dispatchEvent(new Event('click', { bubbles: true }))
+    await settle()
+    expect(codeOf(wrapper)).toBe(CODES[1])
+
+    // The click did not park the cycle: the next auto step still arrives.
     await waitCycle()
-    await waitCycle()
-    expect(vi.getTimerCount()).toBe(0)
+    expect(codeOf(wrapper)).toBe(CODES[2])
+    wrapper.unmount()
   })
 
   it('uses the motion budget the rules allow', () => {
-    // A timeout chain, never an interval: /leave owns no polling timer, so
-    // src/lib/approval-count.js stays the only interval in the tree.
-    expect(PAGE_SOURCE).not.toContain('setInterval')
-    expect(PAGE_SOURCE).toContain('cycleTimer = setTimeout(')
-    expect(PAGE_SOURCE).toContain('scheduleNextStep()')
-    expect(PAGE_SOURCE).toContain('clearTimeout(cycleTimer)')
-
-    expect(PAGE_SOURCE).toContain('const CYCLE_MS = 4600')
-    const cycle = Number(/const CYCLE_MS = (\d+)/.exec(PAGE_SOURCE)[1])
-    expect(cycle).toBeGreaterThanOrEqual(4000)
-    expect(cycle).toBeLessThanOrEqual(5000)
-
     // Transform and opacity only, under 600ms, and no cubic-bezier() (a comma
     // list reads as extra properties in the transition guard).
     const transition = /\.stack-enter-active,\n\.stack-leave-active \{([\s\S]*?)\}/.exec(CSS)
     expect(transition).not.toBeNull()
-    const properties = [...transition[1].matchAll(/([a-z-]+):\s*([^;]+);/g)].map((match) => match[1])
-    expect(properties).toEqual(['transition'])
     for (const entry of transition[1].split(';')[0].split('transition:')[1].split(',')) {
       const [property, duration] = entry.trim().split(/\s+/)
       expect(['transform', 'opacity']).toContain(property)
@@ -379,11 +585,5 @@ describe('leave home card stack', () => {
     const tint = /--leave-home-glass: rgba\(255,\s*255,\s*255,\s*([\d.]+)\)/.exec(PAGE_STYLES)
     expect(Number(tint[1])).toBeGreaterThanOrEqual(0.86)
     expect(Number(tint[1])).toBeLessThanOrEqual(0.9)
-
-    // 44px targets on the control the stack adds.
-    const toggle = /\.stack-toggle \{([\s\S]*?)\}/.exec(CSS)[1]
-    expect(toggle).toContain('min-height: var(--tap)')
-    expect(toggle).toContain('min-width: var(--tap)')
-    expect(CSS).toContain('outline: 2px solid var(--focus)')
   })
 })

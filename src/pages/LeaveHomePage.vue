@@ -62,13 +62,15 @@ const retentionDays = ref(0)
 // ---- The card stack -------------------------------------------------------
 // The employee's own newest requests, shown one at a time in the desk's corner.
 // It reads the list the page already loaded: no extra request, no new endpoint.
-const CYCLE_MS = 4600
-const STACK_LIMIT = 4
+const CYCLE_MS = 3000
+// A swipe needs this much horizontal travel, and must be flatter than it is tall.
+const SWIPE_MIN = 40
 // Cycling is for a capable device only. A lite device, a reduced-motion visitor
 // and the low or static tier all keep the first card still.
 const STACK_TIERS = ['high', 'medium']
 
-const stackItems = computed(() => results.value.slice(0, STACK_LIMIT))
+// Every request is one card, in the Worker's order. No grouping, no slicing.
+const stackItems = computed(() => results.value)
 const stackIndex = ref(0)
 const stackHovered = ref(false)
 const stackFocused = ref(false)
@@ -78,9 +80,11 @@ const stackCanCycle = ref(false)
 
 let cycleTimer = null
 let tierObserver = null
+let swipeStart = null
 
 const stackCard = computed(() => stackItems.value[stackIndex.value] ?? null)
 const showStack = computed(() => !loading.value && stackItems.value.length > 0)
+const canStep = computed(() => stackItems.value.length > 1)
 
 function readTier() {
   if (typeof document === 'undefined') return 'high'
@@ -120,7 +124,7 @@ function stopCycle() {
   cycleTimer = null
 }
 
-// One step every 4.6s, scheduled one at a time. Chained timeouts rather than an
+// One step every 3s, scheduled one at a time. Chained timeouts rather than an
 // interval: the page owns no polling timer (tests/approval-count.test.js keeps
 // that to src/lib/approval-count.js), and a pause can drop the pending step
 // instead of letting it fire behind the pointer.
@@ -129,18 +133,98 @@ function scheduleNextStep() {
   cycleTimer = setTimeout(() => {
     cycleTimer = null
     if (!cycleRunning()) return
-    if (stackItems.value.length > 1) {
-      stackIndex.value = (stackIndex.value + 1) % stackItems.value.length
-    }
+    advance(1)
     scheduleNextStep()
   }, CYCLE_MS)
 }
 
-/** One place decides whether the stack is alive; every trigger calls it. */
+/** One place decides whether the stack is auto-advances; every trigger calls it. */
 function syncCycle() {
   stackCanCycle.value = stackIsAllowed()
   if (cycleRunning()) scheduleNextStep()
   else stopCycle()
+}
+
+/** One request forward or back, wrapping at both ends. */
+function advance(delta) {
+  const total = stackItems.value.length
+  if (total < 2) return
+  stackIndex.value = (stackIndex.value + delta + total) % total
+}
+
+/** A manual move always restarts the full 3s, and never touches stackPaused. */
+function stepBy(delta) {
+  advance(delta)
+  stopCycle()
+  scheduleNextStep()
+}
+
+// Hover pauses only for a real mouse. A touch tap emits a synthesized mouseenter
+// with no matching mouseleave, and that used to latch the pause on for good while
+// the pause button still read "หยุดสลับการ์ด". Pointer events carry the type, so a
+// finger or a pen can never pause the cycle.
+function onPointerEnter(event) {
+  if (event.pointerType && event.pointerType !== 'mouse') return
+  stackHovered.value = true
+}
+
+function onPointerLeave(event) {
+  if (event.pointerType && event.pointerType !== 'mouse') return
+  stackHovered.value = false
+}
+
+// Focus pauses only when the focus came from the keyboard. A mouse click on one
+// of the stack's buttons leaves focus inside the showcase too, and that used to
+// freeze the stack with the pause button still offering to stop it.
+function keyboardFocus(target) {
+  try {
+    return target?.matches?.(':focus-visible') === true
+  } catch {
+    return false
+  }
+}
+
+function onFocusIn(event) {
+  if (keyboardFocus(event.target)) stackFocused.value = true
+}
+
+function onFocusOut() {
+  stackFocused.value = false
+}
+
+function onKeydown(event) {
+  if (event.key === 'ArrowLeft') {
+    event.preventDefault()
+    stepBy(-1)
+    return
+  }
+  if (event.key === 'ArrowRight') {
+    event.preventDefault()
+    stepBy(1)
+  }
+}
+
+// A touch drag on the card: horizontal travel wins only when it is both long
+// enough and flatter than it is tall, so a vertical page scroll is never eaten.
+function onPointerDown(event) {
+  // A mouse drag is a text selection, not a swipe: this gesture is for touch.
+  if (event.pointerType === 'mouse') return
+  if (event.target?.closest?.('button')) return
+  swipeStart = { x: event.clientX, y: event.clientY, id: event.pointerId, type: event.pointerType }
+}
+
+function onPointerUp(event) {
+  if (!swipeStart || event.pointerId !== swipeStart.id) return
+  const dx = event.clientX - swipeStart.x
+  const dy = event.clientY - swipeStart.y
+  swipeStart = null
+  if (Math.abs(dx) < SWIPE_MIN) return
+  if (Math.abs(dx) <= Math.abs(dy)) return
+  stepBy(dx < 0 ? 1 : -1)
+}
+
+function onPointerCancel() {
+  swipeStart = null
 }
 
 function onVisibilityChange() {
@@ -292,19 +376,45 @@ onBeforeUnmount(() => {
         class="showcase"
         role="group"
         aria-labelledby="showcase-title"
-        @mouseenter="stackHovered = true"
-        @mouseleave="stackHovered = false"
-        @focusin="stackFocused = true"
-        @focusout="stackFocused = false"
+        @pointerenter="onPointerEnter"
+        @pointerleave="onPointerLeave"
+        @focusin="onFocusIn"
+        @focusout="onFocusOut"
+        @keydown="onKeydown"
       >
         <div class="showcase-head">
           <h2 id="showcase-title" class="showcase-title">ใบลาล่าสุด</h2>
-          <p class="showcase-meta" aria-live="off">
-            ใบที่ {{ stackIndex + 1 }} จาก {{ stackItems.length }}
-          </p>
+          <div class="stack-controls">
+            <button
+              v-if="canStep"
+              type="button"
+              class="stack-step"
+              aria-label="ใบลาก่อนหน้า"
+              @click="stepBy(-1)"
+            >
+              <span aria-hidden="true">←</span>
+            </button>
+            <p class="showcase-meta" aria-live="off">
+              ใบที่ {{ stackIndex + 1 }} จาก {{ stackItems.length }}
+            </p>
+            <button
+              v-if="canStep"
+              type="button"
+              class="stack-step"
+              aria-label="ใบลาถัดไป"
+              @click="stepBy(1)"
+            >
+              <span aria-hidden="true">→</span>
+            </button>
+          </div>
         </div>
 
-        <div class="stack">
+        <div
+          class="stack"
+          @pointerdown="onPointerDown"
+          @pointerup="onPointerUp"
+          @pointercancel="onPointerCancel"
+        >
           <template v-if="stackCanCycle">
             <span class="stack-ghost stack-ghost-two" aria-hidden="true"></span>
             <span class="stack-ghost stack-ghost-one" aria-hidden="true"></span>
@@ -466,7 +576,8 @@ onBeforeUnmount(() => {
        indigo-700 on glass 6.4, white on indigo-600 6.29
        status pairs on their own fills: 6.16 / 5.74 / 6.89 / 5.65
      The card stack, sampled in the browser (2%/98% backdrop, high @1280):
-       stack type 15.99, facts 7.58 / 15.99, meta 5.77, pause 7.77 */
+       card title 15.85, fact label 7.47, fact value 15.85, counter 7.02,
+       step buttons 7.64, pause 7.77, their borders 3.43 */
   --ink: #1e1b4b;
   --ink-body: #334155;
   --ink-muted: #475569;
@@ -707,10 +818,16 @@ onBeforeUnmount(() => {
 }
 
 .showcase-head {
+  display: grid;
+  gap: 8px;
+}
+
+/* The counter sits between its two buttons, like a pager: the buttons are 44px
+   squares, so a finger hits them on the sheet as well as on the desktop panel. */
+.stack-controls {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px 12px;
+  align-items: center;
+  gap: 8px;
 }
 
 .showcase-title {
@@ -723,12 +840,40 @@ onBeforeUnmount(() => {
 }
 
 .showcase-meta {
+  flex: 1;
   margin: 0;
   font-size: 13px;
   line-height: 1.4;
   color: var(--ink-muted);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
+}
+
+/* Manual step controls: a real button, 44px on every width, with the same
+   boundary and focus ring as the pause control beside them. */
+.stack-step {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: var(--tap);
+  height: var(--tap);
+  padding: 0;
+  border: 1px solid var(--stack-line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--accent-deep);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background-color 0.18s ease,
+    border-color 0.18s ease;
+}
+
+.stack-step:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }
 
 /* A fixed box with absolute cards: a switch never moves the page around it.
@@ -738,6 +883,8 @@ onBeforeUnmount(() => {
   position: relative;
   min-height: 176px;
   margin-bottom: 26px;
+  /* A horizontal drag is ours to read; a vertical one stays the page's scroll. */
+  touch-action: pan-y;
 }
 
 .stack-ghost {
@@ -1213,6 +1360,7 @@ onBeforeUnmount(() => {
   .note a,
   .stack-card,
   .stack-toggle,
+  .stack-step,
   .stack-enter-active,
   .stack-leave-active {
     animation: none;
