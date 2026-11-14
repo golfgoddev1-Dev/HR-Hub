@@ -234,8 +234,11 @@ describe('HR home menu stack', () => {
     await swipe(wrapper, { from: 120, to: 40, kind: 'mouse' })
     expect(cardName(wrapper)).toBe('ใบลาทั้งหมด')
 
-    expect(PAGE_SOURCE).toContain('const SWIPE_MIN = 40')
-    expect(PAGE_SOURCE).toContain("if (event.pointerType === 'mouse') return")
+    // The threshold and the mouse-drag rule live in the shared primitive, once,
+    // for both decks (tests/motion-system.test.js pins SWIPE.min to 40).
+    const PRIMITIVE = readSource('src/lib/card-stack.js')
+    expect(PRIMITIVE).toContain('swipeMin = options.swipeMin ?? SWIPE.min')
+    expect(PRIMITIVE).toContain("if (event?.pointerType === 'mouse') return")
     wrapper.unmount()
   })
 
@@ -264,9 +267,13 @@ describe('HR home menu stack', () => {
     stubMatchMedia()
     const wrapper = await mountHome()
 
-    expect(PAGE_SOURCE).toContain('const CYCLE_MS = 3000')
+    // The 3000ms chain belongs to the primitive now (tests/motion-system.test.js
+    // pins CYCLE.ms); the page only starts and stops it.
+    const PRIMITIVE = readSource('src/lib/card-stack.js')
+    expect(PRIMITIVE).toContain('cycleMs = options.cycleMs ?? CYCLE.ms')
+    expect(PRIMITIVE).toContain('timer = setTimeout(')
     expect(PAGE_SOURCE).not.toContain('setInterval')
-    expect(PAGE_SOURCE).toContain('cycleTimer = setTimeout(')
+    expect(PAGE_SOURCE).toContain('stack.start()')
     expect(vi.getTimerCount()).toBe(1)
 
     await vi.advanceTimersByTimeAsync(CYCLE_MS - 50)

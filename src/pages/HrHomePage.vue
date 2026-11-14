@@ -7,7 +7,7 @@
 // itself belongs to the approver, so this page carries no approve or reject
 // action at all.
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { isLiteMode, prefersReducedMotion } from '../lib/lite-mode.js'
+import { createCardStack } from '../lib/card-stack.js'
 import {
   DATA_KEYS,
   PAGE_TTL_MS,
@@ -41,60 +41,25 @@ const cards = [
 ]
 
 // ---- The menu stack -------------------------------------------------------
-// Same behaviour contract as the employee stack on /leave: one step every 3s on
-// a desktop, by hand everywhere, a touch swipe on a phone, and nothing at all
-// under reduced motion. The composition is deliberately different (one card with
-// the action as its foot, the pager under the copy, no fan of ghost cards).
-const CYCLE_MS = 3000
-const SWIPE_MIN = 40
-const STACK_TIERS = ['high', 'medium']
+// Same behaviour contract as the employee stack on /leave, and literally the
+// same controller (src/lib/card-stack.js): one 3000ms chain, mouse-only hover
+// pause, keyboard-focus pause, a hidden tab pause, and nothing at all on a lite
+// device or the low/static tier. This page supplies its own cards, copy and
+// composition — one card with the action as its foot, the pager under the copy.
 // Session-only: the saved preference is a list of routes with a 1-to-5 check, so
 // it has nowhere to keep "this person has already swiped". The dismissal lives in
 // sessionStorage and is forgotten when the tab closes.
 const HINT_KEY = 'hr-menu-shortcuts-hint'
 
 const loading = ref(true)
-const shortcutItems = ref([])
 const shortcutError = ref('')
-
-const stackIndex = ref(0)
-const stackHovered = ref(false)
-const stackFocused = ref(false)
-const stackTier = ref('high')
 const hintVisible = ref(false)
-const canCycle = ref(false)
-const finePointer = ref(false)
 
-let cycleTimer = null
-let tierObserver = null
-let swipeStart = null
 // A swipe ends on the card, which is the link, so the click the browser sends
 // after it must not navigate. The window is short and absolute: a swipe that the
 // browser never follows with a click must not swallow the next tap.
 const CLICK_GUARD_MS = 400
 let suppressClickUntil = 0
-
-const total = computed(() => shortcutItems.value.length)
-const current = computed(() => shortcutItems.value[stackIndex.value] ?? null)
-const canStep = computed(() => total.value > 1)
-
-function readTier() {
-  if (typeof document === 'undefined') return 'high'
-  return document.documentElement.getAttribute('data-bg-tier') || 'high'
-}
-
-function pageIsVisible() {
-  return typeof document === 'undefined' || document.visibilityState !== 'hidden'
-}
-
-function readFinePointer() {
-  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false
-  try {
-    return window.matchMedia('(hover: hover) and (pointer: fine)').matches === true
-  } catch {
-    return false
-  }
-}
 
 function readTouch() {
   if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false
@@ -123,141 +88,48 @@ function dismissHint() {
   }
 }
 
-function stackIsAllowed() {
-  return (
-    canStep.value &&
-    finePointer.value &&
-    !isLiteMode() &&
-    !prefersReducedMotion() &&
-    STACK_TIERS.includes(stackTier.value)
-  )
-}
+const shortcutItems = ref([])
 
-function cycleRunning() {
-  return stackIsAllowed() && !stackHovered.value && !stackFocused.value && pageIsVisible()
-}
+const stack = createCardStack({
+  items: shortcutItems,
+  // The HR deck cycles on a mouse only: a touch visitor swipes, and the hint
+  // under the deck says so.
+  requireFinePointer: true,
+  onSwipeEnd: () => {
+    // The card is the link, so the tap that ends a swipe must not navigate.
+    suppressClickUntil = Date.now() + CLICK_GUARD_MS
+    if (hintVisible.value) dismissHint()
+  },
+})
 
-function stopCycle() {
-  if (cycleTimer === null) return
-  clearTimeout(cycleTimer)
-  cycleTimer = null
-}
+const stackIndex = stack.index
+const total = stack.total
+const current = stack.current
+const canStep = stack.canStep
+const canCycle = stack.canCycle
+const stackHovered = stack.hovered
+const stackFocused = stack.focused
+const stepBy = stack.stepBy
+const {
+  onPointerEnter,
+  onPointerLeave,
+  onFocusIn,
+  onFocusOut,
+  onKeydown,
+  onPointerDown,
+  onPointerUp,
+  onPointerCancel,
+} = stack.handlers
 
-// One step every 3s, scheduled one at a time: a chained timeout, never an
-// interval, so a pause drops the pending step instead of firing behind it.
-function scheduleNextStep() {
-  if (cycleTimer !== null || !cycleRunning()) return
-  cycleTimer = setTimeout(() => {
-    cycleTimer = null
-    if (!cycleRunning()) return
-    advance(1)
-    scheduleNextStep()
-  }, CYCLE_MS)
-}
-
-function syncCycle() {
-  canCycle.value = stackIsAllowed()
-  if (cycleRunning()) scheduleNextStep()
-  else stopCycle()
-}
-
-/** One menu forward or back, wrapping at both ends. */
-function advance(delta) {
-  if (total.value < 2) return
-  stackIndex.value = (stackIndex.value + delta + total.value) % total.value
-}
-
-/** A manual move always restarts the full 3s. */
-function stepBy(delta) {
-  advance(delta)
-  stopCycle()
-  scheduleNextStep()
-}
-
-// Hover pauses only for a real mouse: a touch tap emits a synthesized
-// mouseenter with no matching mouseleave, and that must never latch a pause.
-function onPointerEnter(event) {
-  if (event.pointerType && event.pointerType !== 'mouse') return
-  stackHovered.value = true
-}
-
-function onPointerLeave(event) {
-  if (event.pointerType && event.pointerType !== 'mouse') return
-  stackHovered.value = false
-}
-
-// Focus pauses only when it came from the keyboard, never from a click.
-function keyboardFocus(target) {
-  try {
-    return target?.matches?.(':focus-visible') === true
-  } catch {
-    return false
-  }
-}
-
-function onFocusIn(event) {
-  if (keyboardFocus(event.target)) stackFocused.value = true
-}
-
-function onFocusOut() {
-  stackFocused.value = false
-}
-
-function onKeydown(event) {
-  if (event.key === 'ArrowLeft') {
-    event.preventDefault()
-    stepBy(-1)
-    return
-  }
-  if (event.key === 'ArrowRight') {
-    event.preventDefault()
-    stepBy(1)
-  }
-}
-
-// A touch drag on the card: horizontal travel wins only when it is both long
-// enough and flatter than it is tall, so a vertical page scroll is never eaten.
-// A mouse drag is a text selection, not a swipe.
-function onPointerDown(event) {
-  if (event.pointerType === 'mouse') return
-  if (event.target?.closest?.('button')) return
-  suppressClickUntil = 0
-  swipeStart = { x: event.clientX, y: event.clientY, id: event.pointerId }
-}
-
-function onPointerUp(event) {
-  if (!swipeStart || event.pointerId !== swipeStart.id) return
-  const dx = event.clientX - swipeStart.x
-  const dy = event.clientY - swipeStart.y
-  swipeStart = null
-  if (Math.abs(dx) < SWIPE_MIN) return
-  if (Math.abs(dx) <= Math.abs(dy)) return
-  // The card is the link, so the tap that ends a swipe must not also navigate.
-  suppressClickUntil = Date.now() + CLICK_GUARD_MS
-  if (hintVisible.value) dismissHint()
-  stepBy(dx < 0 ? 1 : -1)
-}
-
-function onPointerCancel() {
-  swipeStart = null
-}
-
+// The deck's card is a link, so the click that ends a swipe is swallowed here.
+// A swipe the browser never follows with a click must not swallow the next tap:
+// the window is absolute and short.
 function onClickCapture(event) {
   if (suppressClickUntil === 0 || Date.now() > suppressClickUntil) return
   suppressClickUntil = 0
   event.preventDefault()
   event.stopPropagation()
 }
-
-function onVisibilityChange() {
-  syncCycle()
-}
-
-watch(shortcutItems, (items) => {
-  if (stackIndex.value >= items.length) stackIndex.value = 0
-  syncCycle()
-})
-watch([stackHovered, stackFocused, stackTier], syncCycle)
 
 async function load() {
   loading.value = true
@@ -279,32 +151,13 @@ async function load() {
 }
 
 onMounted(() => {
-  finePointer.value = readFinePointer()
   hintVisible.value = readTouch() && !hintWasDismissed()
-  stackTier.value = readTier()
   load()
-  syncCycle()
-  if (typeof document === 'undefined') return
-  document.addEventListener('visibilitychange', onVisibilityChange)
-  if (typeof MutationObserver !== 'function') return
-  tierObserver = new MutationObserver(() => {
-    stackTier.value = readTier()
-  })
-  tierObserver.observe(document.documentElement, {
-    attributes: true,
-    attributeFilter: ['data-bg-tier'],
-  })
+  stack.start()
 })
 
 onBeforeUnmount(() => {
-  stopCycle()
-  if (tierObserver) {
-    tierObserver.disconnect()
-    tierObserver = null
-  }
-  if (typeof document !== 'undefined') {
-    document.removeEventListener('visibilitychange', onVisibilityChange)
-  }
+  stack.destroy()
 })
 </script>
 
