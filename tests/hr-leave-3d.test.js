@@ -573,11 +573,16 @@ describe('scene redesign', () => {
     wrapper.unmount()
   })
 
-  it('keeps the band short on phones and taller from 600px up', () => {
-    const phoneHeight = Number(SCENE_SOURCE.match(/height: (\d+)px/)[1])
-    expect(phoneHeight).toBeGreaterThanOrEqual(120)
-    expect(phoneHeight).toBeLessThanOrEqual(160)
+  it('hides the band on phones and keeps it from 600px up', () => {
+    // Phones do not render the decorative band at all: the page hides it below
+    // 600px, and the masthead with its counts stays.
+    const phoneBlock = mediaBlock(PAGE_SOURCE, 599)
+    expect(phoneBlock).toMatch(/\.hero-scene\s*\{\s*display:\s*none/)
+    expect(phoneBlock).toContain('@media (max-width: 599px)')
+
+    // The component still sizes itself for the widths that do show it.
     expect(SCENE_SOURCE).toContain('@media (min-width: 600px)')
+    expect(SCENE_SOURCE).toContain('height: 168px')
     expect(SCENE_SOURCE).toContain('@media (min-width: 960px)')
     expect(SCENE_SOURCE).toContain('height: 216px')
   })
@@ -708,7 +713,7 @@ describe('page palette', () => {
     ['#8a4b06', '#fff2df'],
     ['#1c6b3f', '#e6f4ec'],
     ['#a01b1b', '#fdecec'],
-    ['#6a6a6a', '#f1f1f1'],
+    ['#5f5f5f', '#f1f1f1'],
     ['#92400e', '#f8fafc'],
     ['#b91c1c', '#ffffff'],
   ]

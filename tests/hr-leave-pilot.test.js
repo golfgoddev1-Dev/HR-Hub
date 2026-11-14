@@ -121,7 +121,7 @@ const BADGE_PAIRS = [
   ['#8a4b06', '#fff2df'],
   ['#1c6b3f', '#e6f4ec'],
   ['#a01b1b', '#fdecec'],
-  ['#6a6a6a', '#f1f1f1'],
+  ['#5f5f5f', '#f1f1f1'],
 ]
 
 // --- page fixture ----------------------------------------------------------
@@ -324,6 +324,17 @@ describe('worst-case contrast on glass', () => {
       const ratio = contrast(parseColor(ink), parseColor(fill))
       expect(ratio, `${ink} on ${fill}: ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5)
     }
+  })
+
+  it('keeps the cancelled badge at 5.5:1 after darkening its ink', () => {
+    // #6a6a6a on #f1f1f1 was 4.79:1; the ink is now #5f5f5f.
+    const ratio = contrast(parseColor('#5f5f5f'), parseColor('#f1f1f1'))
+    expect(ratio).toBeGreaterThanOrEqual(5.5)
+    expect(PAGE_SOURCE).toContain('.badge-cancelled { background: #f1f1f1; color: #5f5f5f; }')
+    // The other badges keep their inks.
+    expect(PAGE_SOURCE).toContain('.badge-pending { background: #fff2df; color: #8a4b06; }')
+    expect(PAGE_SOURCE).toContain('.badge-approved { background: #e6f4ec; color: #1c6b3f; }')
+    expect(PAGE_SOURCE).toContain('.badge-rejected { background: #fdecec; color: #a01b1b; }')
   })
 
   it('holds the control boundary at 3:1 against the glass', () => {

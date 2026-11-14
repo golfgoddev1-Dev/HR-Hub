@@ -1,11 +1,12 @@
 <script setup>
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { postJson } from '../api.js'
 import { formatThaiDate, formatThaiDateRange } from '../lib/thai-date.js'
 import { certificateStatus, retentionNotice } from '../leave-certificate.js'
 import { getCached, peekCached } from '../lib/data-cache.js'
 import HrLeave3DScene from '../components/HrLeave3DScene.vue'
 import { allowsPointerTilt } from '../lib/lite-mode.js'
+import { focusPanel, restoreFocus, trapTabKey } from '../lib/dialog-focus.js'
 import {
   DATA_KEYS,
   PAGE_TTL_MS,
@@ -82,6 +83,12 @@ function resetCardTilt(event) {
 }
 
 const detail = ref(null)
+// The dialog's focus contract: focus enters on the close button, Tab stays
+// inside the panel, Escape closes, and closing returns focus to the row that
+// opened it (see src/lib/dialog-focus.js).
+const detailPanel = ref(null)
+const detailClose = ref(null)
+let detailOpener = null
 const detailLoading = ref(false)
 const resendBusy = ref(false)
 const resendMessage = ref('')
@@ -186,11 +193,15 @@ async function loadOptions() {
   }
 }
 
-async function openDetail(item) {
+async function openDetail(item, event) {
+  const opener = event?.currentTarget
+  detailOpener = opener && typeof opener.focus === 'function' ? opener : null
   detailLoading.value = true
   detail.value = { id: item.id, loading: true }
   resendMessage.value = ''
   resendError.value = ''
+  await nextTick()
+  focusPanel(detailPanel.value, detailClose.value)
   try {
     const response = await fetch(`/api/leave/hr/requests/${encodeURIComponent(item.id)}`, {
       credentials: 'same-origin',
@@ -209,7 +220,23 @@ async function openDetail(item) {
 }
 
 function closeDetail() {
+  if (!detail.value) return
+  const opener = detailOpener
+  detailOpener = null
   detail.value = null
+  // The row is still on the page, so hand focus back to it.
+  nextTick(() => restoreFocus(opener))
+}
+
+// Escape closes the dialog; Tab and Shift+Tab cycle through its own controls.
+function onDetailKeydown(event) {
+  if (!detail.value) return
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    closeDetail()
+    return
+  }
+  if (event.key === 'Tab') trapTabKey(event, detailPanel.value)
 }
 
 function certificateOf(request) {
@@ -265,10 +292,15 @@ function previousPage() {
 }
 
 onMounted(async () => {
+  document.addEventListener('keydown', onDetailKeydown)
   // Read once on mount: a lite device keeps the list flat for the whole visit.
   tiltEnabled.value = allowsPointerTilt()
   await loadOptions()
   await load(1)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('keydown', onDetailKeydown)
 })
 </script>
 
@@ -427,7 +459,7 @@ onMounted(async () => {
               @pointerleave="resetCardTilt"
               @focus="resetCardTilt"
               @blur="resetCardTilt"
-              @click="openDetail(item)"
+              @click="openDetail(item, $event)"
             >
               <span class="cell cell--who">
                 <span class="code">{{ item.requestCode || '—' }}</span>
@@ -476,6 +508,7 @@ onMounted(async () => {
         <div class="detail-scrim" @click="closeDetail"></div>
 
         <section
+          ref="detailPanel"
           class="detail"
           role="dialog"
           aria-modal="true"
@@ -499,7 +532,13 @@ onMounted(async () => {
                 </span>
               </div>
             </div>
-            <button type="button" class="icon-btn" aria-label="ปิดรายละเอียด" @click="closeDetail">
+            <button
+              ref="detailClose"
+              type="button"
+              class="icon-btn"
+              aria-label="ปิดรายละเอียด"
+              @click="closeDetail"
+            >
               <span class="material-symbols-outlined btn-icon" aria-hidden="true">close</span>
             </button>
           </header>
@@ -762,7 +801,8 @@ onMounted(async () => {
   background: #dc2626;
 }
 
-/* ---- The decorative band keeps its own place under the masthead ---- */
+/* ---- The decorative band keeps its own place under the masthead, and is
+   dropped entirely on phones (see the 599px block below) ---- */
 .hero-scene {
   display: block;
   margin-bottom: 16px;
@@ -1189,7 +1229,7 @@ onMounted(async () => {
 .badge-pending { background: #fff2df; color: #8a4b06; }
 .badge-approved { background: #e6f4ec; color: #1c6b3f; }
 .badge-rejected { background: #fdecec; color: #a01b1b; }
-.badge-cancelled { background: #f1f1f1; color: #6a6a6a; }
+.badge-cancelled { background: #f1f1f1; color: #5f5f5f; }
 
 /* Entrance: the cards rise in with a short stagger. Transform and opacity only,
    so the list never changes size. */
@@ -1505,6 +1545,12 @@ onMounted(async () => {
 /* Below 600px the detail dialog is a full-screen sheet: no chance of a sideways
    overflow, and the page underneath cannot be tapped by accident. */
 @media (max-width: 599px) {
+  /* Phones drop the decorative band: the masthead and its counts carry the page,
+     and the 132px it used belongs to the filters and the list. */
+  .hero-scene {
+    display: none;
+  }
+
   .masthead {
     padding: 18px 16px;
   }
