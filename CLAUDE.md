@@ -4,6 +4,8 @@
 
 Before changing any file under src/pages, src/components, src/styles.css, src/lib/background-scene.js, src/lib/motion.js, src/lib/background-quality.js, src/lib/dialog-focus.js, src/lib/lite-mode.js, or src/lib/dock-entrance.js, you MUST read docs/ai/hr-hub-ui-motion.md AND docs/ai/frontend-design.md and follow every rule in both. In your final report, list which sections you checked. If a requested change conflicts with a rule, stop and ask instead of working around it.
 
+Before coding any UI change, write the design plan described in docs/ai/frontend-design.md section I, and include it in your report.
+
 Report contrast ratios, tier used, and screenshot paths for every UI change.
 
 The canonical copy of this rule is in AGENTS.md; keep the two in step. The documents are loaded through the wrappers `.claude/skills/hr-hub-ui-motion/` and `.claude/skills/hr-hub-frontend-design/`, and the rule is enforced by `npm run check:ui-skill` and `tests/ui-skill.test.js`.

@@ -620,7 +620,9 @@ onBeforeUnmount(() => {
   gap: 8px;
   min-height: var(--tap);
   padding: 0 14px;
-  border: 1px solid var(--line);
+  /* A bordered control, so its outline is a real boundary: --line (0.12) read
+     1.27:1 against the glass; --field-line paints at 3.43:1, like the search field. */
+  border: 1px solid var(--field-line);
   border-radius: 12px;
   color: var(--accent-deep);
   font-family: 'Prompt', sans-serif;
