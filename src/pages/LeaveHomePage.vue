@@ -5,7 +5,7 @@ import PushToggle from '../components/PushToggle.vue'
 import { getSession } from '../api.js'
 import { formatThaiDate, formatThaiDateRange } from '../lib/thai-date.js'
 import { peekCached } from '../lib/data-cache.js'
-import { isLiteMode, prefersReducedMotion } from '../lib/lite-mode.js'
+
 import {
   APPROVALS_TTL_MS,
   DATA_KEYS,
@@ -21,6 +21,7 @@ import {
 } from '../leave-certificate.js'
 import { setApprovalCount } from '../lib/approval-count.js'
 import { countUp } from '../lib/motion.js'
+import { createCardStack } from '../lib/card-stack.js'
 
 const LOAD_ERROR = 'โหลดรายการใบลาไม่สำเร็จ กรุณาลองใหม่'
 const EMPTY = 'ยังไม่มีรายการใบลา'
@@ -62,180 +63,33 @@ const retentionDays = ref(0)
 // ---- The card stack -------------------------------------------------------
 // The employee's own newest requests, shown one at a time in the desk's corner.
 // It reads the list the page already loaded: no extra request, no new endpoint.
-const CYCLE_MS = 3000
-// A swipe needs this much horizontal travel, and must be flatter than it is tall.
-const SWIPE_MIN = 40
-// Cycling is for a capable device only. A lite device, a reduced-motion visitor
-// and the low or static tier all keep the first card still.
-const STACK_TIERS = ['high', 'medium']
-
-// Every request is one card, in the Worker's order. No grouping, no slicing.
+// The motion itself is the shared primitive (src/lib/card-stack.js): one timer
+// chain, the same pause rules as the HR deck, and nothing to duplicate here.
+// This page supplies the cards, the labels and its own pause button.
 const stackItems = computed(() => results.value)
-const stackIndex = ref(0)
-const stackHovered = ref(false)
-const stackFocused = ref(false)
-const stackPaused = ref(false)
-const stackTier = ref('high')
-const stackCanCycle = ref(false)
+const stack = createCardStack({ items: stackItems })
 
-let cycleTimer = null
-let tierObserver = null
-let swipeStart = null
+const stackIndex = stack.index
+const stackHovered = stack.hovered
+const stackFocused = stack.focused
+const stackPaused = stack.paused
+const stackTier = stack.tier
+const stackCanCycle = stack.canCycle
+const canStep = stack.canStep
+const stepBy = stack.stepBy
+const {
+  onPointerEnter,
+  onPointerLeave,
+  onFocusIn,
+  onFocusOut,
+  onKeydown,
+  onPointerDown,
+  onPointerUp,
+  onPointerCancel,
+} = stack.handlers
 
 const stackCard = computed(() => stackItems.value[stackIndex.value] ?? null)
 const showStack = computed(() => !loading.value && stackItems.value.length > 0)
-const canStep = computed(() => stackItems.value.length > 1)
-
-function readTier() {
-  if (typeof document === 'undefined') return 'high'
-  return document.documentElement.getAttribute('data-bg-tier') || 'high'
-}
-
-function pageIsVisible() {
-  return typeof document === 'undefined' || document.visibilityState !== 'hidden'
-}
-
-function tierAllowsCycle() {
-  return STACK_TIERS.includes(stackTier.value)
-}
-
-function stackIsAllowed() {
-  return (
-    stackItems.value.length > 1 &&
-    !isLiteMode() &&
-    !prefersReducedMotion() &&
-    tierAllowsCycle()
-  )
-}
-
-function cycleRunning() {
-  return (
-    stackIsAllowed() &&
-    !stackHovered.value &&
-    !stackFocused.value &&
-    !stackPaused.value &&
-    pageIsVisible()
-  )
-}
-
-function stopCycle() {
-  if (cycleTimer === null) return
-  clearTimeout(cycleTimer)
-  cycleTimer = null
-}
-
-// One step every 3s, scheduled one at a time. Chained timeouts rather than an
-// interval: the page owns no polling timer (tests/approval-count.test.js keeps
-// that to src/lib/approval-count.js), and a pause can drop the pending step
-// instead of letting it fire behind the pointer.
-function scheduleNextStep() {
-  if (cycleTimer !== null || !cycleRunning()) return
-  cycleTimer = setTimeout(() => {
-    cycleTimer = null
-    if (!cycleRunning()) return
-    advance(1)
-    scheduleNextStep()
-  }, CYCLE_MS)
-}
-
-/** One place decides whether the stack is auto-advances; every trigger calls it. */
-function syncCycle() {
-  stackCanCycle.value = stackIsAllowed()
-  if (cycleRunning()) scheduleNextStep()
-  else stopCycle()
-}
-
-/** One request forward or back, wrapping at both ends. */
-function advance(delta) {
-  const total = stackItems.value.length
-  if (total < 2) return
-  stackIndex.value = (stackIndex.value + delta + total) % total
-}
-
-/** A manual move always restarts the full 3s, and never touches stackPaused. */
-function stepBy(delta) {
-  advance(delta)
-  stopCycle()
-  scheduleNextStep()
-}
-
-// Hover pauses only for a real mouse. A touch tap emits a synthesized mouseenter
-// with no matching mouseleave, and that used to latch the pause on for good while
-// the pause button still read "หยุดสลับการ์ด". Pointer events carry the type, so a
-// finger or a pen can never pause the cycle.
-function onPointerEnter(event) {
-  if (event.pointerType && event.pointerType !== 'mouse') return
-  stackHovered.value = true
-}
-
-function onPointerLeave(event) {
-  if (event.pointerType && event.pointerType !== 'mouse') return
-  stackHovered.value = false
-}
-
-// Focus pauses only when the focus came from the keyboard. A mouse click on one
-// of the stack's buttons leaves focus inside the showcase too, and that used to
-// freeze the stack with the pause button still offering to stop it.
-function keyboardFocus(target) {
-  try {
-    return target?.matches?.(':focus-visible') === true
-  } catch {
-    return false
-  }
-}
-
-function onFocusIn(event) {
-  if (keyboardFocus(event.target)) stackFocused.value = true
-}
-
-function onFocusOut() {
-  stackFocused.value = false
-}
-
-function onKeydown(event) {
-  if (event.key === 'ArrowLeft') {
-    event.preventDefault()
-    stepBy(-1)
-    return
-  }
-  if (event.key === 'ArrowRight') {
-    event.preventDefault()
-    stepBy(1)
-  }
-}
-
-// A touch drag on the card: horizontal travel wins only when it is both long
-// enough and flatter than it is tall, so a vertical page scroll is never eaten.
-function onPointerDown(event) {
-  // A mouse drag is a text selection, not a swipe: this gesture is for touch.
-  if (event.pointerType === 'mouse') return
-  if (event.target?.closest?.('button')) return
-  swipeStart = { x: event.clientX, y: event.clientY, id: event.pointerId, type: event.pointerType }
-}
-
-function onPointerUp(event) {
-  if (!swipeStart || event.pointerId !== swipeStart.id) return
-  const dx = event.clientX - swipeStart.x
-  const dy = event.clientY - swipeStart.y
-  swipeStart = null
-  if (Math.abs(dx) < SWIPE_MIN) return
-  if (Math.abs(dx) <= Math.abs(dy)) return
-  stepBy(dx < 0 ? 1 : -1)
-}
-
-function onPointerCancel() {
-  swipeStart = null
-}
-
-function onVisibilityChange() {
-  syncCycle()
-}
-
-watch(stackItems, (items) => {
-  if (stackIndex.value >= items.length) stackIndex.value = 0
-  syncCycle()
-})
-watch([stackHovered, stackFocused, stackPaused, stackTier], syncCycle)
 
 const route = useRoute()
 const focusId = computed(() => (typeof route.query.focus === 'string' ? route.query.focus : ''))
@@ -308,30 +162,14 @@ onMounted(async () => {
   if (session?.isApprover === true) await loadPendingApprovals()
 })
 
-// The stack follows the tier the 3D layer publishes. A drop to low or static
-// stops the cycle instead of animating on a device that asked for less.
+// The stack's own lifecycle: the timer chain, the tier observer and the
+// visibility listener all belong to the shared primitive and are cleared here.
 onMounted(() => {
-  stackTier.value = readTier()
-  syncCycle()
-  if (typeof document === 'undefined') return
-  document.addEventListener('visibilitychange', onVisibilityChange)
-  if (typeof MutationObserver !== 'function') return
-  tierObserver = new MutationObserver(() => {
-    stackTier.value = readTier()
-  })
-  tierObserver.observe(document.documentElement, {
-    attributes: true,
-    attributeFilter: ['data-bg-tier'],
-  })
+  stack.start()
 })
 
 onBeforeUnmount(() => {
-  stopCycle()
-  tierObserver?.disconnect()
-  tierObserver = null
-  if (typeof document !== 'undefined') {
-    document.removeEventListener('visibilitychange', onVisibilityChange)
-  }
+  stack.destroy()
 })
 </script>
 

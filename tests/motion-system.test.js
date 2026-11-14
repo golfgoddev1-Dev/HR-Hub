@@ -453,9 +453,14 @@ describe('the shared stack primitive', () => {
     expect(STACK).toContain('setTimeout(')
     expect(STACK).toContain('clearTimeout(')
     expect(STACK).toContain('export function createCardStack')
-    // The chain is one function inside the primitive, and pages have no timer
-    // of their own once they adopt it (asserted page by page as each adopts).
+    // The chain is one function inside the primitive, and the pages that use a
+    // deck have no timer of their own.
     expect(STACK.match(/setTimeout\(/g)).toHaveLength(1)
+    const leave = readSource('src/pages/LeaveHomePage.vue')
+    expect(leave).toContain('createCardStack({ items: stackItems })')
+    for (const gone of ['CYCLE_MS', 'cycleTimer', 'scheduleNextStep', 'syncCycle', 'STACK_TIERS']) {
+      expect(leave, `LeaveHomePage still owns ${gone}`).not.toContain(gone)
+    }
   })
 })
 

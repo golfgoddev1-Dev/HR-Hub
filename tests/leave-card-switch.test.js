@@ -224,7 +224,10 @@ describe('leave home card stack', () => {
     stubMatchMedia()
     const wrapper = await mountPage()
 
-    expect(PAGE_SOURCE).toContain('const CYCLE_MS = 3000')
+    // The chain is the shared primitive's, and it steps every 3000ms (the
+    // token is pinned in tests/motion-system.test.js).
+    expect(PAGE_SOURCE).toContain('createCardStack({ items: stackItems })')
+    expect(readSource('src/lib/card-stack.js')).toContain('cycleMs = options.cycleMs ?? CYCLE.ms')
     expect(vi.getTimerCount()).toBe(1)
 
     await vi.advanceTimersByTimeAsync(CYCLE_MS - 50)
@@ -237,9 +240,14 @@ describe('leave home card stack', () => {
     expect(vi.getTimerCount()).toBe(1)
 
     expect(PAGE_SOURCE).not.toContain('setInterval')
-    expect(PAGE_SOURCE).toContain('cycleTimer = setTimeout(')
-    expect(PAGE_SOURCE).toContain('scheduleNextStep()')
-    expect(PAGE_SOURCE).toContain('clearTimeout(cycleTimer)')
+    // The page owns no chain of its own: the primitive schedules it, one step at
+    // a time, and clears the pending one before scheduling the next.
+    const PRIMITIVE = readSource('src/lib/card-stack.js')
+    expect(PRIMITIVE).toContain('timer = setTimeout(')
+    expect(PRIMITIVE).toContain('scheduleNextStep()')
+    expect(PRIMITIVE).toContain('clearTimeout(timer)')
+    expect(PRIMITIVE).not.toContain('setInterval(')
+    expect(PAGE_SOURCE).not.toContain('cycleTimer')
     wrapper.unmount()
   })
 
@@ -407,7 +415,8 @@ describe('leave home card stack', () => {
     // The gesture is read from pointer events, and the stack keeps vertical scroll.
     expect(PAGE_SOURCE).toContain('@pointerdown="onPointerDown"')
     expect(PAGE_SOURCE).toContain('@pointerup="onPointerUp"')
-    expect(PAGE_SOURCE).toContain('const SWIPE_MIN = 40')
+    // The 40px threshold lives in the primitive, once, for both decks.
+    expect(readSource('src/lib/card-stack.js')).toContain('swipeMin = options.swipeMin ?? SWIPE.min')
     expect(/\.stack \{([\s\S]*?)\}/.exec(CSS)[1]).toContain('touch-action: pan-y')
     wrapper.unmount()
   })
