@@ -4,12 +4,14 @@ import { getSession } from '../api.js'
 import { formatEmail, readProfile } from '../lib/profile-form.js'
 import { DATA_KEYS, PAGE_TTL_MS, errorTextOf, loaders, loadShared } from '../lib/shared-data.js'
 import PushToggle from '../components/PushToggle.vue'
+import HrMenuShortcutSettings from '../components/HrMenuShortcutSettings.vue'
 
 const LOAD_ERROR = 'โหลดข้อมูลส่วนตัวไม่สำเร็จ กรุณาลองใหม่'
 
 const loading = ref(true)
 const loadError = ref('')
 const isApprover = ref(false)
+const isHr = ref(false)
 const profile = ref(readProfile({}))
 
 async function load() {
@@ -32,6 +34,8 @@ async function load() {
 async function loadApprover() {
   const session = await getSession()
   isApprover.value = session?.isApprover === true
+  // Only HR has an HR home to arrange, so only HR sees the menu picker.
+  isHr.value = session?.role === 'hr'
 }
 
 onMounted(() => {
@@ -58,6 +62,11 @@ onMounted(() => {
     <v-alert v-else-if="loadError" type="error" variant="tonal">{{ loadError }}</v-alert>
 
     <PushToggle v-if="!loading && !loadError" :approver="isApprover" />
+
+    <HrMenuShortcutSettings
+      v-if="!loading && !loadError && isHr"
+      :saved="profile.hrMenuShortcuts"
+    />
 
     <section v-if="!loading && !loadError" class="card" aria-readonly="true">
       <dl class="rows">

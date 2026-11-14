@@ -30,7 +30,7 @@ const MESSAGE = {
 };
 
 const EMPLOYEE_COLUMNS =
-  "id,employee_code,name_prefix,full_name,email,phone,department_id,position_id,is_active,notify_pending_on_logout,notifications_enabled";
+  "id,employee_code,name_prefix,full_name,email,phone,department_id,position_id,is_active,notify_pending_on_logout,notifications_enabled,hr_menu_shortcuts";
 
 profile.use("*", async (c, next) => {
   c.header("Cache-Control", "no-store");
@@ -90,6 +90,9 @@ function publicProfile({ employee, department, position }) {
     isActive: employee.is_active === true,
     notificationsEnabled: employee.notifications_enabled === true,
     notifyPendingOnLogout: employee.notify_pending_on_logout !== false,
+    hrMenuShortcuts: Array.isArray(employee.hr_menu_shortcuts)
+      ? employee.hr_menu_shortcuts.filter((route) => typeof route === "string")
+      : [],
   };
 }
 
@@ -349,6 +352,123 @@ profile.get("/name-prefixes", async (c) => {
     return c.json({ ok: true, count: prefixes.length, prefixes }, 200);
   } catch (error) {
     logError("profile name prefixes failed", error);
+    return c.json({ ok: false, message: MESSAGE.saveError }, 500);
+  }
+});
+
+// --- PUT /api/profile/hr-menus -----------------------------------------------
+// The HR home shortcut menus, per person. HR only: nobody else has an HR home to
+// arrange. The allowlist lives here, not in the client, so a saved value can only
+// ever be one of the HR navigation routes; the array is stored in the order the
+// person chose and read back by the same order on the home page.
+
+const HR_ROLE = "hr";
+const AUDIT_TABLE = "audit_logs";
+const HR_MENU_AUDIT_ACTION = "hr_menu_shortcuts_updated";
+const HR_MENU_AUDIT_ENTITY = "employees";
+const HR_MENU_MIN = 1;
+const HR_MENU_MAX = 5;
+
+// Mirrors hrNavItems() in src/lib/nav-config.js. A frontend test asserts the two
+// lists are the same routes, so a new menu cannot be saved before the Worker
+// knows it, and a removed menu cannot linger in a saved choice.
+const HR_MENU_ROUTES = Object.freeze([
+  "/hr",
+  "/hr/employees",
+  "/hr/employees/import",
+  "/hr/employees/manage",
+  "/hr/employees/password",
+  "/hr/leave",
+  "/hr/leave/backdated",
+  "/hr/leave/holidays",
+  "/hr/leave/certificates",
+  "/hr/leave/approvers",
+  "/hr/leave/settings",
+]);
+
+const HR_MENU_MESSAGE = {
+  length: `เลือกเมนูได้ ${HR_MENU_MIN} ถึง ${HR_MENU_MAX} เมนู`,
+  duplicate: "มีเมนูซ้ำในรายการ กรุณาเลือกใหม่",
+  unknown: "มีเมนูที่ไม่รู้จัก กรุณาเลือกจากเมนูของฝ่ายบุคคล",
+};
+
+export { HR_MENU_ROUTES };
+
+/** 1 to 5 distinct HR routes, or the first reason it is not. */
+function readHrMenus(value) {
+  if (!Array.isArray(value)) return { error: HR_MENU_MESSAGE.length };
+  if (value.length < HR_MENU_MIN || value.length > HR_MENU_MAX) {
+    return { error: HR_MENU_MESSAGE.length };
+  }
+
+  const seen = new Set();
+  for (const entry of value) {
+    if (typeof entry !== "string" || entry.length === 0) return { error: HR_MENU_MESSAGE.unknown };
+    if (seen.has(entry)) return { error: HR_MENU_MESSAGE.duplicate };
+    if (!HR_MENU_ROUTES.includes(entry)) return { error: HR_MENU_MESSAGE.unknown };
+    seen.add(entry);
+  }
+
+  return { menus: [...value] };
+}
+
+profile.put("/hr-menus", async (c) => {
+  const auth = await requireRole(c.env, c.req.raw, [HR_ROLE]);
+  if (auth.status) {
+    return c.json({ ok: false, message: auth.message }, auth.status);
+  }
+
+  let body = null;
+  try {
+    body = await c.req.json();
+  } catch {
+    body = null;
+  }
+
+  const checked = readHrMenus(body?.menus);
+  if (checked.error) return c.json({ ok: false, message: checked.error }, 400);
+
+  try {
+    const db = createDb(c.env);
+    const employeeId = auth.session.employeeId;
+
+    const employee = await db.select(EMPLOYEES_TABLE, {
+      columns: "id,is_active",
+      filters: [["id", "eq", employeeId]],
+      single: true,
+    });
+    if (!employee || employee.is_active !== true) {
+      return c.json({ ok: false, message: MESSAGE.forbidden }, 403);
+    }
+
+    const saved = await db.update(
+      EMPLOYEES_TABLE,
+      { hr_menu_shortcuts: checked.menus },
+      [["id", "eq", employeeId]],
+      { returning: true, columns: "hr_menu_shortcuts" }
+    );
+    if (saved.error) {
+      logError("profile hr menus save failed", saved.error);
+      return c.json({ ok: false, message: MESSAGE.saveError }, 500);
+    }
+
+    const row = Array.isArray(saved.data) ? saved.data[0] : saved.data;
+    const menus = Array.isArray(row?.hr_menu_shortcuts) ? row.hr_menu_shortcuts : checked.menus;
+
+    // The preference is already saved: a failed audit write is reported, not
+    // turned into a failed save the person would retry.
+    const audit = await db.insert(AUDIT_TABLE, {
+      actor_id: employeeId,
+      action: HR_MENU_AUDIT_ACTION,
+      entity: HR_MENU_AUDIT_ENTITY,
+      entity_id: employeeId,
+      detail: JSON.stringify({ menus }),
+    });
+    if (audit.error) logError("profile hr menus audit failed", audit.error);
+
+    return c.json({ ok: true, menus }, 200);
+  } catch (error) {
+    logError("profile hr menus failed", error);
     return c.json({ ok: false, message: MESSAGE.saveError }, 500);
   }
 });

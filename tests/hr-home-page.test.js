@@ -182,9 +182,11 @@ describe('HR home page', () => {
     const rendered = wrapper.findAll('a.task').map((link) => link.attributes('href'))
     expect(rendered).toEqual(TARGETS)
 
-    // No raw href and no other navigation target on the page.
+    // No raw href, and the only dynamic navigation targets are the task-row loop
+    // and the pinned-menu card that sits above it.
     expect(PAGE_SOURCE).not.toMatch(/(^|\s)href=/)
-    expect(PAGE_SOURCE.match(/:to=/g)).toHaveLength(1)
+    expect(PAGE_SOURCE.match(/:to=/g)).toHaveLength(2)
+    expect(PAGE_SOURCE).toContain(':to="current.to"')
   })
 
   it('keeps the glass tint in the 0.86-0.90 band and the blur on the tier', () => {

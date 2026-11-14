@@ -48,6 +48,9 @@ export function readProfile(payload) {
     isActive: row.isActive === true,
     notificationsEnabled: row.notificationsEnabled === true,
     notifyPendingOnLogout: row.notifyPendingOnLogout !== false,
+    hrMenuShortcuts: Array.isArray(row.hrMenuShortcuts)
+      ? row.hrMenuShortcuts.filter((route) => typeof route === 'string')
+      : [],
   }
 }
 
