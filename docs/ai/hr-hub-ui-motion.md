@@ -1,16 +1,12 @@
 # HR Hub — UI, motion and 3D rules
 
-> Tool-neutral copy of the rules the app enforces. Claude loads the same contract through `.claude/skills/hr-hub-ui-motion/SKILL.md`; the two are edited together. For the design intent behind these rules, read [docs/ai/frontend-design.md](frontend-design.md).
+> This is the canonical copy of the rules. `.claude/skills/hr-hub-ui-motion/SKILL.md` is only a wrapper that points here, so edit this file. The design intent behind the rules is [docs/ai/frontend-design.md](frontend-design.md).
 
 This repository has one visual system: a live 3D field behind every signed-in
 page, frosted glass panels on top of it, indigo/violet brand colour, and motion
 that is calm, purposeful and optional. These rules describe what is already in
 the code. They are not suggestions, and a change that cannot meet them has to be
 raised with the user instead of worked around.
-
-The tool-neutral copy of these rules is `docs/ai/hr-hub-ui-motion.md`; the two
-are the same contract and are edited together. The design intent behind them is
-`docs/ai/frontend-design.md`.
 
 Files that own the system:
 
@@ -39,10 +35,10 @@ today:
   (`0.97`, strong `0.98`), which only matters when there is no scene to frost;
 - `src/lib/background-quality.js`: `GLASS.tintMin = 0.9`, `GLASS.tintMax = 0.98`,
   and `SURFACE_OPACITY = GLASS.tintMin` is the app-wide floor;
-- a page that needs more of the field to read through may use page-level tokens
-  down to **0.86** once the measured contrast below proves AA. Nothing in the
-  tree sits below `GLASS.tintMin` (0.9) today, so a page that goes lower owns
-  that measurement in its own tests and its report.
+- page-level tokens may go down to **0.86**, the minimum measured on the
+  `/hr/leave` pilot page. A page at 0.86 must carry its own contrast measurement
+  in its own test and in its report; never copy the value from another page
+  without re-measuring it.
 
 Never go below the band to make something look lighter, and never go to a
 near-opaque white: "semi-transparent but readable" is the brief.

@@ -1,13 +1,13 @@
 // Guards the UI contract: every UI change reads both design documents, and the
-// rules themselves cannot quietly disappear.
+// rules, wrappers and agent instructions cannot quietly disappear.
 //
-//   node scripts/check-ui-skill.mjs
+//   node scripts/check-ui-skill.mjs   (npm run check:ui-skill)
 //
-// Exits 1 when AGENTS.md or CLAUDE.md has lost the mandatory rule, when the
-// hr-hub-ui-motion skill has lost one of its ten sections, when the plain
-// Markdown copy is missing a section, or when docs/ai/frontend-design.md is
-// missing, has frontmatter, or has lost / reordered one of its eight headings.
-// `tests/ui-skill.test.js` runs the same checks in the suite.
+// Exits 1 when AGENTS.md or CLAUDE.md has lost the mandatory rule, when either
+// document is missing or has lost / reordered a heading, when a wrapper is
+// missing or points at the wrong file, or when the tint floor stops stating the
+// measured 0.86 minimum. `tests/ui-skill.test.js` runs the same checks in the
+// suite.
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readSource } from '../tests/helpers/read-source.js'
@@ -16,18 +16,29 @@ export const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.u
 
 export const AGENTS_FILE = 'AGENTS.md'
 export const CLAUDE_FILE = 'CLAUDE.md'
-export const SKILL_FILE = '.claude/skills/hr-hub-ui-motion/SKILL.md'
-export const DESIGN_SKILL_FILE = '.claude/skills/hr-hub-frontend-design/SKILL.md'
 export const UI_DOC_FILE = 'docs/ai/hr-hub-ui-motion.md'
 export const DESIGN_DOC_FILE = 'docs/ai/frontend-design.md'
+export const SKILL_FILE = '.claude/skills/hr-hub-ui-motion/SKILL.md'
+export const DESIGN_SKILL_FILE = '.claude/skills/hr-hub-frontend-design/SKILL.md'
 
 export const MANDATORY_RULE =
-  'Before you change any file under src/pages, src/components, src/styles.css, src/lib/background-scene.js, src/lib/motion.js, or src/lib/background-quality.js, you MUST read docs/ai/hr-hub-ui-motion.md AND docs/ai/frontend-design.md and follow every rule in both. In your report, state which rules you checked. If a requested change conflicts with a rule, stop and ask instead of working around it.'
+  'Before changing any file under src/pages, src/components, src/styles.css, src/lib/background-scene.js, src/lib/motion.js, src/lib/background-quality.js, src/lib/lite-mode.js, or src/lib/dock-entrance.js, you MUST read docs/ai/hr-hub-ui-motion.md AND docs/ai/frontend-design.md and follow every rule in both. In your final report, list which sections you checked. If a requested change conflicts with a rule, stop and ask instead of working around it.'
 
 export const REPORT_RULE =
   'Report contrast ratios, tier used, and screenshot paths for every UI change.'
 
-export const SECTION_COUNT = 10
+export const GUARDED_FILES = Object.freeze([
+  'src/pages',
+  'src/components',
+  'src/styles.css',
+  'src/lib/background-scene.js',
+  'src/lib/motion.js',
+  'src/lib/background-quality.js',
+  'src/lib/lite-mode.js',
+  'src/lib/dock-entrance.js',
+])
+
+export const UI_SECTIONS = Object.freeze(Array.from({ length: 10 }, (_, i) => i + 1))
 
 export const DESIGN_HEADINGS = Object.freeze([
   'A. Visual direction',
@@ -58,6 +69,21 @@ function readOrNull(read, file) {
   }
 }
 
+function checkHeadings(problems, file, text, headings) {
+  let lastIndex = -1
+  for (const heading of headings) {
+    const index = text.indexOf(`## ${heading}`)
+    if (index === -1) {
+      problems.push(`${file} is missing the heading "## ${heading}"`)
+      continue
+    }
+    if (lastIndex !== -1 && index < lastIndex) {
+      problems.push(`${file} has "## ${heading}" out of order`)
+    }
+    lastIndex = index
+  }
+}
+
 /**
  * @param {(file: string) => string} read file reader, injectable for tests
  * @param {string} root project root the files are resolved against
@@ -83,19 +109,11 @@ export function checkUiSkill(read = readSource, root = projectRoot) {
     if (!flat.includes('docs/ai/frontend-design.md')) {
       problems.push(`${file} does not name docs/ai/frontend-design.md`)
     }
+    for (const file of GUARDED_FILES) {
+      if (!flat.includes(file)) problems.push(`${AGENTS_FILE}/${CLAUDE_FILE} rule does not list ${file}`)
+    }
     if (!flat.includes(flatten(REPORT_RULE))) {
       problems.push(`${file} does not require contrast, tier and screenshot reporting`)
-    }
-  }
-
-  const skill = readOrNull(read, at(SKILL_FILE))
-  if (skill === null) {
-    problems.push(`missing skill file ${SKILL_FILE}`)
-  } else {
-    for (let n = 1; n <= SECTION_COUNT; n += 1) {
-      if (!sectionHeading(n).test(skill)) {
-        problems.push(`${SKILL_FILE} is missing the section ${n} heading ("## ${n}. ...")`)
-      }
     }
   }
 
@@ -103,12 +121,18 @@ export function checkUiSkill(read = readSource, root = projectRoot) {
   if (uiDoc === null) {
     problems.push(`missing ${UI_DOC_FILE}`)
   } else {
-    for (let n = 1; n <= SECTION_COUNT; n += 1) {
-      if (!sectionHeading(n).test(uiDoc)) {
-        problems.push(`${UI_DOC_FILE} is missing the section ${n} heading ("## ${n}. ...")`)
-      }
+    if (uiDoc.trimStart().startsWith('---')) {
+      problems.push(`${UI_DOC_FILE} starts with frontmatter; it must be plain Markdown`)
     }
-    if (!flatten(uiDoc).includes('docs/ai/frontend-design.md sections A to H')) {
+    checkHeadings(problems, UI_DOC_FILE, uiDoc, UI_SECTIONS.map((n) => `${n}.`))
+    const flat = flatten(uiDoc)
+    if (!flat.includes('0.86')) {
+      problems.push(`${UI_DOC_FILE} does not state the 0.86 tint floor`)
+    }
+    if (!flat.includes('its own contrast measurement')) {
+      problems.push(`${UI_DOC_FILE} does not require a page at 0.86 to carry its own contrast measurement`)
+    }
+    if (!flat.includes('docs/ai/frontend-design.md sections A to H')) {
       problems.push(`${UI_DOC_FILE} section 8 does not point at docs/ai/frontend-design.md sections A to H`)
     }
   }
@@ -120,17 +144,27 @@ export function checkUiSkill(read = readSource, root = projectRoot) {
     if (designDoc.trimStart().startsWith('---')) {
       problems.push(`${DESIGN_DOC_FILE} starts with frontmatter; it must be plain Markdown`)
     }
-    let lastIndex = -1
-    for (const heading of DESIGN_HEADINGS) {
-      const index = designDoc.indexOf(`## ${heading}`)
-      if (index === -1) {
-        problems.push(`${DESIGN_DOC_FILE} is missing the heading "## ${heading}"`)
-        continue
-      }
-      if (lastIndex !== -1 && index < lastIndex) {
-        problems.push(`${DESIGN_DOC_FILE} has "## ${heading}" out of order`)
-      }
-      lastIndex = index
+    checkHeadings(problems, DESIGN_DOC_FILE, designDoc, DESIGN_HEADINGS)
+  }
+
+  const wrappers = [
+    { file: SKILL_FILE, name: 'hr-hub-ui-motion', doc: UI_DOC_FILE },
+    { file: DESIGN_SKILL_FILE, name: 'hr-hub-frontend-design', doc: DESIGN_DOC_FILE },
+  ]
+  for (const wrapper of wrappers) {
+    const text = readOrNull(read, at(wrapper.file))
+    if (text === null) {
+      problems.push(`missing wrapper ${wrapper.file}`)
+      continue
+    }
+    if (!new RegExp(`^name: ${wrapper.name}$`, 'm').test(text)) {
+      problems.push(`${wrapper.file} does not declare "name: ${wrapper.name}"`)
+    }
+    if (!text.includes(wrapper.doc)) {
+      problems.push(`${wrapper.file} does not point at ${wrapper.doc}`)
+    }
+    if (!/\bfollow\b/i.test(text)) {
+      problems.push(`${wrapper.file} does not tell the reader to follow the document`)
     }
   }
 
@@ -155,6 +189,6 @@ if (invokedDirectly) {
     process.exit(1)
   }
   console.log(
-    `UI skill check passed: ${AGENTS_FILE} and ${CLAUDE_FILE} name both documents, ${UI_DOC_FILE} has sections 1-${SECTION_COUNT}, and ${DESIGN_DOC_FILE} has headings A-H in order.`
+    `UI skill check passed: ${AGENTS_FILE} and ${CLAUDE_FILE} name both documents, ${UI_DOC_FILE} has sections 1-10 in order, ${DESIGN_DOC_FILE} has headings A-H in order, and both wrappers point at their document.`
   )
 }
