@@ -388,7 +388,7 @@ onMounted(async () => {
 }
 
 a.shortcut:focus-visible {
-  outline: 3px solid #0f6f63;
+  outline: var(--motion-focus-width) solid var(--motion-focus);
   outline-offset: 2px;
 }
 

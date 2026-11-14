@@ -541,7 +541,7 @@ const logout = createLogoutFlow({
 }
 
 .dock-item:focus-visible {
-  outline: 3px solid #0f6f63;
+  outline: var(--motion-focus-width) solid var(--motion-focus);
   outline-offset: 2px;
 }
 
@@ -836,7 +836,7 @@ const logout = createLogoutFlow({
 .dock-sheet-link:focus-visible,
 .dock-sheet-logout:focus-visible,
 .dock-tab:focus-visible {
-  outline: 3px solid #0f6f63;
+  outline: var(--motion-focus-width) solid var(--motion-focus);
   outline-offset: 2px;
 }
 

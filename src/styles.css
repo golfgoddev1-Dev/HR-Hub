@@ -42,6 +42,14 @@
 html { scrollbar-gutter: stable; }
 
 * { box-sizing: border-box; }
+
+/* One focus ring for every control in the app: 2px violet, 2px offset. It sits on
+   :where() so a page rule can still adjust the offset inside a row, but no
+   control falls back to the browser's own ring or to a second brand colour. */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: var(--motion-focus-width) solid var(--motion-focus);
+  outline-offset: var(--motion-focus-offset);
+}
 body { margin: 0; min-width: 320px; min-height: 100vh; background: #f8f9ff; }
 button, .v-btn { font-family: 'Prompt', sans-serif; }
 h1, h2, h3 { font-family: 'Prompt', sans-serif; }

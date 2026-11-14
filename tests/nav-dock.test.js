@@ -83,9 +83,11 @@ describe('AppDock', () => {
     expect(DOCK).not.toContain("$emit('logout')")
   })
 
-  it('keeps a 3px focus ring and disables motion when asked', () => {
+  it('keeps the shared focus ring and disables motion when asked', () => {
     expect(DOCK).toContain(':focus-visible')
-    expect(DOCK).toContain('outline: 3px solid #0f6f63')
+    // The one ring: 2px violet at 2px offset, from the motion tokens (their
+    // values are pinned in tests/motion-system.test.js).
+    expect(DOCK).toContain('outline: var(--motion-focus-width) solid var(--motion-focus)')
     expect(DOCK).toContain('prefers-reduced-motion: reduce')
   })
 

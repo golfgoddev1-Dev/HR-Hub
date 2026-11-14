@@ -343,7 +343,7 @@ function labelCount(row) {
 }
 
 .ghost-btn:hover { background: #f4f8f7; }
-.ghost-btn:focus-visible { outline: 3px solid #0f6f63; outline-offset: 2px; }
+.ghost-btn:focus-visible { outline: var(--motion-focus-width) solid var(--motion-focus); outline-offset: 2px; }
 .ghost-btn:disabled { opacity: 0.55; cursor: not-allowed; }
 
 .primary-btn {

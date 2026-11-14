@@ -464,7 +464,7 @@ onMounted(async () => {
   cursor: pointer;
 }
 
-.retry-btn:focus-visible { outline: 3px solid #0f6f63; outline-offset: 2px; }
+.retry-btn:focus-visible { outline: var(--motion-focus-width) solid var(--motion-focus); outline-offset: 2px; }
 
 .hint { font-size: 13px; color: #5c7176; margin: 6px 0; }
 .hint.success { color: #1c6b3f; }
@@ -532,7 +532,7 @@ onMounted(async () => {
 .toggle-btn-off { background: #ffffff; border-color: #e2b6b6; color: #a01b1b; }
 .toggle-btn-off:active { background: #fbe6e6; }
 
-.toggle-btn:focus-visible { outline: 3px solid #0f6f63; outline-offset: 2px; }
+.toggle-btn:focus-visible { outline: var(--motion-focus-width) solid var(--motion-focus); outline-offset: 2px; }
 .toggle-btn:disabled { opacity: 0.6; cursor: not-allowed; box-shadow: none; }
 
 .btn-icon { flex: 0 0 auto; }

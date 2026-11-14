@@ -202,7 +202,7 @@ function selectEmployee(value) {
   text-decoration: none;
 }
 
-.open-btn:focus-visible { outline: 3px solid #0f6f63; outline-offset: 2px; }
+.open-btn:focus-visible { outline: var(--motion-focus-width) solid var(--motion-focus); outline-offset: 2px; }
 
 @media (max-width: 480px) {
   .content { padding: 18px 0 56px; }
