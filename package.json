@@ -14,6 +14,7 @@
     "check:admin-hash": "node scripts/check-admin-hash.js",
     "check:supabase": "node scripts/check-supabase.js",
     "check:meeting-types": "node scripts/check-meeting-types.js",
+    "check:ui-skill": "node scripts/check-ui-skill.mjs",
     "issue:reset-code": "node scripts/issue-reset-code.js"
   },
   "dependencies": {
