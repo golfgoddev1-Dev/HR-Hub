@@ -6,16 +6,23 @@
 // sees it. Core only: every animation below is a plain tween, so no plugin is
 // needed and none is imported.
 //
+// Every duration, curve, lift and press here comes from src/lib/motion-tokens.js:
+// the same numbers the CSS custom properties carry, so the GSAP side and the CSS
+// side can never drift apart.
+//
 // Rules this module keeps:
 // - transform and opacity only, never width, height, top, left or margin;
 // - reduced motion jumps straight to the final state, with no animation at all;
 // - failure is silent: if the import throws, every helper is a no-op or paints the
 //   final value, and the page still renders and works with no motion.
 import { prefersReducedMotion } from './background-quality.js'
+import { DURATION, EASE, ENTRANCE, LIFT, PRESS } from './motion-tokens.js'
 
 const PRESS_SELECTOR = 'button, .v-btn, .primary-link, [data-press]'
 const LIFT_SELECTOR = '.card, .summary-item, .push-card, .dock-tile'
 const FINE_POINTER = '(hover: hover) and (pointer: fine)'
+
+const seconds = (ms) => ms / 1000
 
 let gsapPromise = null
 
@@ -68,14 +75,19 @@ export async function countUp(element, target, options = {}) {
     return final
   }
 
+  // A caller may still pass a duration in seconds (the old contract); the default
+  // is the shared entrance token, so every count in the app has one speed.
+  const durationMs =
+    options.durationMs ?? (typeof options.duration === 'number' ? options.duration * 1000 : DURATION.entrance)
+
   // Tween a plain counter, never the DOM node's text directly. It starts at zero
   // (or the value the caller asks for) and only steps through lower numbers.
   const counter = { value: options.from ?? 0 }
   try {
     gsap.to(counter, {
       value: final,
-      duration: options.duration ?? 0.75,
-      ease: 'power2.out',
+      duration: seconds(durationMs),
+      ease: EASE.gsap,
       overwrite: true,
       onUpdate: () => paint(counter.value),
       onComplete: () => paint(final),
@@ -86,7 +98,7 @@ export async function countUp(element, target, options = {}) {
   return final
 }
 
-/** A route change: the new page fades in and slides a few pixels up. */
+/** A route change: the new page fades in and slides the token rise up. */
 export async function fadeRoute(element) {
   if (!element) return
   if (reduced()) return
@@ -96,8 +108,15 @@ export async function fadeRoute(element) {
   try {
     gsap.fromTo(
       element,
-      { opacity: 0, y: 8 },
-      { opacity: 1, y: 0, duration: 0.32, ease: 'power2.out', overwrite: true, clearProps: 'transform,opacity' }
+      { opacity: ENTRANCE.opacityFrom, y: ENTRANCE.rise },
+      {
+        opacity: ENTRANCE.opacityTo,
+        y: 0,
+        duration: seconds(DURATION.route),
+        ease: EASE.gsap,
+        overwrite: true,
+        clearProps: 'transform,opacity',
+      }
     )
   } catch {
     // No motion is a valid outcome; the page is already visible.
@@ -131,7 +150,12 @@ export async function installUiMotion(root = typeof document === 'undefined' ? n
     if (!control) return
     tweened.add(control)
     try {
-      gsap.to(control, { scale: 0.97, duration: 0.12, ease: 'power1.out', overwrite: 'auto' })
+      gsap.to(control, {
+        scale: PRESS.scale,
+        duration: seconds(DURATION.press),
+        ease: EASE.gsap,
+        overwrite: 'auto',
+      })
     } catch {
       // A control that cannot tween keeps its CSS state.
     }
@@ -141,7 +165,12 @@ export async function installUiMotion(root = typeof document === 'undefined' ? n
     const control = closest(event, PRESS_SELECTOR)
     if (!control) return
     try {
-      gsap.to(control, { scale: 1, duration: 0.18, ease: 'power2.out', overwrite: 'auto' })
+      gsap.to(control, {
+        scale: 1,
+        duration: seconds(DURATION.release),
+        ease: EASE.gsap,
+        overwrite: 'auto',
+      })
     } catch {
       // Ignore: the control is back to its resting size in CSS.
     }
@@ -155,12 +184,12 @@ export async function installUiMotion(root = typeof document === 'undefined' ? n
     tweened.add(card)
     try {
       gsap.to(card, {
-        y: -3,
-        rotationX: 1.2,
-        rotationY: -1.2,
-        transformPerspective: 900,
-        duration: 0.24,
-        ease: 'power2.out',
+        y: LIFT.y,
+        rotationX: LIFT.rotation,
+        rotationY: -LIFT.rotation,
+        transformPerspective: LIFT.perspective,
+        duration: seconds(DURATION.hover),
+        ease: EASE.gsap,
         overwrite: 'auto',
       })
     } catch {
@@ -177,8 +206,8 @@ export async function installUiMotion(root = typeof document === 'undefined' ? n
         y: 0,
         rotationX: 0,
         rotationY: 0,
-        duration: 0.28,
-        ease: 'power2.out',
+        duration: seconds(DURATION.hoverOut),
+        ease: EASE.gsap,
         overwrite: 'auto',
       })
     } catch {

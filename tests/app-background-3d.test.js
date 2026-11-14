@@ -871,13 +871,15 @@ describe('motion', () => {
   it('staggers the page sections and fades the route change', () => {
     // The entrance is CSS so it exists with no JavaScript at all...
     expect(STYLES_SOURCE).toContain('.app-layout-inner > main > * {')
-    expect(STYLES_SOURCE).toContain(':nth-child(3) { animation-delay: 0.08s; }')
-    expect(STYLES_SOURCE).toContain(':nth-child(n + 7) { animation-delay: 0.24s; }')
+    // The stagger and the duration come from the shared motion tokens, which
+    // tests/motion-system.test.js pins to 40ms and 440ms.
+    expect(STYLES_SOURCE).toContain(':nth-child(3) { animation-delay: calc(var(--motion-stagger) * 2); }')
+    expect(STYLES_SOURCE).toContain(':nth-child(n + 7) { animation-delay: calc(var(--motion-stagger) * 6); }')
     expect(STYLES_SOURCE).not.toMatch(/animation:[^;]*both/)
     // ...and the route change is GSAP's, on transform and opacity only.
     expect(MOTION_SOURCE).toContain('export async function fadeRoute')
-    expect(MOTION_SOURCE).toContain('y: 8')
-    expect(MOTION_SOURCE).toContain('opacity: 0')
+    expect(MOTION_SOURCE).toContain('y: ENTRANCE.rise')
+    expect(MOTION_SOURCE).toContain('opacity: ENTRANCE.opacityFrom')
   })
 
   it('turns every bit of motion off for a reduced-motion visitor', () => {
@@ -896,8 +898,8 @@ describe('motion', () => {
   it('lifts and tilts only for a real mouse', () => {
     // The lift is GSAP's now, gated on a fine pointer and a no-preference visitor.
     expect(MOTION_SOURCE).toContain("(hover: hover) and (pointer: fine)")
-    expect(MOTION_SOURCE).toContain('rotationX: 1.2')
-    expect(MOTION_SOURCE).toContain('transformPerspective: 900')
+    expect(MOTION_SOURCE).toContain('rotationX: LIFT.rotation')
+    expect(MOTION_SOURCE).toContain('transformPerspective: LIFT.perspective')
     expect(MOTION_SOURCE).toContain('if (!finePointer()) return')
     // No CSS tilt is left that could double up with it.
     expect(STYLES_SOURCE).not.toContain('perspective(900px)')

@@ -1,3 +1,30 @@
+/* ---- Motion tokens ---------------------------------------------------------
+   One set of numbers for the whole app, mirrored in src/lib/motion-tokens.js
+   (tests/motion-system.test.js asserts the two copies are equal). A page asks
+   for a token; it never invents a duration, a curve, a lift or a ring.
+
+   The rhythm (docs/ai/hr-hub-ui-motion.md section 3):
+     0.12s press / 0.18s release, 0.24s hover in / 0.28s out,
+     0.32s route fade, 0.44s entrance, 40ms stagger, one ease-out curve.
+   Entrance is under 600ms and stagger is at most 60ms by rule. */
+:root {
+  --motion-press: 120ms;
+  --motion-release: 180ms;
+  --motion-hover: 240ms;
+  --motion-hover-out: 280ms;
+  --motion-route: 320ms;
+  --motion-entrance: 440ms;
+  --motion-stagger: 40ms;
+  --motion-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --motion-rise: 12px;
+  --motion-lift: -3px;
+  --motion-scale: 0.97;
+  --motion-focus: #8b5cf6;
+  --motion-focus-width: 2px;
+  --motion-focus-offset: 2px;
+  --motion-tap: 44px;
+}
+
 :root {
   font-family: 'Sarabun', sans-serif;
   color: #0b1c30;
@@ -152,27 +179,41 @@ h1, h2, h3 { font-family: 'Prompt', sans-serif; }
    exists even if JavaScript never loads. The route fade, the card lift, the press
    feedback and the counting totals belong to src/lib/motion.js (GSAP), which is
    imported only on signed-in screens. */
+/* The one entrance: the token rise, the token duration, the token curve. It is
+   the same on every route: the page's own sections rise in sequence, one
+   --motion-stagger apart, and nothing decides its own timing. */
 @keyframes panel-rise {
-  from { opacity: 0; transform: translate3d(0, 12px, 0); }
+  from { opacity: 0; transform: translate3d(0, var(--motion-rise), 0); }
 }
 
 @media (prefers-reduced-motion: no-preference) {
   /* Every page renders its own <main>, so a route change replays this from the
      top: the sections rise in sequence. */
   .app-layout-inner > main > * {
-    animation: panel-rise 0.44s cubic-bezier(0.22, 0.61, 0.36, 1) backwards;
+    animation: panel-rise var(--motion-entrance) var(--motion-ease) backwards;
   }
-  .app-layout-inner > main > :nth-child(2) { animation-delay: 0.04s; }
-  .app-layout-inner > main > :nth-child(3) { animation-delay: 0.08s; }
-  .app-layout-inner > main > :nth-child(4) { animation-delay: 0.12s; }
-  .app-layout-inner > main > :nth-child(5) { animation-delay: 0.16s; }
-  .app-layout-inner > main > :nth-child(6) { animation-delay: 0.2s; }
-  .app-layout-inner > main > :nth-child(n + 7) { animation-delay: 0.24s; }
+  .app-layout-inner > main > :nth-child(2) { animation-delay: calc(var(--motion-stagger) * 1); }
+  .app-layout-inner > main > :nth-child(3) { animation-delay: calc(var(--motion-stagger) * 2); }
+  .app-layout-inner > main > :nth-child(4) { animation-delay: calc(var(--motion-stagger) * 3); }
+  .app-layout-inner > main > :nth-child(5) { animation-delay: calc(var(--motion-stagger) * 4); }
+  .app-layout-inner > main > :nth-child(6) { animation-delay: calc(var(--motion-stagger) * 5); }
+  .app-layout-inner > main > :nth-child(n + 7) { animation-delay: calc(var(--motion-stagger) * 6); }
+}
+
+/* Reduced motion is the finished page: no animation, no transition, the final
+   state already painted. This block is the one place it is applied app-wide, so
+   no page has to remember it. */
+@media (prefers-reduced-motion: reduce) {
+  .app-layout-inner > main > * {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
 }
 
 /* GSAP writes transforms inline on the elements it animates, so the CSS hover
    transition would fight it frame by frame. Card and control transitions stay, but
    only for the properties GSAP does not own. */
 :root[data-bg-tier='high'] .app-layout-inner :is(.card, .summary-item) {
-  transition: box-shadow 0.24s ease;
+  transition: box-shadow var(--motion-hover) var(--motion-ease);
 }
