@@ -1,19 +1,20 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { focusPanel, restoreFocus, trapTabKey } from '../lib/dialog-focus.js'
+// The HR employee finder: one question, one list. Every row is a link to that
+// person's own page at /hr/employees/:id — there is no panel beside the list and
+// no sheet, so the component that reads an employee is always a full page.
+//
+// The search text survives the round trip through the route (?q=): the row link
+// carries it to the detail page, and the detail page's back control carries it
+// home. Nothing is written to localStorage.
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 
 const MIN_LENGTH = 2
 const SEARCH_ERROR = 'ไม่สามารถค้นหาได้ กรุณาลองใหม่'
 const TOO_SHORT = 'พิมพ์อย่างน้อย 2 ตัวอักษรเพื่อค้นหา'
 const EMPTY = 'ไม่พบพนักงานที่ตรงกับคำค้น'
-const DETAIL_ERROR = 'ไม่พบข้อมูลพนักงาน หรือคุณไม่มีสิทธิ์เข้าถึง'
-const REVEAL_ERROR = 'ไม่สามารถแสดงเลขบัตรประชาชนได้'
-// The split view starts where the rest of the HR pages switch to a rail; below
-// it the detail is a sheet over the list.
-const WIDE_QUERY = '(min-width: 1080px)'
+const LIMIT_NOTE = 'สูงสุด 50 รายการ'
 
-const router = useRouter()
 const route = useRoute()
 
 const query = ref('')
@@ -24,36 +25,11 @@ const hint = ref('')
 const searched = ref(false)
 
 const searchInput = ref(null)
-const detailPanel = ref(null)
-const detailClose = ref(null)
-
-const detail = ref(null)
-const detailLoading = ref(false)
-const detailError = ref('')
-const revealError = ref('')
-const revealing = ref(false)
-const revealedId = ref('')
-
-// The route owns the selection: /hr/employees/:id renders this same page, so the
-// list never unmounts and its search text survives the detail.
-const selectedId = computed(() => {
-  const id = route?.params?.id
-  if (typeof id === 'string') return id
-  if (Array.isArray(id)) return String(id[0] ?? '')
-  return ''
-})
-
-const isWide = ref(
-  typeof window !== 'undefined' && typeof window.matchMedia === 'function'
-    ? window.matchMedia(WIDE_QUERY).matches
-    : true
-)
 
 let timer = null
-let wideQuery = null
-let detailSeq = 0
-let firstSelection = true
-let detailOpener = null
+// The first fill from ?q= runs its search immediately; the debounce watcher
+// would only repeat the same request 300ms later.
+let fromRouteQuery = false
 
 async function search() {
   const text = query.value.replace(/\s+/g, ' ').trim()
@@ -91,15 +67,21 @@ async function search() {
 }
 
 watch(query, () => {
+  if (fromRouteQuery) {
+    fromRouteQuery = false
+    return
+  }
   if (timer) clearTimeout(timer)
   timer = setTimeout(search, 300)
 })
 
-function openEmployee(id, event) {
-  if (!id) return
-  const opener = event?.currentTarget
-  detailOpener = opener && typeof opener.focus === 'function' ? opener : null
-  router.push(`/hr/employees/${encodeURIComponent(id)}`)
+/** The row is the link, and it carries the search that found it. */
+function rowTarget(item) {
+  const text = query.value.replace(/\s+/g, ' ').trim()
+  return {
+    path: `/hr/employees/${encodeURIComponent(item.id)}`,
+    query: text.length > 0 ? { q: text } : {},
+  }
 }
 
 // full_name of older rows already starts with the prefix; do not repeat it.
@@ -110,135 +92,21 @@ function displayName(item) {
   return `${prefix} ${name}`
 }
 
-// The detail is the old page's data, fetched the same way: one GET, the same
-// credentials, and a last-write-wins guard so a quick A → B switch cannot paint
-// A's answer over B.
-async function loadDetail(id) {
-  const token = (detailSeq += 1)
-  detailLoading.value = true
-  detailError.value = ''
-  revealError.value = ''
-  revealedId.value = ''
-  try {
-    const response = await fetch(`/api/hr/employees/${encodeURIComponent(id)}`, {
-      credentials: 'same-origin',
-    })
-    const data = await response.json().catch(() => ({}))
-    if (token !== detailSeq) return
-    if (!response.ok || data.ok !== true) {
-      detail.value = null
-      detailError.value = typeof data.message === 'string' ? data.message : DETAIL_ERROR
-      return
-    }
-    detail.value = data.employee ?? null
-  } catch {
-    if (token !== detailSeq) return
-    detail.value = null
-    detailError.value = DETAIL_ERROR
-  } finally {
-    if (token === detailSeq) detailLoading.value = false
-  }
-}
-
-// Audit-only action, kept exactly as the detail page had it: a POST that the API
-// counts as one access for the day. No confirmation step existed to keep.
-async function reveal() {
-  const id = selectedId.value
-  if (!id || revealing.value || revealedId.value) return
-  revealing.value = true
-  revealError.value = ''
-  try {
-    const response = await fetch(
-      `/api/hr/employees/${encodeURIComponent(id)}/reveal-national-id`,
-      { method: 'POST', credentials: 'same-origin' }
-    )
-    const data = await response.json().catch(() => ({}))
-    if (!response.ok || data.ok !== true) {
-      revealError.value = typeof data.message === 'string' ? data.message : REVEAL_ERROR
-      return
-    }
-    revealedId.value = String(data.nationalId ?? '')
-  } catch {
-    revealError.value = REVEAL_ERROR
-  } finally {
-    revealing.value = false
-  }
-}
-
-function closeDetail() {
-  if (!selectedId.value) return
-  // Back to the list when the list is the previous entry (a row opened it);
-  // a deep link has no list entry to go back to, so it goes forward instead.
-  const previous = router?.options?.history?.state?.back
-  if (previous === '/hr/employees') {
-    router.back()
-    return
-  }
-  router.push('/hr/employees')
-}
-
-watch(selectedId, async (id, previous) => {
-  if (!id) {
-    detailSeq += 1
-    detail.value = null
-    detailLoading.value = false
-    detailError.value = ''
-    revealError.value = ''
-    revealedId.value = ''
-    const opener = detailOpener
-    detailOpener = null
-    firstSelection = false
-    if (previous) {
-      await nextTick()
-      if (!restoreFocus(opener)) searchInput.value?.focus?.()
-    }
-    return
-  }
-
-  loadDetail(id)
-
-  if (!previous) {
-    const deepLink = firstSelection
-    firstSelection = false
-    if (deepLink) return
-    await nextTick()
-    focusPanel(detailPanel.value, detailClose.value)
-  }
-}, { immediate: true })
-
-// Escape closes the sheet; Tab and Shift+Tab stay inside it. The desktop panel is
-// not modal (the list beside it stays usable), so neither applies there.
-function onKeydown(event) {
-  if (!selectedId.value || isWide.value) return
-  if (event.key === 'Escape') {
-    event.preventDefault()
-    closeDetail()
-    return
-  }
-  if (event.key === 'Tab') trapTabKey(event, detailPanel.value)
-}
-
-function onWideChange(event) {
-  isWide.value = event.matches
-}
-
 onMounted(() => {
-  document.addEventListener('keydown', onKeydown)
-  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
-  wideQuery = window.matchMedia(WIDE_QUERY)
-  isWide.value = wideQuery.matches
-  wideQuery.addEventListener?.('change', onWideChange)
+  const initial = typeof route?.query?.q === 'string' ? route.query.q : ''
+  if (initial.replace(/\s+/g, ' ').trim().length < MIN_LENGTH) return
+  fromRouteQuery = true
+  query.value = initial
+  search()
 })
 
 onBeforeUnmount(() => {
   if (timer) clearTimeout(timer)
-  wideQuery?.removeEventListener?.('change', onWideChange)
-  document.removeEventListener('keydown', onKeydown)
 })
 </script>
 
 <template>
-  <main class="page" :class="{ 'is-split': selectedId && isWide }">
+  <main class="page">
     <!-- The finder: the page's one question, and the way in from a spreadsheet. -->
     <section class="finder" aria-labelledby="employees-title">
       <div class="finder-copy">
@@ -273,11 +141,11 @@ onBeforeUnmount(() => {
       </RouterLink>
     </section>
 
-    <!-- The results: one row per person, the whole row the button. -->
+    <!-- The results: one row per person, the whole row a link to that person. -->
     <section class="results" aria-labelledby="results-title">
       <div class="panel-head">
         <h2 id="results-title" class="panel-title">ผลการค้นหา</h2>
-        <span class="panel-meta">สูงสุด 50 รายการ</span>
+        <span class="panel-meta">{{ searched ? `${results.length} รายการ` : LIMIT_NOTE }}</span>
       </div>
 
       <v-alert v-if="errorMessage" type="error" variant="tonal" class="mb-4">
@@ -292,15 +160,12 @@ onBeforeUnmount(() => {
           <span>สถานะ</span>
         </div>
 
-        <button
+        <RouterLink
           v-for="(item, index) in results"
           :key="item.id"
-          type="button"
+          :to="rowTarget(item)"
           class="list-row"
-          :class="{ 'is-selected': selectedId === String(item.id) }"
-          :aria-current="selectedId === String(item.id) ? 'true' : undefined"
           :style="{ '--stagger': index }"
-          @click="openEmployee(item.id, $event)"
         >
           <span class="cell code" data-label="รหัส">{{ item.employeeCode || '—' }}</span>
           <span class="cell name" data-label="ชื่อ-สกุล">{{ displayName(item) }}</span>
@@ -310,116 +175,11 @@ onBeforeUnmount(() => {
               {{ item.isActive ? 'ใช้งานอยู่' : 'ปิดการใช้งาน' }}
             </span>
           </span>
-        </button>
+        </RouterLink>
       </div>
 
       <p v-else-if="searched && !loading" class="empty-line">{{ EMPTY }}</p>
     </section>
-
-    <!-- The selected employee: beside the list from 1080px, a sheet below it. -->
-    <!-- Fixed durations: the panel must be gone 180ms after a close, not wait
-         on a nested transitionend. -->
-    <Transition name="detail-slide" :duration="{ enter: 340, leave: 180 }">
-      <div v-if="selectedId" class="detail-layer" :class="{ 'is-sheet': !isWide }">
-        <div v-if="!isWide" class="detail-scrim" @click="closeDetail"></div>
-
-        <aside
-          ref="detailPanel"
-          class="detail"
-          :role="isWide ? 'region' : 'dialog'"
-          :aria-modal="isWide ? undefined : 'true'"
-          aria-labelledby="detail-title"
-          tabindex="-1"
-        >
-          <header class="detail-head">
-            <div class="detail-heading">
-              <p class="eyebrow">รายละเอียดพนักงาน</p>
-              <h2 id="detail-title" class="detail-title">
-                {{ detail?.employeeCode || (detailLoading ? 'กำลังโหลด…' : 'พนักงาน') }}
-              </h2>
-              <p class="detail-sub">
-                {{ displayName(detail ?? {}) }}
-                <template v-if="detail?.departmentName"> · {{ detail.departmentName }}</template>
-              </p>
-            </div>
-            <button
-              ref="detailClose"
-              type="button"
-              class="detail-close"
-              aria-label="ปิดรายละเอียด"
-              @click="closeDetail"
-            >
-              <span class="material-symbols-outlined" aria-hidden="true">close</span>
-            </button>
-          </header>
-
-          <!-- The way back to the import screen, kept from the old detail page.
-               It sits at the top of the panel so it is reachable before any
-               scrolling, in both the side panel and the phone sheet. -->
-          <RouterLink to="/hr/employees/import" class="back-link">
-            <span class="back-arrow" aria-hidden="true">←</span>
-            <span>กลับไปหน้านำเข้า</span>
-          </RouterLink>
-
-          <p v-if="detailError" class="detail-note error">{{ detailError }}</p>
-          <p v-else-if="detailLoading && !detail" class="detail-note">กำลังโหลดข้อมูลพนักงาน…</p>
-
-          <template v-else-if="detail">
-            <dl class="facts">
-              <div class="fact">
-                <dt>รหัสพนักงาน</dt>
-                <dd>{{ detail.employeeCode || '—' }}</dd>
-              </div>
-              <div class="fact">
-                <dt>ชื่อ-สกุล</dt>
-                <dd>{{ detail.fullName || '—' }}</dd>
-              </div>
-              <div class="fact">
-                <dt>คำนำหน้า</dt>
-                <dd>{{ detail.namePrefix || '—' }}</dd>
-              </div>
-              <div class="fact">
-                <dt>แผนก</dt>
-                <dd>{{ detail.departmentName || '—' }}</dd>
-              </div>
-              <div class="fact">
-                <dt>ตำแหน่ง</dt>
-                <dd>{{ detail.positionName || '—' }}</dd>
-              </div>
-              <div class="fact">
-                <dt>สถานะ</dt>
-                <dd>{{ detail.isActive ? 'ใช้งานอยู่' : 'ปิดการใช้งาน' }}</dd>
-              </div>
-              <div class="fact">
-                <dt>เลขบัตรประชาชน</dt>
-                <dd>
-                  <span class="mono">{{ revealedId || detail.nationalIdMasked || 'ไม่พร้อมแสดง' }}</span>
-                  <span v-if="revealedId" class="detail-sub">
-                    การดูเลขเต็มถูกนับเป็นการเข้าถึงหนึ่งครั้งในวันนี้
-                  </span>
-                  <span v-else-if="!detail.nationalIdAvailable" class="detail-sub">
-                    รายการนี้ยังไม่มีเลขบัตรที่เข้ารหัสด้วยกุญแจของระบบปัจจุบัน
-                  </span>
-                </dd>
-              </div>
-            </dl>
-
-            <p v-if="revealError" class="detail-note error">{{ revealError }}</p>
-
-            <div v-if="detail.nationalIdAvailable && !revealedId" class="detail-actions">
-              <button
-                type="button"
-                class="reveal-btn"
-                :disabled="revealing"
-                @click="reveal"
-              >
-                {{ revealing ? 'กำลังแสดง…' : 'ดูเลขเต็ม' }}
-              </button>
-            </div>
-          </template>
-        </aside>
-      </div>
-    </Transition>
   </main>
 </template>
 
@@ -479,7 +239,7 @@ onBeforeUnmount(() => {
   padding: 28px 0 64px;
   color: var(--ink);
   /* No page background: the field is the backdrop and every block of text sits
-     on the frosted panels below. */
+     on one of the two frosted panels below. */
   background: transparent;
 }
 
@@ -495,8 +255,7 @@ onBeforeUnmount(() => {
 }
 
 .finder,
-.results,
-.detail {
+.results {
   position: relative;
   background-color: var(--dir-glass);
   background-image: linear-gradient(150deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0) 60%);
@@ -667,6 +426,7 @@ onBeforeUnmount(() => {
   font-weight: 600;
   line-height: 1.4;
   color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
@@ -692,31 +452,21 @@ onBeforeUnmount(() => {
   color: var(--ink-muted);
 }
 
-/* The whole row is the button, so the tap target is the row, not a cell. */
+/* The whole row is the link, so the tap target is the row, not a cell. */
 .list-row {
   width: 100%;
   min-height: var(--tap);
   padding: 12px 8px;
-  border: none;
   border-bottom: 1px solid var(--line);
-  border-radius: 0;
-  background: none;
   color: var(--ink);
-  font-family: inherit;
   font-size: 15px;
   line-height: 1.5;
-  cursor: pointer;
+  text-decoration: none;
   transition: background-color 0.18s ease;
 }
 
 .list-row:last-child {
   border-bottom: none;
-}
-
-/* The open employee keeps a visible mark next to the panel it feeds. */
-.list-row.is-selected {
-  background-color: rgba(79, 70, 229, 0.1);
-  box-shadow: inset 3px 0 0 var(--accent);
 }
 
 .list-row:focus-visible {
@@ -773,199 +523,6 @@ onBeforeUnmount(() => {
   color: var(--ink-muted);
 }
 
-/* ---- The selected employee ---- */
-
-.detail-layer {
-  display: grid;
-  min-width: 0;
-}
-
-.detail {
-  display: grid;
-  align-content: start;
-  gap: 14px;
-  min-height: 0;
-  max-height: calc(100vh - 48px);
-  padding: 20px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
-
-.detail-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--line);
-}
-
-.detail-heading {
-  min-width: 0;
-}
-
-.detail-title {
-  margin: 0 0 4px;
-  font-family: 'Prompt', sans-serif;
-  font-size: 20px;
-  font-weight: 600;
-  line-height: 1.3;
-  color: var(--ink);
-  overflow-wrap: anywhere;
-}
-
-.detail-sub {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--ink-muted);
-  overflow-wrap: anywhere;
-}
-
-.detail-close {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
-  width: var(--tap);
-  height: var(--tap);
-  border: 1px solid var(--field-line);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.8);
-  color: var(--ink);
-  cursor: pointer;
-  transition:
-    background-color 0.18s ease,
-    border-color 0.18s ease;
-}
-
-.detail-close:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
-}
-
-/* A real control, not a caption: 44px on every width, a boundary that shows on
-   the glass (3.22:1 over the 0.88 tint, measured in
-   tests/hr-employees-master-detail.test.js) and the violet focus ring. Text is
-   indigo-700, 6.41:1 over the darkest panel pixel. */
-.back-link {
-  display: inline-flex;
-  align-items: center;
-  justify-self: start;
-  gap: 8px;
-  min-width: var(--tap);
-  min-height: var(--tap);
-  padding: 0 12px;
-  border: 1px solid var(--field-line);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.72);
-  color: var(--accent-deep);
-  font-family: 'Prompt', sans-serif;
-  font-size: 15px;
-  font-weight: 600;
-  text-decoration: none;
-  transition:
-    background-color 0.18s ease,
-    border-color 0.18s ease;
-}
-
-.back-link:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
-}
-
-.back-arrow {
-  display: inline-block;
-  transition: transform 0.18s ease;
-}
-
-.detail-note {
-  margin: 0;
-  font-size: 14px;
-  line-height: 1.6;
-  color: var(--ink-muted);
-}
-
-.detail-note.error {
-  color: #8a1c1c;
-}
-
-.facts {
-  display: grid;
-  gap: 0;
-  margin: 0;
-}
-
-.fact {
-  display: grid;
-  grid-template-columns: 132px minmax(0, 1fr);
-  gap: 10px;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--line);
-}
-
-.fact:last-child {
-  border-bottom: none;
-}
-
-.fact dt {
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--ink-muted);
-}
-
-.fact dd {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin: 0;
-  font-size: 15px;
-  line-height: 1.5;
-  color: var(--ink);
-  overflow-wrap: anywhere;
-}
-
-.mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  letter-spacing: 0.04em;
-}
-
-.detail-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.reveal-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: var(--tap);
-  padding: 0 16px;
-  border: 1px solid var(--field-line);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.8);
-  color: var(--accent-deep);
-  font-family: 'Prompt', sans-serif;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition:
-    background-color 0.18s ease,
-    border-color 0.18s ease;
-}
-
-.reveal-btn:disabled {
-  cursor: progress;
-  opacity: 0.7;
-}
-
-.reveal-btn:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
-}
-
 /* Hover and press are for a real mouse only: a finger gets no hover state. */
 @media (hover: hover) and (pointer: fine) {
   .list-row:hover {
@@ -987,102 +544,6 @@ onBeforeUnmount(() => {
 
   .import-link:active {
     transform: scale(0.99);
-  }
-
-  .back-link:hover {
-    background-color: rgba(79, 70, 229, 0.07);
-    border-color: rgba(79, 70, 229, 0.35);
-  }
-
-  .back-link:hover .back-arrow {
-    transform: translateX(-3px);
-  }
-
-  .detail-close:hover,
-  .reveal-btn:hover:not(:disabled) {
-    background-color: rgba(79, 70, 229, 0.07);
-    border-color: rgba(79, 70, 229, 0.35);
-  }
-}
-
-/* Desktop split: the list keeps the left column and the detail takes a fixed
-   right column. The finder becomes the list column's header so the rows keep
-   their four columns. */
-@media (min-width: 1080px) {
-  .page.is-split {
-    grid-template-columns: minmax(0, 1fr) 380px;
-  }
-
-  .page.is-split .finder {
-    grid-column: 1;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 12px 16px;
-    padding: 16px 18px;
-  }
-
-  .page.is-split .finder-copy {
-    grid-column: 1 / -1;
-  }
-
-  .page.is-split .eyebrow {
-    display: none;
-  }
-
-  .page.is-split .title {
-    margin: 0 0 4px;
-    font-size: 24px;
-  }
-
-  .page.is-split .sub {
-    font-size: 14px;
-  }
-
-  .page.is-split .search {
-    grid-column: 1;
-  }
-
-  .page.is-split .search-hint {
-    grid-column: 1 / -1;
-  }
-
-  .page.is-split .import-link {
-    grid-column: 2;
-  }
-
-  .page.is-split .results {
-    grid-column: 1;
-  }
-
-  .page.is-split .detail-layer {
-    position: sticky;
-    top: 24px;
-    grid-column: 2;
-    grid-row: 1 / span 2;
-  }
-}
-
-/* Phones and tablets: the detail is a full-screen sheet over the untouched list. */
-@media (max-width: 1079px) {
-  .detail-layer {
-    position: fixed;
-    inset: 0;
-    z-index: 70;
-    display: block;
-  }
-
-  .detail-scrim {
-    position: absolute;
-    inset: 0;
-    background: rgba(23, 32, 84, 0.34);
-  }
-
-  .detail {
-    position: relative;
-    height: 100%;
-    max-height: none;
-    border: 0;
-    border-radius: 0;
-    padding: calc(12px + env(safe-area-inset-top)) 16px calc(28px + env(safe-area-inset-bottom));
   }
 }
 
@@ -1127,10 +588,6 @@ onBeforeUnmount(() => {
     margin-bottom: 0;
   }
 
-  .list-row.is-selected {
-    box-shadow: inset 0 0 0 2px var(--accent);
-  }
-
   .cell {
     display: grid;
     grid-template-columns: 88px minmax(0, 1fr);
@@ -1147,42 +604,6 @@ onBeforeUnmount(() => {
   /* The pill keeps its own width instead of filling the value column. */
   .list-row .badge {
     justify-self: start;
-  }
-
-  .fact {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 2px;
-  }
-}
-
-/* The sheet rise: transform and opacity only, well under 600ms. */
-.detail-slide-enter-active {
-  /* Named easings only: a cubic-bezier() carries commas and reads as extra
-     properties in the transition guard. */
-  transition:
-    opacity 0.24s ease-out,
-    transform 0.32s ease-out;
-}
-
-.detail-slide-leave-active {
-  transition: opacity 0.18s ease;
-  /* Fading out must not keep swallowing taps meant for the list. */
-  pointer-events: none;
-}
-
-.detail-slide-enter-from {
-  opacity: 0;
-  transform: translate3d(0, 12px, 0);
-}
-
-.detail-slide-leave-to {
-  opacity: 0;
-}
-
-@media (max-width: 1079px) {
-  .detail-slide-enter-from,
-  .detail-slide-leave-to {
-    transform: translate3d(0, 100%, 0);
   }
 }
 
@@ -1217,13 +638,7 @@ onBeforeUnmount(() => {
   .results,
   .list-row,
   .import-link,
-  .import-arrow,
-  .back-link,
-  .back-arrow,
-  .detail-close,
-  .reveal-btn,
-  .detail-slide-enter-active,
-  .detail-slide-leave-active {
+  .import-arrow {
     animation: none;
     transition: none;
   }

@@ -211,7 +211,8 @@ describe('HR employee directory page', () => {
 
   it('keeps the link targets exactly as they were', () => {
     expect(PAGE_SOURCE).toContain('to="/hr/employees/import"')
-    expect(PAGE_SOURCE).toContain('router.push(`/hr/employees/${encodeURIComponent(id)}`)')
+    // A row is a link to the employee's own page, carrying the search.
+    expect(PAGE_SOURCE).toContain('path: `/hr/employees/${encodeURIComponent(item.id)}`')
     expect(PAGE_SOURCE).not.toMatch(/\sto="(?!\/hr\/employees\/import")/)
     expect(PAGE_SOURCE).not.toMatch(/(^|\s)href=/)
   })
@@ -245,7 +246,7 @@ describe('HR employee directory page', () => {
     await new Promise((resolve) => setTimeout(resolve, 420))
     await flushPromises()
 
-    const rows = wrapper.findAll('button.list-row')
+    const rows = wrapper.findAll('a.list-row')
     expect(rows).toHaveLength(2)
     expect(rows[0].find('.badge').classes()).toContain('badge-on')
     expect(rows[1].find('.badge').classes()).toContain('badge-off')

@@ -7,7 +7,7 @@ import PageLoading from './components/PageLoading.vue'
 // question the guard asks before offering a link.
 import { canOpenPath, homePathByRole } from './lib/route-access.js'
 import { loginTargetForPath } from './lib/notification-routes.js'
-import { canPrintLeave } from './leave-print.js'
+import { canPrintLeave } from './lib/print-access.js'
 
 // Only the shell is in the first bundle. Every page is its own chunk, so the
 // home of a role paints without downloading the calendar, the spreadsheet
@@ -16,11 +16,6 @@ import { canPrintLeave } from './leave-print.js'
 // there is no blank screen while a chunk loads.
 const page = (loader) =>
   defineAsyncComponent({ loader, loadingComponent: PageLoading, delay: 0 })
-
-// The employee list and its master-detail selection are one page: sharing the
-// wrapper keeps the same component instance across /hr/employees and
-// /hr/employees/:id, so the list (search text, results, scroll) never remounts.
-const hrEmployeesPage = page(() => import('./pages/HrEmployeesPage.vue'))
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -99,7 +94,7 @@ export const router = createRouter({
         },
         {
           path: '/hr/employees',
-          component: hrEmployeesPage,
+          component: page(() => import('./pages/HrEmployeesPage.vue')),
           meta: { requiresAuth: true },
         },
         {
@@ -118,10 +113,9 @@ export const router = createRouter({
           meta: { requiresAuth: true },
         },
         {
+          // One employee, one page: the list opens this instead of a panel.
           path: '/hr/employees/:id',
-          // Same component as the list: the detail is a panel beside it, not a
-          // second page, and the URL stays the employee's own route.
-          component: hrEmployeesPage,
+          component: page(() => import('./pages/HrEmployeeDetailPage.vue')),
           meta: { requiresAuth: true },
         },
         {

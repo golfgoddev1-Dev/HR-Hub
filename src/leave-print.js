@@ -87,12 +87,10 @@ export function isBackdatedRequest(request) {
   return request?.source === 'hr_backdated'
 }
 
-/** Only HR may open the printable form. */
-export const PRINT_ALLOWED_ROLE = 'hr'
-
-export function canPrintLeave(role) {
-  return role === PRINT_ALLOWED_ROLE
-}
+// The access check lives in its own module so the router guard can use it
+// without pulling this formatter into the entry bundle. Re-exported here so the
+// form's own callers keep their import.
+export { PRINT_ALLOWED_ROLE, canPrintLeave } from './lib/print-access.js'
 
 function nameOf(person) {
   if (!person) return NO_VALUE
