@@ -1,10 +1,11 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import PushToggle from '../components/PushToggle.vue'
 import { getSession } from '../api.js'
 import { formatThaiDate, formatThaiDateRange } from '../lib/thai-date.js'
 import { peekCached } from '../lib/data-cache.js'
+import { isLiteMode, prefersReducedMotion } from '../lib/lite-mode.js'
 import {
   APPROVALS_TTL_MS,
   DATA_KEYS,
@@ -57,6 +58,100 @@ function paintCounts() {
 onMounted(paintCounts)
 watch(() => [counts.value.pending, counts.value.approved], paintCounts, { flush: 'post' })
 const retentionDays = ref(0)
+
+// ---- The card stack -------------------------------------------------------
+// The employee's own newest requests, shown one at a time in the desk's corner.
+// It reads the list the page already loaded: no extra request, no new endpoint.
+const CYCLE_MS = 4600
+const STACK_LIMIT = 4
+// Cycling is for a capable device only. A lite device, a reduced-motion visitor
+// and the low or static tier all keep the first card still.
+const STACK_TIERS = ['high', 'medium']
+
+const stackItems = computed(() => results.value.slice(0, STACK_LIMIT))
+const stackIndex = ref(0)
+const stackHovered = ref(false)
+const stackFocused = ref(false)
+const stackPaused = ref(false)
+const stackTier = ref('high')
+const stackCanCycle = ref(false)
+
+let cycleTimer = null
+let tierObserver = null
+
+const stackCard = computed(() => stackItems.value[stackIndex.value] ?? null)
+const showStack = computed(() => !loading.value && stackItems.value.length > 0)
+
+function readTier() {
+  if (typeof document === 'undefined') return 'high'
+  return document.documentElement.getAttribute('data-bg-tier') || 'high'
+}
+
+function pageIsVisible() {
+  return typeof document === 'undefined' || document.visibilityState !== 'hidden'
+}
+
+function tierAllowsCycle() {
+  return STACK_TIERS.includes(stackTier.value)
+}
+
+function stackIsAllowed() {
+  return (
+    stackItems.value.length > 1 &&
+    !isLiteMode() &&
+    !prefersReducedMotion() &&
+    tierAllowsCycle()
+  )
+}
+
+function cycleRunning() {
+  return (
+    stackIsAllowed() &&
+    !stackHovered.value &&
+    !stackFocused.value &&
+    !stackPaused.value &&
+    pageIsVisible()
+  )
+}
+
+function stopCycle() {
+  if (cycleTimer === null) return
+  clearTimeout(cycleTimer)
+  cycleTimer = null
+}
+
+// One step every 4.6s, scheduled one at a time. Chained timeouts rather than an
+// interval: the page owns no polling timer (tests/approval-count.test.js keeps
+// that to src/lib/approval-count.js), and a pause can drop the pending step
+// instead of letting it fire behind the pointer.
+function scheduleNextStep() {
+  if (cycleTimer !== null || !cycleRunning()) return
+  cycleTimer = setTimeout(() => {
+    cycleTimer = null
+    if (!cycleRunning()) return
+    if (stackItems.value.length > 1) {
+      stackIndex.value = (stackIndex.value + 1) % stackItems.value.length
+    }
+    scheduleNextStep()
+  }, CYCLE_MS)
+}
+
+/** One place decides whether the stack is alive; every trigger calls it. */
+function syncCycle() {
+  stackCanCycle.value = stackIsAllowed()
+  if (cycleRunning()) scheduleNextStep()
+  else stopCycle()
+}
+
+function onVisibilityChange() {
+  syncCycle()
+}
+
+watch(stackItems, (items) => {
+  if (stackIndex.value >= items.length) stackIndex.value = 0
+  syncCycle()
+})
+watch([stackHovered, stackFocused, stackPaused, stackTier], syncCycle)
 
 const route = useRoute()
 const focusId = computed(() => (typeof route.query.focus === 'string' ? route.query.focus : ''))
@@ -128,6 +223,32 @@ onMounted(async () => {
   const session = await getSession()
   if (session?.isApprover === true) await loadPendingApprovals()
 })
+
+// The stack follows the tier the 3D layer publishes. A drop to low or static
+// stops the cycle instead of animating on a device that asked for less.
+onMounted(() => {
+  stackTier.value = readTier()
+  syncCycle()
+  if (typeof document === 'undefined') return
+  document.addEventListener('visibilitychange', onVisibilityChange)
+  if (typeof MutationObserver !== 'function') return
+  tierObserver = new MutationObserver(() => {
+    stackTier.value = readTier()
+  })
+  tierObserver.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ['data-bg-tier'],
+  })
+})
+
+onBeforeUnmount(() => {
+  stopCycle()
+  tierObserver?.disconnect()
+  tierObserver = null
+  if (typeof document !== 'undefined') {
+    document.removeEventListener('visibilitychange', onVisibilityChange)
+  }
+})
 </script>
 
 <template>
@@ -162,6 +283,68 @@ onMounted(async () => {
           </dd>
         </div>
       </dl>
+
+      <!-- The desk's one bold element: the employee's own newest requests, one
+           card at a time. It moves only while the page is watched, on a device
+           that can afford it, and never for a reduced-motion visitor. -->
+      <div
+        v-if="showStack"
+        class="showcase"
+        role="group"
+        aria-labelledby="showcase-title"
+        @mouseenter="stackHovered = true"
+        @mouseleave="stackHovered = false"
+        @focusin="stackFocused = true"
+        @focusout="stackFocused = false"
+      >
+        <div class="showcase-head">
+          <h2 id="showcase-title" class="showcase-title">ใบลาล่าสุด</h2>
+          <p class="showcase-meta" aria-live="off">
+            ใบที่ {{ stackIndex + 1 }} จาก {{ stackItems.length }}
+          </p>
+        </div>
+
+        <div class="stack">
+          <template v-if="stackCanCycle">
+            <span class="stack-ghost stack-ghost-two" aria-hidden="true"></span>
+            <span class="stack-ghost stack-ghost-one" aria-hidden="true"></span>
+          </template>
+
+          <Transition name="stack">
+            <article v-if="stackCard" :key="stackCard.id" class="stack-card">
+              <div class="stack-top">
+                <span class="code">{{ stackCard.requestCode || '—' }}</span>
+                <span class="badge" :class="statusClass(stackCard.status)">
+                  {{ statusLabel(stackCard.status) }}
+                </span>
+              </div>
+              <h3 class="stack-type">{{ stackCard.leaveTypeName || 'ไม่ระบุประเภท' }}</h3>
+              <dl class="stack-facts">
+                <div class="stack-fact">
+                  <dt>ช่วงวันที่</dt>
+                  <dd>{{ formatThaiDateRange(stackCard.startDate, stackCard.endDate) }}</dd>
+                </div>
+                <div class="stack-fact">
+                  <dt>จำนวนวัน</dt>
+                  <dd>{{ daysText(stackCard) }}</dd>
+                </div>
+              </dl>
+            </article>
+          </Transition>
+        </div>
+
+        <!-- WCAG 2.2.2: an auto-switching card needs a way to stop it that a
+             finger can reach, not only a mouse or a focused key. -->
+        <button
+          v-if="stackCanCycle"
+          type="button"
+          class="stack-toggle"
+          :aria-pressed="stackPaused ? 'true' : 'false'"
+          @click="stackPaused = !stackPaused"
+        >
+          {{ stackPaused ? 'สลับการ์ดต่อ' : 'หยุดสลับการ์ด' }}
+        </button>
+      </div>
     </section>
 
     <!-- Notifications sit beside the list on a wide screen, above it on a phone. -->
@@ -281,7 +464,9 @@ onMounted(async () => {
        indigo-900 on glass 13.4, slate-700 8.4, slate-600 6.2
        pending #8a4b06 on glass 5.5, approved #1c6b3f on glass 5.2
        indigo-700 on glass 6.4, white on indigo-600 6.29
-       status pairs on their own fills: 6.16 / 5.74 / 6.89 / 5.65 */
+       status pairs on their own fills: 6.16 / 5.74 / 6.89 / 5.65
+     The card stack, sampled in the browser (2%/98% backdrop, high @1280):
+       stack type 15.99, facts 7.58 / 15.99, meta 5.77, pause 7.77 */
   --ink: #1e1b4b;
   --ink-body: #334155;
   --ink-muted: #475569;
@@ -291,6 +476,8 @@ onMounted(async () => {
   --line: rgba(30, 27, 75, 0.12);
   --pending-ink: #8a4b06;
   --approved-ink: #1c6b3f;
+  /* The card stack's boundary: 3.2:1 over the card glass, a real edge. */
+  --stack-line: rgba(30, 27, 75, 0.52);
   --danger: #a01b1b;
   --warning: #92400e;
   --tap: 44px;
@@ -489,6 +676,197 @@ onMounted(async () => {
 .stat-unit {
   font-size: 13px;
   color: var(--ink-muted);
+}
+
+/* ---- The card stack: the one bold element on this page ------------------- */
+
+/* The hero takes a second column only when a stack exists, so a page with no
+   requests keeps the composition it had. */
+@media (min-width: 900px) {
+  .hero:has(.showcase) {
+    grid-template-columns: minmax(0, 1fr) 300px;
+    align-items: start;
+  }
+
+  .hero:has(.showcase) .hero-head,
+  .hero:has(.showcase) .stats {
+    grid-column: 1;
+  }
+
+  .hero:has(.showcase) .showcase {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: center;
+  }
+}
+
+.showcase {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.showcase-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+
+.showcase-title {
+  margin: 0;
+  font-family: 'Prompt', sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--ink);
+}
+
+.showcase-meta {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--ink-muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A fixed box with absolute cards: a switch never moves the page around it.
+   The height fits the two-fact card with its padding, and the bottom margin
+   leaves room for the two ghost edges to show under it. */
+.stack {
+  position: relative;
+  min-height: 176px;
+  margin-bottom: 26px;
+}
+
+.stack-ghost {
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--stack-line);
+  border-radius: var(--radius-row);
+  background-color: var(--leave-home-glass);
+  pointer-events: none;
+}
+
+.stack-ghost-one {
+  transform: translate3d(0, 10px, 0) rotate(-1.8deg) scale(0.985);
+}
+
+.stack-ghost-two {
+  transform: translate3d(0, 20px, 0) rotate(2.6deg) scale(0.968);
+  opacity: 0.66;
+}
+
+.stack-card {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--stack-line);
+  border-radius: var(--radius-row);
+  background-color: var(--leave-home-glass);
+  -webkit-backdrop-filter: var(--leave-home-filter);
+  backdrop-filter: var(--leave-home-filter);
+  /* Depth is what separates the live card from the two edges under it; the
+     glass itself stays the page's single tint. */
+  box-shadow:
+    0 18px 36px rgba(23, 32, 84, 0.2),
+    0 2px 6px rgba(23, 32, 84, 0.12);
+}
+
+.stack-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.stack-type {
+  margin: 0;
+  font-family: 'Prompt', sans-serif;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.stack-facts {
+  display: grid;
+  gap: 8px;
+  margin: 4px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.stack-fact {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.stack-fact dt {
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--ink-muted);
+}
+
+.stack-fact dd {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--ink);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.stack-toggle {
+  justify-self: start;
+  align-self: start;
+  min-width: var(--tap);
+  min-height: var(--tap);
+  padding: 0 12px;
+  border: 1px solid var(--stack-line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--accent-deep);
+  font-family: 'Prompt', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background-color 0.18s ease,
+    border-color 0.18s ease;
+}
+
+.stack-toggle:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* A switch is one card leaving upward while the next arrives from below: two
+   properties, under 600ms, and nothing else on the page moves. */
+.stack-enter-active,
+.stack-leave-active {
+  transition:
+    opacity 0.24s ease-out,
+    transform 0.4s ease-out;
+}
+
+.stack-enter-from {
+  opacity: 0;
+  transform: translate3d(0, 26px, 0) scale(0.98);
+}
+
+.stack-leave-to {
+  opacity: 0;
+  transform: translate3d(0, -20px, 0) scale(0.99);
 }
 
 /* Notifications are a component of their own; the page gives it the same glass
@@ -777,6 +1155,11 @@ onMounted(async () => {
     font-size: 30px;
   }
 
+  .stack {
+    min-height: 184px;
+    margin-bottom: 24px;
+  }
+
   .list-panel {
     padding: 16px 6px 6px;
     border-radius: 18px;
@@ -827,7 +1210,11 @@ onMounted(async () => {
   .list-panel,
   .row,
   .primary-link,
-  .note a {
+  .note a,
+  .stack-card,
+  .stack-toggle,
+  .stack-enter-active,
+  .stack-leave-active {
     animation: none;
     transition: none;
   }
