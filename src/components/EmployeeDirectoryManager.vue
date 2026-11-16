@@ -825,22 +825,33 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 10px;
+  /* The padding moved into the row height: the input inside fills the 44px
+     target instead of the row growing by it. */
+  min-height: 44px;
   color: #5c7176;
   border: 1px solid #cfdcda;
   border-radius: 10px;
-  padding: 10px 12px;
+  padding: 0 12px;
   background: #f8fbfa;
 }
 
 .search input {
   flex: 1;
   min-width: 0;
+  min-height: 44px;
   border: none;
   outline: none;
   background: transparent;
   font-family: inherit;
   font-size: 15px;
   color: #12343b;
+}
+
+/* The browser's own placeholder grey is #757575: 4.43:1 on this #f8fbfa fill.
+   Slate-600 is the placeholder ink the rest of the app uses and reaches 7.28:1. */
+.search input::placeholder {
+  color: #475569;
+  opacity: 1;
 }
 
 .search-icon {

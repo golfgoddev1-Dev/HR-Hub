@@ -602,8 +602,10 @@ loadPage()
   gap: 6px;
   align-self: flex-start;
   max-width: 100%;
+  min-height: 44px;
   padding: 7px 14px;
-  border: 1px solid #d8e4de;
+  /* 3.5:1 on white; the old #d8e4de edge was 1.31:1. */
+  border: 1px solid #6f9085;
   border-radius: 999px;
   background: #ffffff;
   color: #115447;
@@ -646,6 +648,7 @@ loadPage()
 }
 
 .tab {
+  min-height: 44px;
   padding: 8px 14px;
   border: 1px solid #d8e4de;
   border-radius: 999px;
@@ -726,6 +729,7 @@ loadPage()
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  min-height: 44px;
   padding: 5px 12px;
   border: 1px solid #dbe6e0;
   border-radius: 999px;

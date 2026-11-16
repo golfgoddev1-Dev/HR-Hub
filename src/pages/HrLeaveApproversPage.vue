@@ -377,7 +377,7 @@ onMounted(async () => {
 .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
 
 .tab {
-  min-height: 40px;
+  min-height: 44px;
   padding: 0 18px;
   border: 1px solid #cfdcda;
   border-radius: 999px;
@@ -387,6 +387,12 @@ onMounted(async () => {
   font-size: 13.5px;
   font-weight: 600;
   cursor: pointer;
+}
+
+/* A Vuetify field's inner input is a focus proxy: the 44px hit area belongs to
+   the wrapper (docs/ai/hr-hub-ui-motion.md section 4). */
+:deep(.v-field) {
+  min-height: 44px;
 }
 
 .tab-active { background: #10504e; border-color: #10504e; color: #ffffff; }

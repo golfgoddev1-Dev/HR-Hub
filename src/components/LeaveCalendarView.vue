@@ -1060,9 +1060,41 @@ onBeforeUnmount(() => {
   color: #12343b;
 }
 
+/* FullCalendar's own controls are a toolbar row (prev/next/today) and two link
+   rows inside the grid. The row or the cell grows to the tap target; no label or
+   glyph shrinks. */
+:deep(.fc .fc-button) {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+:deep(.fc .fc-col-header-cell-cushion) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+}
+
+/* The day's top strip grows to the tap target, and the events start below it, so
+   the number's 44px box is never under the event layer. */
+:deep(.fc .fc-daygrid-day-top) {
+  min-height: 44px;
+}
+
+/* The number sits at the end of its row either way: the hit box grows leftwards,
+   inside the day cell, so the calendar's grid does not change. */
+:deep(.fc .fc-daygrid-day-number) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 44px;
+  min-height: 44px;
+}
+
 :deep(.fc .fc-button-primary) {
   background: #ffffff;
-  border-color: #d8e3e1;
+  /* 3.5:1 on white; the old #d8e3e1 edge was 1.31:1. */
+  border-color: #6f9085;
   color: #10504e;
   text-transform: none;
   font-weight: 600;

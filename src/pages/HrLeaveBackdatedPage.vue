@@ -340,7 +340,15 @@ onMounted(load)
   line-height: 1.6;
 }
 
-.back-link { font-size: 14px; font-weight: 600; color: #10504e; text-decoration: none; }
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #10504e;
+  text-decoration: none;
+}
 
 .card {
   background: #ffffff;
@@ -375,7 +383,7 @@ onMounted(load)
 .input:disabled { background: #f0f3f2; color: #6b7c80; }
 .textarea { resize: vertical; line-height: 1.6; }
 
-.checkbox { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.checkbox { display: flex; align-items: center; min-height: 44px; gap: 8px; cursor: pointer; }
 .checkbox input { width: 18px; height: 18px; accent-color: #10504e; }
 
 .hint, .hint-small { font-size: 13px; color: #5c7176; line-height: 1.6; }

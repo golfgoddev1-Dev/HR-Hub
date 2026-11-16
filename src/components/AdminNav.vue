@@ -145,6 +145,8 @@ async function logout() {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  /* The bar wraps, so a 44px item grows the bar instead of the label. */
+  min-height: 44px;
   padding: 8px 12px;
   border-radius: 8px;
   color: #d8ece8;

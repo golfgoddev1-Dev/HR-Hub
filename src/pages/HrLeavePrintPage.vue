@@ -228,7 +228,15 @@ onMounted(load)
   margin: 0 auto 16px;
 }
 
-.back-link { font-size: 14px; font-weight: 600; color: #10504e; text-decoration: none; }
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #10504e;
+  text-decoration: none;
+}
 
 .print-btn {
   min-height: 42px;

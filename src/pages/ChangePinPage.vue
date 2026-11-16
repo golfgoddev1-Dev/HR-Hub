@@ -175,6 +175,10 @@ async function submit() {
 }
 
 .toggle {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  min-width: 44px;
   border: none;
   background: none;
   padding: 0 4px;

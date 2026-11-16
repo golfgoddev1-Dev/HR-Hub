@@ -271,6 +271,12 @@ loadOverview()
 
 <style scoped>
 
+/* Vuetify's default button height is 36px here; the page's action rows grow to
+   the 44px tap target instead of the label shrinking. */
+:deep(.v-btn) {
+  min-height: 44px;
+}
+
 .page-main {
   flex: 1;
   min-width: 0;

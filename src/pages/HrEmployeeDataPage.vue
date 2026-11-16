@@ -52,6 +52,9 @@ import EmployeeDirectoryManager from '../components/EmployeeDirectoryManager.vue
 }
 
 .link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
   color: #10504e;
   font-size: 14px;
   font-weight: 600;

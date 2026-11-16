@@ -377,10 +377,17 @@ onMounted(async () => {
   line-height: 1.6;
 }
 
+/* The Vuetify buttons on this toolbar are `size="small"`; the toolbar row grows
+   to 44px rather than the button keeping a 28px hit area. */
+:deep(.v-btn) {
+  min-height: 44px;
+}
+
 .export-link {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  min-height: 44px;
   padding: 9px 14px;
   border-radius: 10px;
   background: #ffffff;
@@ -423,12 +430,22 @@ onMounted(async () => {
 .field input,
 .field select,
 .search-row input {
+  min-height: 44px;
   padding: 8px 10px;
-  border: 1px solid #cfdcda;
+  /* 3.5:1 on white; the old #cfdcda edge was 1.41:1. */
+  border: 1px solid #6f9085;
   border-radius: 8px;
   font-size: 14px;
   color: #12343b;
   background: #ffffff;
+}
+
+/* Slate-600 instead of the browser's #757575, the placeholder ink the rest of
+   the app uses: 7.58:1 on this white fill. */
+.field input::placeholder,
+.search-row input::placeholder {
+  color: #475569;
+  opacity: 1;
 }
 
 .tabs {
@@ -438,6 +455,7 @@ onMounted(async () => {
 }
 
 .tab {
+  min-height: 44px;
   padding: 9px 16px;
   border-radius: 999px;
   border: 1px solid #cfdcda;
