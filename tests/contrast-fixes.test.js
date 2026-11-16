@@ -23,6 +23,14 @@ const PILLS = [
   'src/pages/RegistrantsPage.vue',
 ].map((path) => ({ path, css: styles(readSource(path)) }))
 
+// The two links the first pass left out: the export on the backfill page and the
+// template download on both import pages.
+const LINK_FILES = [
+  { path: 'src/pages/MeetingBackfillHistoryPage.vue', selector: '.export-link' },
+  { path: 'src/pages/MeetingBackfillImportPage.vue', selector: '.template-link' },
+  { path: 'src/pages/HrEmployeeImportPage.vue', selector: '.template-link' },
+].map(({ path, selector }) => ({ path, selector, css: styles(readSource(path)) }))
+
 const BORDER = '#6f9085'
 const PLACEHOLDER = '#475569'
 
@@ -132,6 +140,14 @@ describe('the control borders', () => {
   it('are on the notification switch outline', () => {
     const body = ruleBody(styles(SWITCH), '.notify-switch')
     expect(body).toContain(`border: 1px solid ${BORDER}`)
+  })
+
+  it('are on the import and export links', () => {
+    for (const { path, selector, css } of LINK_FILES) {
+      const body = ruleBody(css, selector)
+      expect(body, path).toContain(`border: 1px solid ${BORDER}`)
+      expect(body, path).not.toContain('#cfdcda')
+    }
   })
 
   it('are on every controller pill and the menu button', () => {

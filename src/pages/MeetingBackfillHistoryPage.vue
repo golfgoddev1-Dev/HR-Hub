@@ -391,7 +391,8 @@ onMounted(async () => {
   padding: 9px 14px;
   border-radius: 10px;
   background: #ffffff;
-  border: 1px solid #cfdcda;
+  /* 3.5:1 on white; the old #cfdcda edge was 1.41:1. */
+  border: 1px solid #6f9085;
   color: #10504e;
   font-size: 13px;
   font-weight: 600;
