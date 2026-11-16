@@ -66,6 +66,7 @@ import {
 } from "../leave-history.js";
 import { isDateString as isCalendarDate, spanDays as calendarSpanDays } from "../leave-rules.js";
 import { readHolidayRows } from "../leave-holidays.js";
+import { bangkokToday } from "../register-window.js";
 
 const leave = new Hono();
 
@@ -82,6 +83,13 @@ const EMPLOYEES_TABLE = "employees";
 const DEPARTMENTS_TABLE = "departments";
 const HR_ADMINS_TABLE = "hr_admins";
 const AUDIT_TABLE = "audit_logs";
+const LEAVE_QUOTAS_TABLE = "employee_leave_quotas";
+
+// A quota is a year and a half-day-aware number of days. The year range matches
+// the SQL check constraint so the message and the table agree.
+const QUOTA_YEAR_MIN = 2000;
+const QUOTA_YEAR_MAX = 2100;
+const QUOTA_DAYS_MAX = 366;
 
 const ACTION_REQUESTED = "leave_requested";
 const ACTION_APPROVED = "leave_approved";
@@ -103,6 +111,7 @@ const MESSAGE = {
   alreadyDecided: "ใบลานี้ถูกดำเนินการแล้ว",
   noApprover: "ยังไม่ได้กำหนดผู้อนุมัติ",
   duplicateCode: "รหัสใบลาซ้ำ กรุณายื่นใหม่อีกครั้ง",
+  balanceYear: "ปีไม่ถูกต้อง กรุณาเลือกปีเป็นตัวเลข 4 หลักแล้วลองอีกครั้ง",
 };
 
 // `medicalCertificateUrl` is deliberately absent: a client-supplied public URL
@@ -248,6 +257,22 @@ async function readMultipartRequest(c) {
 
 function invalidBody(c) {
   return c.json({ ok: false, message: MESSAGE.invalid }, 400);
+}
+
+/** Half days are stored as 0.5, so sums are rounded back to one decimal. */
+function roundDays(value) {
+  return Math.round(Number(value) * 10) / 10;
+}
+
+/** A stored quota, or null when there is none or the value is unusable. */
+function quotaDaysOf(value) {
+  const days = Number(value);
+  if (!Number.isFinite(days) || days < 0 || days > QUOTA_DAYS_MAX) return null;
+  return roundDays(days);
+}
+
+function currentBangkokYear() {
+  return Number(bangkokToday().slice(0, 4));
 }
 
 /** Role check plus a fresh employee read, so department_id is current. */
@@ -756,6 +781,88 @@ leave.get("/requests/mine", async (c) => {
     );
   } catch (error) {
     logError("leave mine failed", error);
+    return c.json({ ok: false, message: MESSAGE.saveError }, 500);
+  }
+});
+
+// --- GET /api/leave/balance -------------------------------------------------
+// The caller's own quota position for one year: for every active leave type,
+// the quota HR set (or null), the days already approved in that year, the days
+// still awaiting approval, and what is left. The employee id comes from the
+// session only — a query parameter naming someone else is ignored — and the
+// day counts are the stored leave_requests.days, so the numbers match the
+// request list below them on the same page.
+
+leave.get("/balance", async (c) => {
+  const denied = await guard(c);
+  if (denied) return denied.response;
+
+  const rawYear = new URL(c.req.raw.url).searchParams.get("year");
+  const year = rawYear === null || rawYear === "" ? currentBangkokYear() : Number(rawYear);
+  if (Number.isInteger(year) === false || year < QUOTA_YEAR_MIN || year > QUOTA_YEAR_MAX) {
+    return c.json({ ok: false, message: MESSAGE.balanceYear }, 400);
+  }
+
+  try {
+    const db = c.get("leaveDb");
+    const employee = c.get("leaveEmployee");
+
+    const [typeRows, quotaRows, requestRows] = await Promise.all([
+      loadTypes(db),
+      db.select(LEAVE_QUOTAS_TABLE, {
+        columns: "leave_type_id,quota_days",
+        filters: [
+          ["employee_id", "eq", employee.id],
+          ["year", "eq", year],
+        ],
+      }),
+      db.select(LEAVE_REQUESTS_TABLE, {
+        columns: "leave_type_id,status,days",
+        filters: [
+          ["employee_id", "eq", employee.id],
+          ["status", "in", ["pending", "approved"]],
+          ["start_date", "gte", `${year}-01-01`],
+          ["start_date", "lte", `${year}-12-31`],
+        ],
+      }),
+    ]);
+
+    const quotas = new Map();
+    for (const row of quotaRows) {
+      const days = quotaDaysOf(row.quota_days);
+      if (row.leave_type_id && days !== null) quotas.set(row.leave_type_id, days);
+    }
+
+    const approved = new Map();
+    const waiting = new Map();
+    for (const row of requestRows) {
+      if (row.leave_type_id === null || row.leave_type_id === undefined) continue;
+      const days = Number(row.days);
+      if (Number.isFinite(days) === false || days <= 0) continue;
+      const bucket = row.status === "approved" ? approved : waiting;
+      bucket.set(row.leave_type_id, (bucket.get(row.leave_type_id) ?? 0) + days);
+    }
+
+    const results = typeRows
+      .filter((row) => row.is_active !== false)
+      .map((row) => {
+        const quota = quotas.get(row.id) ?? null;
+        const used = roundDays(approved.get(row.id) ?? 0);
+        const pending = roundDays(waiting.get(row.id) ?? 0);
+        return {
+          leaveTypeId: row.id,
+          name: row.name ?? "",
+          quota,
+          used,
+          pending,
+          remaining: quota === null ? null : roundDays(quota - used - pending),
+        };
+      });
+
+    c.header("Cache-Control", "no-store");
+    return c.json({ ok: true, year, results }, 200);
+  } catch (error) {
+    logError("leave balance failed", error);
     return c.json({ ok: false, message: MESSAGE.saveError }, 500);
   }
 });

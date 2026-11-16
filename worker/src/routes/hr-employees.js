@@ -41,6 +41,26 @@ const IMPORT_ENTITY = "employee_import";
 const INITIAL_PIN_ACTION = "employee_initial_pin_issued";
 const RESET_CODE_ACTION = "pin_reset_code_issued";
 
+// Leave quotas: one value per employee, leave type and year. The year range and
+// the day range mirror the check constraints in
+// worker/sql/employee-leave-quotas.sql, so the API refuses exactly what the
+// table would refuse.
+const LEAVE_TYPES_TABLE = "leave_types";
+const LEAVE_QUOTAS_TABLE = "employee_leave_quotas";
+const QUOTA_ACTION = "employee_leave_quotas_updated";
+const QUOTA_ENTITY = "employee";
+const QUOTA_YEAR_MIN = 2000;
+const QUOTA_YEAR_MAX = 2100;
+const QUOTA_DAYS_MIN = 0;
+const QUOTA_DAYS_MAX = 366;
+
+const QUOTA_MESSAGES = {
+  year: "ปีไม่ถูกต้อง กรุณาเลือกปีเป็นตัวเลข 4 หลักแล้วลองอีกครั้ง",
+  days: "จำนวนวันไม่ถูกต้อง ต้องอยู่ระหว่าง 0 ถึง 366 วัน และเพิ่มทีละครึ่งวัน",
+  type: "ไม่พบประเภทลาที่เลือก กรุณาโหลดหน้าใหม่แล้วลองอีกครั้ง",
+  duplicate: "มีประเภทลาซ้ำในรายการ กรุณาตรวจสอบแล้วลองอีกครั้ง",
+};
+
 const INITIAL_PIN_DIGITS = 6;
 const RESET_CODE_DIGITS = 8;
 const RESET_CODE_TTL_MS = 24 * 60 * 60 * 1000;
@@ -678,6 +698,208 @@ hrEmployees.get("/:id", async (c) => {
     );
   } catch (error) {
     logError("hr employee read failed", error);
+    return c.json({ ok: false, message: SAVE_ERROR_MESSAGE }, 500);
+  }
+});
+
+// --- Leave quotas -------------------------------------------------------------
+// The HR side of the per-employee quota: read one year as a row per active leave
+// type, then save the whole year in one PUT. An empty value deletes that type's
+// row, which is how HR says "no quota" — zero days remains a real quota.
+
+/** A year from a query/body value; the current Bangkok year when absent. */
+function quotaYearOf(raw) {
+  if (raw === null || raw === undefined || raw === "") {
+    return Number(bangkokToday().slice(0, 4));
+  }
+  const year = Number(raw);
+  if (Number.isInteger(year) === false || year < QUOTA_YEAR_MIN || year > QUOTA_YEAR_MAX) {
+    return null;
+  }
+  return year;
+}
+
+/** A saved quota in days, or null when the value is outside the allowed range. */
+function quotaDaysOf(value) {
+  const days = Number(value);
+  if (Number.isFinite(days) === false) return null;
+  if (days < QUOTA_DAYS_MIN || days > QUOTA_DAYS_MAX) return null;
+  // Leave stores half days as 0.5, so a quota is a whole or half day only.
+  if (Number.isInteger(days * 2) === false) return null;
+  return Math.round(days * 10) / 10;
+}
+
+async function leaveTypeCatalog(db) {
+  return db.select(LEAVE_TYPES_TABLE, {
+    columns: "id,name,is_active",
+    order: "name.asc",
+  });
+}
+
+async function quotaRowsFor(db, employeeId, year) {
+  return db.select(LEAVE_QUOTAS_TABLE, {
+    columns: "leave_type_id,quota_days",
+    filters: [
+      ["employee_id", "eq", employeeId],
+      ["year", "eq", year],
+    ],
+  });
+}
+
+/** One row per active leave type, with the quota or null. */
+function quotaView(typeRows, quotaRows) {
+  const quotas = new Map();
+  for (const row of quotaRows) {
+    const days = quotaDaysOf(row.quota_days);
+    if (row.leave_type_id && days !== null) quotas.set(row.leave_type_id, days);
+  }
+  return typeRows
+    .filter((row) => row.is_active !== false)
+    .map((row) => ({
+      leaveTypeId: row.id,
+      name: row.name ?? "",
+      quota: quotas.get(row.id) ?? null,
+    }));
+}
+
+hrEmployees.get("/:id/leave-quotas", async (c) => {
+  const denied = await guard(c);
+  if (denied) return denied;
+
+  const employeeId = c.req.param("id");
+  if (!UUID_PATTERN.test(employeeId)) {
+    return c.json({ ok: false, message: INVALID_MESSAGE }, 400);
+  }
+
+  const year = quotaYearOf(new URL(c.req.raw.url).searchParams.get("year"));
+  if (year === null) return c.json({ ok: false, message: QUOTA_MESSAGES.year }, 400);
+
+  try {
+    const db = createDb(c.env);
+    const employee = await db.select(EMPLOYEES_TABLE, {
+      columns: "id",
+      filters: [["id", "eq", employeeId]],
+      single: true,
+    });
+    if (!employee) return c.json({ ok: false, message: NOT_FOUND_MESSAGE }, 404);
+
+    const [typeRows, quotaRows] = await Promise.all([
+      leaveTypeCatalog(db),
+      quotaRowsFor(db, employeeId, year),
+    ]);
+
+    c.header("Cache-Control", "no-store");
+    return c.json({ ok: true, year, results: quotaView(typeRows, quotaRows) }, 200);
+  } catch (error) {
+    logError("employee leave quotas read failed", error);
+    return c.json({ ok: false, message: SAVE_ERROR_MESSAGE }, 500);
+  }
+});
+
+hrEmployees.put("/:id/leave-quotas", async (c) => {
+  const denied = await guard(c);
+  if (denied) return denied;
+
+  const employeeId = c.req.param("id");
+  if (!UUID_PATTERN.test(employeeId)) {
+    return c.json({ ok: false, message: INVALID_MESSAGE }, 400);
+  }
+
+  let body;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ ok: false, message: INVALID_MESSAGE }, 400);
+  }
+  if (!isPlainObject(body)) return c.json({ ok: false, message: INVALID_MESSAGE }, 400);
+
+  const year = quotaYearOf(body.year);
+  if (year === null) return c.json({ ok: false, message: QUOTA_MESSAGES.year }, 400);
+  if (!Array.isArray(body.quotas)) return c.json({ ok: false, message: INVALID_MESSAGE }, 400);
+
+  // Validate the whole request before writing anything: a bad row never leaves
+  // half a year saved.
+  const entries = [];
+  const seen = new Set();
+  for (const entry of body.quotas) {
+    if (!isPlainObject(entry)) return c.json({ ok: false, message: INVALID_MESSAGE }, 400);
+    if (!UUID_PATTERN.test(String(entry.leaveTypeId ?? ""))) {
+      return c.json({ ok: false, message: QUOTA_MESSAGES.type }, 400);
+    }
+    if (seen.has(entry.leaveTypeId)) {
+      return c.json({ ok: false, message: QUOTA_MESSAGES.duplicate }, 400);
+    }
+    seen.add(entry.leaveTypeId);
+
+    // An empty value clears the quota; it is not zero days.
+    if (entry.days === null || entry.days === undefined || entry.days === "") {
+      entries.push({ leaveTypeId: entry.leaveTypeId, days: null });
+      continue;
+    }
+    const days = quotaDaysOf(entry.days);
+    if (days === null) return c.json({ ok: false, message: QUOTA_MESSAGES.days }, 400);
+    entries.push({ leaveTypeId: entry.leaveTypeId, days });
+  }
+
+  try {
+    const db = createDb(c.env);
+    const session = c.get("hrSession");
+    const employee = await db.select(EMPLOYEES_TABLE, {
+      columns: "id",
+      filters: [["id", "eq", employeeId]],
+      single: true,
+    });
+    if (!employee) return c.json({ ok: false, message: NOT_FOUND_MESSAGE }, 404);
+
+    const typeRows = await leaveTypeCatalog(db);
+    const activeIds = new Set(
+      typeRows.filter((row) => row.is_active !== false).map((row) => row.id)
+    );
+    for (const entry of entries) {
+      if (!activeIds.has(entry.leaveTypeId)) {
+        return c.json({ ok: false, message: QUOTA_MESSAGES.type }, 400);
+      }
+    }
+
+    for (const entry of entries) {
+      if (entry.days === null) {
+        const removed = await db.remove(LEAVE_QUOTAS_TABLE, [
+          ["employee_id", "eq", employeeId],
+          ["leave_type_id", "eq", entry.leaveTypeId],
+          ["year", "eq", year],
+        ]);
+        if (removed.error) throw new Error("leave quota delete failed");
+        continue;
+      }
+      const saved = await db.upsert(
+        LEAVE_QUOTAS_TABLE,
+        {
+          employee_id: employeeId,
+          leave_type_id: entry.leaveTypeId,
+          year,
+          quota_days: entry.days,
+          updated_at: new Date().toISOString(),
+          updated_by: session.employeeId,
+        },
+        { conflict: "employee_id,leave_type_id,year", columns: null }
+      );
+      if (saved.error) throw new Error("leave quota save failed");
+    }
+
+    // One audit row per save, in the same shape as the other HR writes: ids and
+    // the saved values, never a name or an address.
+    await db.insert(AUDIT_TABLE, {
+      actor_id: session.employeeId,
+      action: QUOTA_ACTION,
+      entity: QUOTA_ENTITY,
+      entity_id: employeeId,
+      detail: JSON.stringify({ year, quotas: entries }),
+    });
+
+    const quotaRows = await quotaRowsFor(db, employeeId, year);
+    return c.json({ ok: true, year, results: quotaView(typeRows, quotaRows) }, 200);
+  } catch (error) {
+    logError("employee leave quotas save failed", error);
     return c.json({ ok: false, message: SAVE_ERROR_MESSAGE }, 500);
   }
 });

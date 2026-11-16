@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import PushToggle from '../components/PushToggle.vue'
+import LeaveBalancePanel from '../components/LeaveBalancePanel.vue'
 import { getSession } from '../api.js'
 import { formatThaiDate, formatThaiDateRange } from '../lib/thai-date.js'
 import { peekCached } from '../lib/data-cache.js'
@@ -300,6 +301,10 @@ onBeforeUnmount(() => {
       <PushToggle />
     </section>
 
+    <!-- The year's quota position, one card per leave type that has one. It sits
+         between the notifications and the request list on every width. -->
+    <LeaveBalancePanel class="balance-panel" />
+
     <!-- The shelf: every request as one row, newest first (the Worker's order). -->
     <section class="list-panel" aria-labelledby="requests-title">
       <div class="panel-head">
@@ -453,6 +458,7 @@ onBeforeUnmount(() => {
     grid-template-columns: 320px minmax(0, 1fr);
     grid-template-areas:
       'hero hero'
+      'rail balance'
       'rail list';
     align-items: start;
     column-gap: 24px;
@@ -466,6 +472,10 @@ onBeforeUnmount(() => {
 
   .rail {
     grid-area: rail;
+  }
+
+  .balance-panel {
+    grid-area: balance;
   }
 
   .list-panel {

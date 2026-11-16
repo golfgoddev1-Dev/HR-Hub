@@ -77,7 +77,110 @@ async function reveal() {
   }
 }
 
-onMounted(load)
+// ---- Leave quota: one value per leave type, for the year picked here ---------
+const QUOTA_LOAD_ERROR = 'โหลดโควตาวันลาไม่สำเร็จ กรุณาลองใหม่'
+const QUOTA_SAVE_ERROR = 'บันทึกโควตาวันลาไม่สำเร็จ กรุณาลองใหม่'
+const QUOTA_DAYS_ERROR = 'จำนวนวันต้องอยู่ระหว่าง 0 ถึง 366 วัน และเพิ่มทีละครึ่งวัน'
+const QUOTA_READ_FIX = 'ตรวจสอบการเชื่อมต่อแล้วลองโหลดอีกครั้ง'
+const QUOTA_SAVE_FIX = 'ตรวจสอบค่าที่กรอกแล้วลองบันทึกอีกครั้ง'
+
+const currentYear = new Date().getFullYear()
+const quotaYears = [currentYear - 2, currentYear - 1, currentYear, currentYear + 1, currentYear + 2]
+const quotaYear = ref(currentYear)
+const quotaRows = ref([])
+const quotaLoading = ref(false)
+const quotaSaving = ref(false)
+const quotaError = ref('')
+const quotaFix = ref('')
+const quotaNotice = ref('')
+
+// An empty value is allowed: it means "no quota" and clears the row. A value
+// must be a whole or half day inside the same range the Worker accepts.
+const quotaValid = computed(() =>
+  quotaRows.value.every((row) => {
+    if (row.days === '' || row.days === null || row.days === undefined) return true
+    const days = Number(row.days)
+    if (Number.isFinite(days) === false) return false
+    if (days < 0 || days > 366) return false
+    return Number.isInteger(days * 2)
+  })
+)
+
+function quotaFormRows(results) {
+  return (Array.isArray(results) ? results : []).map((row) => ({
+    leaveTypeId: row.leaveTypeId,
+    name: row.name,
+    days: row.quota === null || row.quota === undefined ? '' : Number(row.quota),
+  }))
+}
+
+async function readQuotas() {
+  quotaLoading.value = true
+  quotaError.value = ''
+  quotaFix.value = ''
+  quotaNotice.value = ''
+  try {
+    const response = await fetch(
+      `/api/hr/employees/${encodeURIComponent(employeeId.value)}/leave-quotas?year=${quotaYear.value}`,
+      { credentials: 'same-origin' }
+    )
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok || data.ok !== true) {
+      quotaError.value = typeof data.message === 'string' ? data.message : QUOTA_LOAD_ERROR
+      quotaFix.value = QUOTA_READ_FIX
+      quotaRows.value = []
+      return
+    }
+    quotaRows.value = quotaFormRows(data.results)
+  } catch {
+    quotaError.value = QUOTA_LOAD_ERROR
+    quotaFix.value = QUOTA_READ_FIX
+    quotaRows.value = []
+  } finally {
+    quotaLoading.value = false
+  }
+}
+
+async function saveQuotas() {
+  if (quotaSaving.value || !quotaValid.value) return
+  quotaSaving.value = true
+  quotaError.value = ''
+  quotaFix.value = ''
+  quotaNotice.value = ''
+  try {
+    const quotas = quotaRows.value.map((row) => ({
+      leaveTypeId: row.leaveTypeId,
+      days: row.days === '' || row.days === null || row.days === undefined ? null : Number(row.days),
+    }))
+    const response = await fetch(
+      `/api/hr/employees/${encodeURIComponent(employeeId.value)}/leave-quotas`,
+      {
+        method: 'PUT',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ year: quotaYear.value, quotas }),
+      }
+    )
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok || data.ok !== true) {
+      quotaError.value = typeof data.message === 'string' ? data.message : QUOTA_SAVE_ERROR
+      quotaFix.value = QUOTA_SAVE_FIX
+      return
+    }
+    quotaRows.value = quotaFormRows(data.results)
+    quotaNotice.value = 'บันทึกโควตาวันลาแล้ว'
+  } catch {
+    quotaError.value = QUOTA_SAVE_ERROR
+    quotaFix.value = QUOTA_SAVE_FIX
+  } finally {
+    quotaSaving.value = false
+  }
+}
+
+onMounted(async () => {
+  await load()
+  if (employee.value) await readQuotas()
+})
 </script>
 
 <template>
@@ -163,6 +266,72 @@ onMounted(load)
           {{ revealing ? 'กำลังแสดง…' : 'ดูเลขเต็ม' }}
         </button>
       </div>
+    </section>
+
+    <!-- Leave quota: a small ledger of one row per leave type for one year. An
+         empty value is a real answer (no quota), not zero days. -->
+    <section v-if="employee" class="panel" aria-labelledby="quota-title">
+      <div class="panel-head">
+        <h2 id="quota-title" class="panel-title">โควตาวันลา</h2>
+      </div>
+
+      <div class="quota-year-row">
+        <label class="quota-year-label" for="quota-year">ปี (ค.ศ.)</label>
+        <select
+          id="quota-year"
+          v-model.number="quotaYear"
+          class="quota-year"
+          :disabled="quotaLoading || quotaSaving"
+          @change="readQuotas"
+        >
+          <option v-for="year in quotaYears" :key="year" :value="year">{{ year }}</option>
+        </select>
+      </div>
+
+      <p v-if="quotaLoading" class="hint">กำลังโหลด…</p>
+
+      <template v-else>
+        <p v-if="quotaRows.length === 0" class="hint">ยังไม่มีประเภทการลาในระบบ</p>
+
+        <div v-else class="quota-list">
+          <div v-for="row in quotaRows" :key="row.leaveTypeId" class="quota-row">
+            <label class="quota-name" :for="`quota-${row.leaveTypeId}`">
+              {{ row.name || 'ไม่ระบุประเภท' }}
+            </label>
+            <input
+              :id="`quota-${row.leaveTypeId}`"
+              v-model="row.days"
+              class="quota-input"
+              type="number"
+              min="0"
+              max="366"
+              step="0.5"
+              inputmode="decimal"
+              :disabled="quotaSaving"
+            />
+            <span class="quota-unit">วัน</span>
+          </div>
+        </div>
+
+        <p class="hint">เว้นว่างเพื่อไม่กำหนดโควตา ใส่ได้ 0–366 วัน เพิ่มทีละครึ่งวัน</p>
+        <p v-if="!quotaValid" class="note error">{{ QUOTA_DAYS_ERROR }}</p>
+        <p v-if="quotaNotice" class="note success">{{ quotaNotice }}</p>
+        <div v-if="quotaError" class="quota-error">
+          <p class="note error quota-error-text">{{ quotaError }}</p>
+          <p v-if="quotaFix" class="note quota-fix">{{ quotaFix }}</p>
+        </div>
+
+        <div class="actions">
+          <button
+            type="button"
+            class="quota-save"
+            :disabled="quotaSaving || !quotaValid"
+            @click="saveQuotas"
+          >
+            {{ quotaSaving ? 'กำลังบันทึก…' : 'บันทึกโควตาวันลา' }}
+          </button>
+        </div>
+      </template>
     </section>
   </main>
 </template>
@@ -397,6 +566,95 @@ onMounted(load)
   font-size: 14px;
 }
 
+.note.success {
+  color: #1c6b3f;
+  font-size: 14px;
+}
+
+/* The quota ledger: a year control and one row per leave type. Every control is
+   at least 44px tall with the shared 2px violet focus ring. */
+.quota-year-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0 4px;
+}
+
+.quota-year-label {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-muted);
+}
+
+.quota-year {
+  min-height: var(--tap);
+  padding: 0 12px;
+  border: 1px solid var(--control-line);
+  border-radius: 12px;
+  background: #ffffff;
+  color: var(--ink);
+  font-family: 'Prompt', sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.quota-list {
+  display: grid;
+  gap: 8px;
+  padding: 12px 0 4px;
+}
+
+.quota-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 96px auto;
+  align-items: center;
+  gap: 8px 12px;
+  min-height: var(--tap);
+}
+
+.quota-name {
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.quota-input {
+  min-height: var(--tap);
+  padding: 0 12px;
+  border: 1px solid var(--control-line);
+  border-radius: 12px;
+  background: #ffffff;
+  color: var(--ink);
+  font-family: 'IBM Plex Sans Thai', 'Sarabun', sans-serif;
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.quota-year:focus-visible,
+.quota-input:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.quota-unit {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink-muted);
+}
+
+.quota-error {
+  display: grid;
+  gap: 4px;
+}
+
+.quota-fix {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-muted);
+}
+
 .badge {
   display: inline-block;
   padding: 4px 10px;
@@ -451,6 +709,33 @@ onMounted(load)
   outline-offset: 2px;
 }
 
+.quota-save {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--tap);
+  padding: 0 16px;
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  background: var(--accent);
+  color: #ffffff;
+  font-family: 'Prompt', sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color var(--motion-release) ease;
+}
+
+.quota-save:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+.quota-save:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
 @media (hover: hover) and (pointer: fine) {
   .control:hover {
     background-color: rgba(79, 70, 229, 0.07);
@@ -462,6 +747,10 @@ onMounted(load)
   }
 
   .reveal-btn:hover:not(:disabled) {
+    background: var(--accent-deep);
+  }
+
+  .quota-save:hover:not(:disabled) {
     background: var(--accent-deep);
   }
 }
@@ -516,7 +805,10 @@ onMounted(load)
   .panel,
   .control,
   .control-arrow,
-  .reveal-btn {
+  .reveal-btn,
+  .quota-save,
+  .quota-year,
+  .quota-input {
     animation: none;
     transition: none;
   }
