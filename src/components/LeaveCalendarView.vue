@@ -1093,7 +1093,8 @@ onBeforeUnmount(() => {
 
 :deep(.fc .fc-button-primary) {
   background: #ffffff;
-  border-color: #d8e3e1;
+  /* 3.5:1 on white; the old #d8e3e1 edge was 1.31:1. */
+  border-color: #6f9085;
   color: #10504e;
   text-transform: none;
   font-weight: 600;

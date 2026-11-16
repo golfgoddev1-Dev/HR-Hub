@@ -432,11 +432,20 @@ onMounted(async () => {
 .search-row input {
   min-height: 44px;
   padding: 8px 10px;
-  border: 1px solid #cfdcda;
+  /* 3.5:1 on white; the old #cfdcda edge was 1.41:1. */
+  border: 1px solid #6f9085;
   border-radius: 8px;
   font-size: 14px;
   color: #12343b;
   background: #ffffff;
+}
+
+/* Slate-600 instead of the browser's #757575, the placeholder ink the rest of
+   the app uses: 7.58:1 on this white fill. */
+.field input::placeholder,
+.search-row input::placeholder {
+  color: #475569;
+  opacity: 1;
 }
 
 .tabs {

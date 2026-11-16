@@ -47,7 +47,8 @@ defineEmits(['toggle'])
   height: 26px;
   box-sizing: border-box;
   padding: 0;
-  border: 1px solid #cfdcda;
+  /* 3.5:1 on the white panel; the old #cfdcda edge was 1.41:1. */
+  border: 1px solid #6f9085;
   border-radius: 999px;
   background: #dfe8e6;
   cursor: pointer;

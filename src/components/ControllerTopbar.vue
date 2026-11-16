@@ -75,7 +75,8 @@ defineEmits(['toggle-menu'])
   height: 44px;
   flex: 0 0 44px;
   padding: 0;
-  border: 1px solid #d8e4de;
+  /* 3.5:1 on white; the old #d8e4de edge was 1.31:1. */
+  border: 1px solid #6f9085;
   border-radius: 12px;
   background: #ffffff;
   color: var(--primary, #004337);

@@ -847,6 +847,13 @@ onBeforeUnmount(() => {
   color: #12343b;
 }
 
+/* The browser's own placeholder grey is #757575: 4.43:1 on this #f8fbfa fill.
+   Slate-600 is the placeholder ink the rest of the app uses and reaches 7.28:1. */
+.search input::placeholder {
+  color: #475569;
+  opacity: 1;
+}
+
 .search-icon {
   display: inline-flex;
 }
