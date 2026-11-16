@@ -553,11 +553,18 @@ onBeforeUnmount(() => {
 /* --- the deck ------------------------------------------------------------- */
 
 .deck {
+  /* The anchor for the outgoing card while it leaves: the swap happens in this
+     one box, never in two stacked boxes. */
+  position: relative;
   min-width: 0;
   touch-action: pan-y;
 }
 
 .deck-card {
+  position: relative;
+  /* Above the card that is leaving, so the fading panel never veils the text
+     that is arriving. */
+  z-index: 1;
   display: grid;
   gap: 8px;
   min-height: 100%;
@@ -632,6 +639,25 @@ onBeforeUnmount(() => {
 .deck-leave-to {
   opacity: 0;
   transform: translate3d(0, -8px, 0);
+}
+
+/* The outgoing card leaves the layout and stops taking pointers the moment its
+   exit starts: the deck stays one card tall, a tap during the 240ms cannot land
+   on the card that is going, and it sits under the arriving card. */
+.deck-leave-active {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* Only the arriving card paints words. The outgoing surface still fades and
+   rises with the same transition, but its text is not drawn, so no second line
+   ever shows over the card being read. */
+.deck-leave-active .deck-name,
+.deck-leave-active .deck-desc,
+.deck-leave-active .deck-foot {
+  opacity: 0;
 }
 
 @media (hover: hover) and (pointer: fine) {

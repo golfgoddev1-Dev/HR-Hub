@@ -756,6 +756,9 @@ onBeforeUnmount(() => {
 .stack-card {
   position: absolute;
   inset: 0;
+  /* Above the card that is leaving, so its fading panel never veils the text
+     that is arriving. */
+  z-index: 1;
   display: grid;
   align-content: start;
   gap: 10px;
@@ -862,6 +865,22 @@ onBeforeUnmount(() => {
 .stack-leave-to {
   opacity: 0;
   transform: translate3d(0, -20px, 0) scale(0.99);
+}
+
+/* The outgoing card stops taking pointers as soon as its exit starts and sits
+   under the arriving one. */
+.stack-leave-active {
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* Only the arriving card paints words: the outgoing surface keeps the same
+   transition, but its text is not drawn, so its code, type and facts never
+   show through the card being read. */
+.stack-leave-active .stack-top,
+.stack-leave-active .stack-type,
+.stack-leave-active .stack-facts {
+  opacity: 0;
 }
 
 /* Notifications are a component of their own; the page gives it the same glass
