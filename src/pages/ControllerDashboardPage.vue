@@ -990,6 +990,7 @@ loadDashboard()
   gap: 6px;
   align-self: flex-start;
   max-width: 100%;
+  min-height: 44px;
   padding: 7px 14px;
   border: 1px solid #d8e4de;
   border-radius: 999px;
@@ -1104,6 +1105,7 @@ loadDashboard()
 .tab {
   flex: 1 1 auto;
   min-width: 0;
+  min-height: 44px;
   padding: 9px 14px;
   border: 0;
   border-radius: 10px;

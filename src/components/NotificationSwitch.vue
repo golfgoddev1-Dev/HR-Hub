@@ -54,6 +54,14 @@ defineEmits(['toggle'])
   transition: background 0.2s ease, border-color 0.2s ease;
 }
 
+/* The pill keeps its 46x26 paint; this transparent layer is the 44px tap area,
+   so the switch grows for a finger without changing how it looks. */
+.notify-switch::before {
+  content: '';
+  position: absolute;
+  inset: -9px 0;
+}
+
 .notify-switch-on {
   border-color: #10504e;
   background: #10504e;

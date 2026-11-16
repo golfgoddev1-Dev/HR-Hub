@@ -71,9 +71,9 @@ defineEmits(['toggle-menu'])
   display: none;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
-  flex: 0 0 40px;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
   padding: 0;
   border: 1px solid #d8e4de;
   border-radius: 12px;

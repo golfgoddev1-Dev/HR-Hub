@@ -1414,6 +1414,10 @@ async function submitLogin() {
 }
 
 .footer-link {
+  /* A link alone in the footer row: 44px tall without touching the type. */
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
   font-size: 16px;
   font-weight: 600;
   color: #0051d5;

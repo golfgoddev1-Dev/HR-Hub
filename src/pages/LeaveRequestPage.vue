@@ -400,6 +400,9 @@ onMounted(load)
 }
 
 .back-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
   font-size: 14px;
   font-weight: 600;
   color: #10504e;

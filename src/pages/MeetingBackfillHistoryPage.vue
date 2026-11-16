@@ -377,10 +377,17 @@ onMounted(async () => {
   line-height: 1.6;
 }
 
+/* The Vuetify buttons on this toolbar are `size="small"`; the toolbar row grows
+   to 44px rather than the button keeping a 28px hit area. */
+:deep(.v-btn) {
+  min-height: 44px;
+}
+
 .export-link {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  min-height: 44px;
   padding: 9px 14px;
   border-radius: 10px;
   background: #ffffff;
@@ -423,6 +430,7 @@ onMounted(async () => {
 .field input,
 .field select,
 .search-row input {
+  min-height: 44px;
   padding: 8px 10px;
   border: 1px solid #cfdcda;
   border-radius: 8px;
@@ -438,6 +446,7 @@ onMounted(async () => {
 }
 
 .tab {
+  min-height: 44px;
   padding: 9px 16px;
   border-radius: 999px;
   border: 1px solid #cfdcda;

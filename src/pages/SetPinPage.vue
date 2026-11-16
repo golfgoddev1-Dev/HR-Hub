@@ -1052,7 +1052,8 @@ async function submitSetPin() {
 .toggle {
   position: absolute;
   right: 8px;
-  height: 32px;
+  height: 44px;
+  min-width: 44px;
   padding: 0 8px;
   display: flex;
   align-items: center;
@@ -1126,6 +1127,7 @@ async function submitSetPin() {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  min-height: 44px;
   padding: 4px 8px;
   border-radius: 4px;
   font-size: 14px;

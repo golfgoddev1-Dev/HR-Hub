@@ -388,6 +388,7 @@ const choiceLabel = (value) => (value === 'file' ? 'ใช้ค่าจาก�
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  min-height: 44px;
   padding: 10px 14px;
   border-radius: 10px;
   background: #ffffff;
@@ -432,6 +433,7 @@ const choiceLabel = (value) => (value === 'file' ? 'ใช้ค่าจาก�
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  min-height: 44px;
   padding: 10px 16px;
   border-radius: 10px;
   background: #0f3d3e;
