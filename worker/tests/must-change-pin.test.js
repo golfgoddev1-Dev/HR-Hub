@@ -27,6 +27,10 @@ const ENV = {
   SUPABASE_URL: "https://fake-project.supabase.co",
   SUPABASE_SERVICE_ROLE_KEY: "fake-service-role-key",
   PIN_PEPPER,
+  RL_SUBMIT_IP: {
+    idFromName: (name) => name,
+    get: () => ({ fetch: async () => Response.json({ success: true }) }),
+  },
   PIN_RESET_SECRET,
   NATIONAL_ID_PEPPER,
   COOKIE_SECURE: "false",

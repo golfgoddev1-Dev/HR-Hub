@@ -18,7 +18,6 @@ const PAGES = join(SRC, 'pages')
 const LAYOUT = readSource(join(COMPONENTS, 'AppLayout.vue'))
 const ROUTER = readSource(join(SRC, 'router.js'))
 const ROLE_SHELL = readSource(join(COMPONENTS, 'RoleShell.vue'))
-const CONTROLLER_SHELL = readSource(join(COMPONENTS, 'ControllerShell.vue'))
 
 const PAGE_FILES = readdirSync(PAGES).filter((name) => name.endsWith('.vue'))
 
@@ -126,8 +125,7 @@ describe('shared app layout', () => {
 describe('persistent shell route', () => {
   it('declares one shell parent that chooses the nav from the session role', () => {
     expect((ROUTER.match(/component: RoleShell,/g) ?? []).length).toBe(1)
-    expect(ROLE_SHELL).toContain("role === 'meeting_controller'")
-    expect(ROLE_SHELL).toContain('<ControllerShell')
+    expect(ROLE_SHELL).toContain("meeting_controller: 'controller'")
     expect(ROLE_SHELL).toContain('<AppLayout')
     // The shell never mounts a menu itself: it delegates to the one real nav.
     expect(ROLE_SHELL).not.toContain('<AppDock')
@@ -153,7 +151,6 @@ describe('persistent shell route', () => {
       expect(SHELL_BLOCK, path).toContain(`path: '${path}'`)
       expect(DECLARED_PATHS, path).toContain(path)
     }
-    expect(CONTROLLER_SHELL).toContain('<RouterView />')
   })
 
   it('keeps /admin and its permission child under the shell', () => {

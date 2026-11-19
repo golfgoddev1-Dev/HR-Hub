@@ -68,7 +68,7 @@ function sessionRow(overrides = {}) {
     id: SESSION_ID,
     employee_id: EMPLOYEE_ID,
     login_role: "employee",
-    last_active_at: NOW_ISO,
+    last_active_at: "2026-01-01T08:55:00.000Z",
     expires_at: "2026-01-01T21:00:00.000Z",
     revoked_at: null,
     ...overrides,
@@ -76,11 +76,11 @@ function sessionRow(overrides = {}) {
 }
 
 /** Fake backend for a full employee session read. */
-function sessionFlowHandler({ loginRole = "employee", employee = { id: EMPLOYEE_ID, is_active: true }, pending = null, admins = {} } = {}) {
+function sessionFlowHandler({ loginRole = "employee", employee = { id: EMPLOYEE_ID, is_active: true }, pending = null, admins = {}, lastActive } = {}) {
   return ({ url, init }) => {
     if ((init.method ?? "GET") === "PATCH") return emptyResponse();
     const table = tableOf(url);
-    if (table === "auth_sessions") return jsonResponse([sessionRow({ login_role: loginRole })]);
+    if (table === "auth_sessions") return jsonResponse([sessionRow({ login_role: loginRole, ...(lastActive ? { last_active_at: lastActive } : {}) })]);
     if (table === "employees") return jsonResponse([employee]);
     if (table === "leave_requests") return jsonResponse(pending ? [{ id: "leave-1" }] : []);
     if (table === "hr_admins" || table === "meeting_admins" || table === "system_admins") {
@@ -394,4 +394,15 @@ test("requireRole returns the session when the role is allowed", async (t) => {
   assert.equal(result.ok, true);
   assert.equal(result.session.employeeId, EMPLOYEE_ID);
   assert.equal(result.session.role, "employee");
+});
+
+test("readSession: a session touched in the last minute is not rewritten", async (t) => {
+  freeze(t);
+  const fake = installFetch(
+    sessionFlowHandler({ loginRole: "hr", admins: { hr_admins: true }, lastActive: NOW_ISO })
+  );
+  t.after(() => fake.restore());
+
+  assert.equal((await readSession(ENV, TOKEN)).ok, true);
+  assert.equal(fake.calls.filter((call) => call.init.method === "PATCH").length, 0);
 });

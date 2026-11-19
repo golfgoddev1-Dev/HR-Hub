@@ -68,6 +68,12 @@ export function adminNavItems() {
 export const DOCK_PRIMARY_PATHS = Object.freeze({
   employee: ['/leave', '/leave/new', '/leave/calendar', '/profile'],
   hr: ['/hr', '/hr/employees', '/hr/leave', '/hr/leave/holidays'],
+  meeting_controller: [
+    '/meeting/controller',
+    '/meeting/controller/qr',
+    '/meeting/controller/roster',
+    '/meeting/controller/dashboard',
+  ],
 })
 
 /** The primary tab items for a role, copied from that role's own sections. */

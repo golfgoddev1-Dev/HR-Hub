@@ -12,8 +12,6 @@ const read = (path) => readSource(new URL(`../${path}`, import.meta.url))
 
 const ROUTER = read('src/router.js')
 const ROLE_SHELL = read('src/components/RoleShell.vue')
-const CONTROLLER_SHELL = read('src/components/ControllerShell.vue')
-const CONTROLLER_LAYOUT = read('src/components/ControllerLayout.vue')
 
 const SHELL_BLOCK = ROUTER.slice(
   ROUTER.indexOf('component: RoleShell'),
@@ -64,8 +62,7 @@ describe('role shell routing', () => {
   })
 
   it('chooses the meeting controller shell for a meeting session, the dock otherwise', () => {
-    expect(ROLE_SHELL).toContain("role === 'meeting_controller'")
-    expect(ROLE_SHELL).toContain('<ControllerShell')
+    expect(ROLE_SHELL).toContain("meeting_controller: 'controller'")
     expect(ROLE_SHELL).toContain('<AppLayout')
     expect(ROLE_SHELL).not.toContain('AppDock')
     expect(ROLE_SHELL).toContain("employee: 'leave'")
@@ -73,18 +70,9 @@ describe('role shell routing', () => {
     expect(ROLE_SHELL).toContain("system_admin: 'admin'")
   })
 
-  it('keeps the controller frame mounted with RouterView across pages', () => {
-    expect(CONTROLLER_SHELL).toContain('<ControllerLayout>')
-    expect(CONTROLLER_SHELL).toContain('<RouterView />')
-    expect(CONTROLLER_SHELL).not.toContain('<slot')
-    // ControllerLayout still owns the one content wrapper and its slot.
-    expect(CONTROLLER_LAYOUT).toContain('<slot')
-    expect(CONTROLLER_LAYOUT).not.toContain('<RouterView')
-  })
-
-  it('uses the controller content wrapper for shared pages, with no second padding', () => {
-    expect(CONTROLLER_LAYOUT).toContain('.controller-content :deep(.content)')
-    expect(CONTROLLER_LAYOUT).toContain('padding: 0 0 48px')
+  it('lets the controller use the same dock shell and 3D background as the other roles', () => {
+    expect(read('src/components/AppLayout.vue')).toContain("'controller'")
+    expect(read('src/components/AppLayout.vue')).toContain('.app-layout.is-controller')
   })
 
   it('lifts every nav path into the one shell, for every role', () => {

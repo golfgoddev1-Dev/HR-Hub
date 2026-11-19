@@ -30,6 +30,10 @@ const ENV = {
   SUPABASE_SERVICE_ROLE_KEY: "fake-service-role-key",
   NATIONAL_ID_PEPPER,
   PIN_PEPPER,
+  RL_SUBMIT_IP: {
+    idFromName: (name) => name,
+    get: () => ({ fetch: async () => Response.json({ success: true }) }),
+  },
 };
 
 const NOW = new Date("2026-11-05T10:00:00.000Z");

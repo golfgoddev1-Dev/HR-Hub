@@ -25,6 +25,7 @@ import { verifyPinAttempt } from "../pin-verify.js";
 import { createDb } from "../db.js";
 import { normalizeEndpoint } from "../push/endpoint.js";
 import { isActiveApprover } from "../leave-approvers.js";
+import { checkRateLimit, clientIp, ipRateLimitKey } from "../rate-limit.js";
 
 const auth = new Hono();
 
@@ -35,6 +36,21 @@ const RESET_CODES_TABLE = "pin_reset_codes";
 const AUDIT_TABLE = "audit_logs";
 const PUSH_SUBSCRIPTIONS_TABLE = "push_subscriptions";
 const EMPLOYEES_TABLE = "employees";
+
+// Per-IP ceiling on the unauthenticated credential routes, on top of the
+// per-account lock. It runs before any HMAC or database work, so a flood is
+// turned away cheaply.
+const CREDENTIAL_RATE_LIMIT_BINDING = "RL_SUBMIT_IP";
+
+async function credentialRateLimited(c, scope) {
+  const result = await checkRateLimit(
+    c.env,
+    CREDENTIAL_RATE_LIMIT_BINDING,
+    ipRateLimitKey(scope, clientIp(c.req.raw))
+  );
+  if (result.ok) return null;
+  return c.json({ ok: false, message: result.message }, result.status);
+}
 
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCK_MINUTES = 15;
@@ -145,6 +161,9 @@ auth.post("/login", async (c) => {
     if (!/^\d{13}$/.test(normalized) || !/^\d{6}$/.test(body.pin)) {
       return c.json({ ok: false, message: INVALID_MESSAGE }, 400);
     }
+
+    const limited = await credentialRateLimited(c, "login");
+    if (limited) return limited;
 
     const env = c.env;
     const role = LOGIN_ROLES[body.loginType];
@@ -539,6 +558,9 @@ auth.post("/set-pin", async (c) => {
     if (!/^\d{13}$/.test(normalized) || !/^\d{8}$/.test(body.code)) {
       return c.json({ ok: false, message: INVALID_MESSAGE }, 400);
     }
+
+    const limited = await credentialRateLimited(c, "set-pin");
+    if (limited) return limited;
 
     const validation = validatePin(body.pin);
     if (!validation.ok) {

@@ -15,6 +15,10 @@ const ENV = {
   NATIONAL_ID_PEPPER,
   PIN_PEPPER,
   PIN_RESET_SECRET,
+  RL_SUBMIT_IP: {
+    idFromName: (name) => name,
+    get: () => ({ fetch: async () => Response.json({ success: true }) }),
+  },
 };
 
 const BASE = "https://fake-project.supabase.co/rest/v1";
@@ -919,4 +923,45 @@ test("responses and audit rows never contain the PIN, code or token", async (t) 
   } finally {
     fake.restore();
   }
+});
+
+test("login: an over-limit IP is refused with 429 before any database call", async (t) => {
+  const original = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return new Response("[]");
+  };
+  t.after(() => {
+    globalThis.fetch = original;
+  });
+
+  const env = {
+    ...ENV,
+    RL_SUBMIT_IP: {
+      idFromName: (name) => name,
+      get: () => ({ fetch: async () => Response.json({ success: false }) }),
+    },
+  };
+  const response = await app.request(
+    "/api/auth/login",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ loginType: "employee", nationalId: FAKE_NATIONAL_ID, pin: PIN }),
+    },
+    env
+  );
+  assert.equal(response.status, 429);
+  assert.equal(calls, 0);
+});
+
+test("a cross-origin write is refused with 403", async () => {
+  const response = await app.request(
+    "http://hr.example/api/auth/logout",
+    { method: "POST", headers: { Origin: "https://evil.example" } },
+    ENV
+  );
+  assert.equal(response.status, 403);
+  assert.equal(response.headers.get("X-Content-Type-Options"), "nosniff");
 });

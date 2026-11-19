@@ -143,14 +143,12 @@ describe('visitors without a session never reach the 3D background', () => {
     expect(flat).toContain('route.meta.cleanShellWhenAnonymous === true && !session.value')
   })
 
-  it('renders the bare RouterView before ControllerShell and AppLayout', () => {
+  it('renders the bare RouterView before AppLayout', () => {
     const bare = SHELL.indexOf('<RouterView v-if="bareRegistration" />')
-    const controller = SHELL.indexOf('<ControllerShell v-else-if=')
     const layout = SHELL.indexOf('<AppLayout v-else')
 
     expect(bare).toBeGreaterThan(-1)
-    expect(controller).toBeGreaterThan(bare)
-    expect(layout).toBeGreaterThan(controller)
+    expect(layout).toBeGreaterThan(bare)
     // AppLayout is only ever the final fallback.
     expect(SHELL).toContain('<AppLayout v-else')
   })

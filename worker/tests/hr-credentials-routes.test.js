@@ -168,6 +168,7 @@ function makeEnv(overrides = {}) {
     PIN_RESET_SECRET: RESET_SECRET,
     NATIONAL_ID_PEPPER: NATIONAL_PEPPER,
     RL_CONTEXT_IP: makeLimiter(),
+    RL_SUBMIT_IP: makeLimiter(),
     ...overrides,
   };
 }

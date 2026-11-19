@@ -26,7 +26,6 @@ const BADGE_LIB = read('src/lib/app-badge.js')
 const DATA_CACHE = read('src/lib/data-cache.js')
 const LOGOUT = read('src/lib/logout.js')
 const APP_LAYOUT = read('src/components/AppLayout.vue')
-const CONTROLLER_NAV = read('src/components/ControllerNav.vue')
 
 function fakeBadgeApi() {
   const calls = []
@@ -135,7 +134,7 @@ describe('a decision', () => {
 
 describe('the shells', () => {
   it('grant the badge only to an active approver with notifications on', () => {
-    for (const source of [APP_LAYOUT, CONTROLLER_NAV]) {
+    for (const source of [APP_LAYOUT]) {
       expect(source).toContain('setBadgeAllowed(false)')
       expect(source).toContain('setBadgeAllowed(await notificationSettingEnabled())')
     }
@@ -158,7 +157,7 @@ describe('the service worker', () => {
   })
 
   it('never adds a permission request', () => {
-    for (const source of [SW, BADGE_LIB, APP_LAYOUT, CONTROLLER_NAV]) {
+    for (const source of [SW, BADGE_LIB, APP_LAYOUT]) {
       expect(source).not.toContain('requestPermission')
     }
   })

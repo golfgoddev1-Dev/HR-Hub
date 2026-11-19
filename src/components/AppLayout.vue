@@ -35,7 +35,7 @@ const props = defineProps({
   nav: {
     type: String,
     default: 'leave',
-    validator: (value) => ['leave', 'hr', 'admin'].includes(value),
+    validator: (value) => ['leave', 'hr', 'admin', 'controller'].includes(value),
   },
 })
 
@@ -52,6 +52,7 @@ let releaseApprovals = () => {}
 // "งานของฉัน" and "งาน HR".
 const sessionRole = computed(() => {
   if (props.nav === 'admin') return 'system_admin'
+  if (props.nav === 'controller') return 'meeting_controller'
   if (typeof session.value?.role === 'string') return session.value.role
   return props.nav === 'hr' ? 'hr' : 'employee'
 })
@@ -66,15 +67,21 @@ const sections = computed(() =>
 
 // The dock shows the phone tab bar for the two roles it serves; the admin menu
 // is a separate component.
-const dockRole = computed(() => (sessionRole.value === 'hr' ? 'hr' : 'employee'))
+const dockRole = computed(() => {
+  if (sessionRole.value === 'hr') return 'hr'
+  if (sessionRole.value === 'meeting_controller') return 'meeting_controller'
+  return 'employee'
+})
 
 // The new-device banner belongs to the landing page of the role only.
 const isHome = computed(() => route.path === homePathByRole[sessionRole.value])
 
-const brand = computed(() =>
-  props.nav === 'hr'
-    ? { icon: 'groups', title: 'ระบบบริการงานบุคคลและสวัสดิการพนักงาน', subtitle: '', badge: true }
-    : { icon: 'beach_access', title: 'ระบบใบลา', subtitle: '', badge: false }
+const BRANDS = {
+  hr: { icon: 'groups', title: 'ระบบบริการงานบุคคลและสวัสดิการพนักงาน', subtitle: '', badge: true },
+  controller: { icon: 'qr_code_2', title: 'ระบบประชุม', subtitle: 'ผู้ควบคุมการประชุม', badge: false },
+}
+const brand = computed(
+  () => BRANDS[props.nav] ?? { icon: 'beach_access', title: 'ระบบใบลา', subtitle: '', badge: false }
 )
 
 // One session read and one approvals read for the whole system, not per page.
@@ -113,7 +120,7 @@ onBeforeUnmount(() => releaseApprovals())
 </script>
 
 <template>
-  <div class="app-layout">
+  <div class="app-layout" :class="{ 'is-controller': nav === 'controller' }">
     <AppBackground />
     <div class="app-layout-inner">
       <AdminNav v-if="nav === 'admin'" :sections="sections" />
@@ -141,6 +148,41 @@ onBeforeUnmount(() => releaseApprovals())
      the margins and between panels without ever sitting under text. */
   background: transparent;
   overflow-x: hidden;
+}
+
+/* The meeting-controller pages draw with this console palette (the dashboard
+   widgets read it by name), so it is defined on the shell they now live in. The
+   old fixed top bar is gone, so nothing needs reserving above a sticky panel. */
+.app-layout.is-controller {
+  --primary: #004337;
+  --primary-container: #105c4d;
+  --secondary: #006b56;
+  --secondary-container: #98f4d7;
+  --on-secondary-container: #00725c;
+  --surface: #f3fbf8;
+  --surface-low: #edf6f2;
+  --surface-container: #e7f0ec;
+  --surface-high: #e1eae6;
+  --surface-variant: #dce4e1;
+  --on-surface: #151d1b;
+  --on-surface-variant: #3f4945;
+  --outline: #6f7975;
+  --outline-variant: #bfc9c4;
+  --error: #ba1a1a;
+  --error-container: #ffdad6;
+  --tertiary-fixed-dim: #eec14b;
+  --tertiary-container: #674e00;
+  --primary-fixed-dim: #90d4c0;
+  --controller-topbar-height: 0px;
+  --controller-gutter: 20px;
+  --controller-h1-size: 28px;
+}
+
+/* The page header of a controller page used to sit under a fixed top bar; it
+   now sits under the dock, so it needs the same breathing room the other
+   shells give theirs. */
+.app-layout.is-controller .app-layout-inner > :deep(main) {
+  margin-top: 16px;
 }
 
 /* Same 1120px box, centring and single padding for every route: the dock is the

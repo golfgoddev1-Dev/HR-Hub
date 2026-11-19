@@ -23,7 +23,6 @@ const read = (path) => readSource(new URL(`../${path}`, import.meta.url))
 const COUNT_LIB = read('src/lib/approval-count.js')
 const APPROVALS_PAGE = read('src/pages/LeaveApprovalsPage.vue')
 const APP_LAYOUT = read('src/components/AppLayout.vue')
-const CONTROLLER_NAV = read('src/components/ControllerNav.vue')
 const LEAVE_HOME = read('src/pages/LeaveHomePage.vue')
 const SHARED_DATA = read('src/lib/shared-data.js')
 const DATA_CACHE = read('src/lib/data-cache.js')
@@ -267,7 +266,6 @@ describe('the incoming-request check', () => {
 
     // The shells retain the same page-level check.
     expect(APP_LAYOUT).toContain('retainApprovalCountSync()')
-    expect(CONTROLLER_NAV).toContain('retainApprovalCountSync()')
     expect(LEAVE_HOME).not.toContain('setInterval')
     expect(COUNT_LIB).toContain('APPROVAL_POLL_MS = 120_000')
   })
@@ -302,7 +300,6 @@ describe('source checks', () => {
     'approval-count': COUNT_LIB,
     'approvals page': APPROVALS_PAGE,
     'app layout': APP_LAYOUT,
-    'controller nav': CONTROLLER_NAV,
     'leave home': LEAVE_HOME,
     'shared data': SHARED_DATA,
     'data cache': DATA_CACHE,
@@ -321,7 +318,7 @@ describe('source checks', () => {
   })
 
   it('only one place creates the interval', () => {
-    const timers = [COUNT_LIB, APPROVALS_PAGE, APP_LAYOUT, CONTROLLER_NAV, LEAVE_HOME].filter(
+    const timers = [COUNT_LIB, APPROVALS_PAGE, APP_LAYOUT, LEAVE_HOME].filter(
       (source) => source.includes('setInterval(')
     )
     expect(timers).toHaveLength(1)

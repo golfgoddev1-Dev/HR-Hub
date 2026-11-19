@@ -70,126 +70,234 @@ async function logout() {
 </template>
 
 <style scoped>
+/* The admin bar speaks the same language as the HR dock: one frosted glass
+   panel, brand and logout on the first row, then one labelled row per group of
+   pills. The tint, blur and tier fallback come from the shared glass tokens. */
 .admin-nav {
-  background: #0f3d3e;
-  color: #f5fbf9;
-  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.12);
+  border-radius: 24px;
+  background: var(--glass-tint-strong, rgba(255, 255, 255, 0.97));
+  -webkit-backdrop-filter: var(--glass-filter, blur(18px));
+  backdrop-filter: var(--glass-filter, blur(18px));
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  box-shadow:
+    0 18px 40px -24px rgba(16, 80, 78, 0.45),
+    0 2px 8px rgba(16, 80, 78, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  color: #12343b;
 }
 
 .nav-inner {
-  padding: 12px 20px;
+  padding: 8px 10px;
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 8px 16px;
   align-items: center;
-  justify-content: space-between;
 }
 
 .nav-brand {
   display: flex;
+  flex: 1 1 auto;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   min-width: 0;
+  padding: 4px 8px 4px 4px;
+}
+
+.brand-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 13px;
+  background: linear-gradient(135deg, #10504e 0%, #176562 100%);
+  color: #85f8c4;
+  font-size: 22px;
+  line-height: 1;
+  box-shadow:
+    0 8px 18px -8px rgba(16, 80, 78, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
 
 .nav-title {
-  font-size: 15px;
-  font-weight: 600;
+  font-size: 16px;
+  font-weight: 700;
+  color: #12343b;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
+/* The links wrapper dissolves so the logout button can join the brand row
+   while each section takes a full row of its own. */
 .nav-links {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  align-items: flex-end;
+  display: contents;
 }
 
 .nav-section {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  flex: 1 1 100%;
+  order: 2;
+  align-items: center;
+  gap: 16px;
   min-width: 0;
+  margin: 0 4px;
+  padding: 6px 10px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(16, 80, 78, 0.055), rgba(16, 80, 78, 0.025));
 }
 
 .nav-section-label {
-  padding: 0 12px;
-  color: #a9cbc4;
-  font-size: 10.5px;
+  flex: 0 0 104px;
+  color: #3f5558;
+  font-size: 13px;
   font-weight: 700;
-  letter-spacing: 0.02em;
-  white-space: nowrap;
+  line-height: 1.25;
 }
 
 .nav-section-items {
   display: flex;
+  flex: 1 1 auto;
   flex-wrap: wrap;
   gap: 4px;
   align-items: center;
-}
-
-.brand-icon {
-  font-size: 22px;
-  line-height: 1;
+  min-width: 0;
 }
 
 .nav-icon {
   font-family: 'Material Symbols Outlined';
-  font-size: 18px;
+  font-size: 19px;
   line-height: 1;
 }
 
 .nav-link {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   /* The bar wraps, so a 44px item grows the bar instead of the label. */
   min-height: 44px;
-  padding: 8px 12px;
-  border-radius: 8px;
-  color: #d8ece8;
+  padding: 6px 14px 6px 8px;
+  box-sizing: border-box;
+  border-radius: 999px;
+  color: #48615e;
   font-size: 14px;
   text-decoration: none;
   background: none;
   border: none;
   cursor: pointer;
   font-family: inherit;
+  white-space: nowrap;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease,
+    transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.nav-link:hover,
+.nav-link .nav-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(16, 80, 78, 0.09);
+  color: #10504e;
+}
+
 .nav-link-active {
-  background: rgba(255, 255, 255, 0.14);
+  background: rgba(16, 80, 78, 0.1);
+  color: #0f3d3e;
+}
+
+.nav-link-active .nav-icon {
+  border-color: transparent;
+  background: linear-gradient(135deg, #10504e 0%, #1bb193 100%);
   color: #ffffff;
 }
 
+.nav-link:focus-visible {
+  outline: var(--motion-focus-width, 2px) solid var(--motion-focus, #8b5cf6);
+  outline-offset: 2px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .nav-link:hover {
+    background: rgba(255, 255, 255, 0.8);
+    color: #0f3d3e;
+    transform: translateY(-2px);
+  }
+
+  .nav-link-active:hover {
+    background: rgba(16, 80, 78, 0.14);
+  }
+
+  .nav-link-disabled:hover {
+    background: none;
+    color: #48615e;
+    transform: none;
+  }
+
+  .nav-logout:hover {
+    background: rgba(255, 241, 242, 0.95);
+  }
+}
+
 .nav-link-disabled {
-  opacity: 0.55;
+  opacity: 0.75;
   cursor: not-allowed;
 }
 
-.nav-link-disabled:hover {
-  background: none;
-  color: #d8ece8;
-}
-
 .nav-badge {
-  padding: 1px 6px;
+  padding: 1px 8px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.16);
-  font-size: 11px;
+  background: rgba(16, 80, 78, 0.12);
+  color: #0f3d3e;
+  font-size: 13px;
   font-weight: 600;
   white-space: nowrap;
 }
 
+/* Logout: the red pill in the brand row, top right. */
 .nav-logout {
-  opacity: 0.9;
+  order: 1;
+  color: #be123c;
+}
+
+.nav-logout .nav-icon {
+  background: #fff1f2;
+  border-color: rgba(190, 18, 60, 0.14);
+  color: #be123c;
+}
+
+.nav-logout:active {
+  transform: scale(0.96);
 }
 
 @media (max-width: 720px) {
   .nav-title {
     display: none;
+  }
+
+  .nav-section {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .nav-section-label {
+    flex-basis: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav-link {
+    transition: none !important;
+  }
+
+  .nav-link:hover,
+  .nav-logout:active {
+    transform: none !important;
   }
 }
 </style>

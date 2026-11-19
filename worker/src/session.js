@@ -5,6 +5,10 @@ import { createDb } from "./db.js";
 
 const SESSION_HOURS = 12;
 const SESSION_IDLE_MS = 15 * 60 * 1000;
+// last_active_at only needs to be fresh to well inside the idle window, so a
+// write is skipped when the stored value is younger than this. It saves one
+// database write per request on a busy page.
+const TOUCH_INTERVAL_MS = 60 * 1000;
 const SESSIONS_TABLE = "auth_sessions";
 
 function base64Url(bytes) {
@@ -125,14 +129,16 @@ export async function readSession(env, token) {
       return { ok: false };
     }
 
-    await db.update(
-      SESSIONS_TABLE,
-      { last_active_at: now.toISOString() },
-      [
-        ["id", "eq", session.id],
-        ["revoked_at", "is", null],
-      ]
-    );
+    if (now.getTime() - lastActiveMs >= TOUCH_INTERVAL_MS) {
+      await db.update(
+        SESSIONS_TABLE,
+        { last_active_at: now.toISOString() },
+        [
+          ["id", "eq", session.id],
+          ["revoked_at", "is", null],
+        ]
+      );
+    }
 
     const role = session.login_role;
     if (role === "employee") {

@@ -171,14 +171,11 @@ describe('logout completion', () => {
   })
 
   it('is used by every shell, never a direct navigation', () => {
-    for (const file of ['components/AppDock.vue', 'components/AdminNav.vue', 'components/ControllerNav.vue']) {
+    for (const file of ['components/AppDock.vue', 'components/AdminNav.vue']) {
       const source = read(file)
       expect(source, file).toContain('completeLogout')
       expect(source, file).not.toContain('window.location.assign')
     }
-
-    // The controller used to stay inside the SPA, which kept history behind.
-    expect(read('components/ControllerNav.vue')).not.toContain("router.replace('/login')")
   })
 
   it('names this browser push endpoint in the logout request', async () => {
@@ -205,7 +202,6 @@ describe('logout completion', () => {
     const LOGOUT_SOURCES = new Set([
       'components/AppDock.vue',
       'components/AdminNav.vue',
-      'components/ControllerNav.vue',
       'lib/logout.js',
       'main.js',
       'api.js',

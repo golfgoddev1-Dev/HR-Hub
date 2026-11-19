@@ -26,7 +26,7 @@ const props = defineProps({
   role: {
     type: String,
     default: 'employee',
-    validator: (value) => ['employee', 'hr'].includes(value),
+    validator: (value) => ['employee', 'hr', 'meeting_controller'].includes(value),
   },
 })
 
@@ -411,8 +411,9 @@ const logout = createLogoutFlow({
 
 .dock-inner {
   display: flex;
-  align-items: flex-start;
-  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
   min-width: 0;
 }
 
@@ -421,9 +422,10 @@ const logout = createLogoutFlow({
   display: flex;
   align-items: center;
   gap: 8px;
-  flex: 0 0 auto;
+  flex: 1 1 auto;
+  order: 0;
   min-width: 0;
-  padding: 4px 10px 4px 2px;
+  padding: 4px 8px 4px 4px;
 }
 
 .dock-brand-tile {
@@ -442,17 +444,13 @@ const logout = createLogoutFlow({
   transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.dock-brand:hover .dock-brand-tile {
-  transform: translateY(-2px) scale(1.05);
-}
-
 .dock-brand-tile .material-symbols-outlined {
   font-size: 22px;
 }
 
 .dock-title {
-  max-width: 110px;
-  font-size: 12.5px;
+  max-width: 150px;
+  font-size: 14px;
   font-weight: 700;
   line-height: 1.25;
   letter-spacing: -0.01em;
@@ -460,8 +458,8 @@ const logout = createLogoutFlow({
 }
 
 .dock-subtitle {
-  max-width: 120px;
-  font-size: 10.5px;
+  max-width: 130px;
+  font-size: 13px;
   font-weight: 500;
   line-height: 1.3;
   color: #5c7176;
@@ -473,22 +471,23 @@ const logout = createLogoutFlow({
   border-radius: 6px;
   background: #e7f2f0;
   color: #10504e;
-  font-size: 10px;
+  font-size: 13px;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.04em;
 }
 
 /* ---------- Menu: labelled groups that wrap, never a sideways rail ---------- */
 .dock-menu {
   position: relative;
   display: flex;
-  flex: 1 1 auto;
+  flex: 1 1 100%;
+  order: 2;
   flex-wrap: wrap;
-  align-items: flex-start;
-  justify-content: center;
-  gap: 2px 10px;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 0;
   min-width: 0;
-  padding: 6px 10px;
+  padding: 6px 14px;
   box-sizing: border-box;
   border-radius: 18px;
   background: linear-gradient(180deg, rgba(16, 80, 78, 0.055), rgba(16, 80, 78, 0.025));
@@ -501,18 +500,16 @@ const logout = createLogoutFlow({
 .dock-item {
   position: relative;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
   justify-content: flex-start;
-  gap: 3px;
+  gap: 8px;
   flex: 0 0 auto;
-  min-width: 50px;
   min-height: 44px;
-  max-width: 88px;
-  padding: 4px 5px 9px;
+  padding: 4px 14px 4px 5px;
   box-sizing: border-box;
   border: 0;
-  border-radius: 14px;
+  border-radius: 999px;
   background: transparent;
   color: #48615e;
   font-family: inherit;
@@ -531,11 +528,6 @@ const logout = createLogoutFlow({
   animation-delay: calc(var(--i, 0) * 40ms + 120ms);
 }
 
-.dock-item:hover {
-  transform: translateY(-4px) scale(1.04);
-  background: rgba(255, 255, 255, 0.72);
-}
-
 .dock-item:active {
   transform: translateY(-1px) scale(0.97);
 }
@@ -550,9 +542,10 @@ const logout = createLogoutFlow({
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 11px;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  border-radius: 50%;
   border: 1px solid rgba(16, 80, 78, 0.09);
   background: rgba(255, 255, 255, 0.9);
   color: #10504e;
@@ -565,27 +558,20 @@ const logout = createLogoutFlow({
 }
 
 .dock-tile .material-symbols-outlined {
-  font-size: 20px;
-}
-
-.dock-item:hover .dock-tile {
-  border-color: #10504e;
-  background: #10504e;
-  color: #85f8c4;
-  box-shadow: 0 8px 18px -8px rgba(16, 80, 78, 0.7);
+  font-size: 19px;
 }
 
 .dock-label {
-  max-width: 62px;
-  font-size: 10px;
+  font-size: 14px;
   font-weight: 600;
-  line-height: 1.15;
-  overflow-wrap: anywhere;
+  line-height: 1.2;
+  white-space: nowrap;
   color: inherit;
 }
 
 /* Active: filled gradient tile, white icon, bold label, glowing dot below. */
 .dock-item-active {
+  background: rgba(16, 80, 78, 0.1);
   color: #0f3d3e;
 }
 
@@ -624,31 +610,31 @@ const logout = createLogoutFlow({
 /* ---------- Sections: a small Thai heading above each group of items ---------- */
 .dock-section {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  flex: 1 1 100%;
+  align-items: center;
+  gap: 16px;
   min-width: 0;
-  padding: 0 3px;
+  padding: 4px 0;
 }
 
 .dock-section + .dock-section {
-  border-left: 1px solid rgba(16, 80, 78, 0.12);
-  padding-left: 8px;
+  border-top: 1px solid rgba(16, 80, 78, 0.12);
 }
 
 .dock-section-label {
-  padding: 0 5px;
-  color: #5c7176;
-  font-size: 9.5px;
+  flex: 0 0 104px;
+  color: #3f5558;
+  font-size: 13px;
   font-weight: 700;
-  line-height: 1.2;
-  letter-spacing: 0.02em;
-  white-space: nowrap;
+  line-height: 1.25;
 }
 
 .dock-section-items {
   display: flex;
+  flex: 1 1 auto;
   flex-wrap: wrap;
   align-items: stretch;
+  justify-content: flex-start;
   gap: 2px;
   min-width: 0;
 }
@@ -676,27 +662,25 @@ const logout = createLogoutFlow({
 }
 
 /* ---------- Logout: red accent, fills red on hover, pressed on click ---------- */
+/* Logout sits in the brand row, top right, as a labelled pill. */
 .dock-logout {
   flex: 0 0 auto;
+  flex-direction: row;
+  align-items: center;
   align-self: center;
+  order: 1;
+  gap: 8px;
   color: #be123c;
+}
+
+.dock-logout .dock-label {
+  font-weight: 700;
 }
 
 .dock-logout .dock-tile {
   border-color: rgba(190, 18, 60, 0.14);
   background: #fff1f2;
   color: #be123c;
-}
-
-.dock-logout:hover {
-  background: rgba(255, 241, 242, 0.9);
-}
-
-.dock-logout:hover .dock-tile {
-  border-color: #e11d48;
-  background: #e11d48;
-  color: #ffffff;
-  box-shadow: 0 8px 18px -8px rgba(225, 29, 72, 0.75);
 }
 
 .dock-logout:active {
@@ -1040,6 +1024,40 @@ const logout = createLogoutFlow({
 }
 
 /* ---------- Phones: bottom tab bar plus sheet, no top menu ---------- */
+/* Hover feedback only where a precise pointer exists; touch never needs it. */
+@media (hover: hover) and (pointer: fine) {
+  .dock-brand:hover .dock-brand-tile {
+    transform: translateY(-2px) scale(1.05);
+  }
+
+  .dock-item:hover {
+    transform: translateY(-3px);
+    background: rgba(255, 255, 255, 0.78);
+  }
+
+  .dock-item-active:hover {
+    background: rgba(16, 80, 78, 0.14);
+  }
+
+  .dock-item:hover .dock-tile {
+    border-color: #10504e;
+    background: #10504e;
+    color: #85f8c4;
+    box-shadow: 0 8px 18px -8px rgba(16, 80, 78, 0.7);
+  }
+
+  .dock-logout:hover {
+    background: rgba(255, 241, 242, 0.9);
+  }
+
+  .dock-logout:hover .dock-tile {
+    border-color: #e11d48;
+    background: #e11d48;
+    color: #ffffff;
+    box-shadow: 0 8px 18px -8px rgba(225, 29, 72, 0.75);
+  }
+}
+
 @media (max-width: 720px) {
   .dock {
     display: none;

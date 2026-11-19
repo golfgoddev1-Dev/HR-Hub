@@ -14,9 +14,6 @@ const BANNER = readSource(
 const APP_LAYOUT = readSource(
   new URL('../src/components/AppLayout.vue', import.meta.url)
 )
-const CONTROLLER_LAYOUT = readSource(
-  new URL('../src/components/ControllerLayout.vue', import.meta.url)
-)
 const LOGIN_PAGE = readSource(
   new URL('../src/pages/LoginPage.vue', import.meta.url)
 )
@@ -103,8 +100,6 @@ describe('banner component', () => {
     expect(APP_LAYOUT).toContain('NotificationBanner')
     expect(APP_LAYOUT).toContain('homePathByRole')
     expect(APP_LAYOUT).toContain('<NotificationBanner v-if="isHome" />')
-    expect(CONTROLLER_LAYOUT).toContain('<NotificationBanner v-if="isHome" />')
-    expect(CONTROLLER_LAYOUT).toContain('homePathByRole.meeting_controller')
   })
 })
 

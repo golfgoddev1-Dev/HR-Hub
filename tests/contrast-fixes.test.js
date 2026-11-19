@@ -15,7 +15,6 @@ const SEARCH = readSource('src/components/EmployeeDirectoryManager.vue')
 const BACKFILL = readSource('src/pages/MeetingBackfillHistoryPage.vue')
 const CALENDAR = readSource('src/components/LeaveCalendarView.vue')
 const SWITCH = readSource('src/components/NotificationSwitch.vue')
-const TOPBAR = readSource('src/components/ControllerTopbar.vue')
 const PILLS = [
   'src/pages/ControllerDashboardPage.vue',
   'src/pages/ControllerQrPage.vue',
@@ -156,8 +155,5 @@ describe('the control borders', () => {
       expect(body, path).toContain(`border: 1px solid ${BORDER}`)
       expect(body, path).not.toContain('#d8e4de')
     }
-    const menu = ruleBody(styles(TOPBAR), '.menu-btn')
-    expect(menu).toContain(`border: 1px solid ${BORDER}`)
-    expect(menu).not.toContain('#d8e4de')
   })
 })

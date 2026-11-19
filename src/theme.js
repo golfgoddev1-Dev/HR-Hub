@@ -4,8 +4,8 @@ export const theme = {
     light: {
       dark: false,
       colors: {
-        primary: '#1f5fd0',
-        'primary-dark': '#1e3a8a',
+        primary: '#4f46e5',
+        'primary-dark': '#4338ca',
         'brand-panel': '#17479c',
         background: '#f8f9ff',
         surface: '#ffffff',
@@ -15,7 +15,7 @@ export const theme = {
         border: '#e2e8f0',
         muted: '#444651',
         input: '#cbd5e1',
-        selected: '#e5eeff',
+        selected: '#eef2ff',
         errorBackground: '#fef2f2',
         brandLight: '#dbe7ff',
         brandFootnote: '#bcd0f5',

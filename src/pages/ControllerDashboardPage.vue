@@ -242,6 +242,12 @@ async function loadDashboard() {
       errorMessage.value = typeof data.message === 'string' ? data.message : LOAD_ERROR_MESSAGE
       return
     }
+    // The template reads these unconditionally; an answer without them is an
+    // error state, not a page that throws while rendering.
+    if (!data.meeting || !data.history || !Array.isArray(data.depts) || !Array.isArray(data.statuses)) {
+      errorMessage.value = LOAD_ERROR_MESSAGE
+      return
+    }
     dash.value = data
     updatedText.value = formatUpdated(data.updated)
     const selected = drawer.dept || data.depts?.[0]?.name || ''
@@ -1056,6 +1062,7 @@ loadDashboard()
   align-items: center;
   justify-content: center;
   gap: 6px;
+  min-height: 44px;
   padding: 9px 18px;
   border: 1px solid #d8e4de;
   border-radius: 999px;

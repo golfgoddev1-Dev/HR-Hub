@@ -27,7 +27,6 @@ function px(declarations, property) {
 const CASES = [
   // component: the shell controls every signed-in page draws
   { file: 'src/components/AdminNav.vue', selector: '.nav-link', properties: ['min-height'] },
-  { file: 'src/components/ControllerTopbar.vue', selector: '.menu-btn', properties: ['width', 'height'] },
   { file: 'src/components/EmployeeDirectoryManager.vue', selector: '.search', properties: ['min-height'] },
   { file: 'src/components/EmployeeDirectoryManager.vue', selector: '.search input', properties: ['min-height'] },
   // pages with a back link or a reveal toggle

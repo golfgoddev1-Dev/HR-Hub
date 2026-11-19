@@ -76,22 +76,22 @@ h1, h2, h3 { font-family: 'Prompt', sans-serif; }
 .login-types legend { margin-bottom: 12px; color: #0b1c30; font-size: 15px; font-weight: 600; }
 .option-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .opt { display: flex; align-items: flex-start; gap: 10px; min-height: 44px; padding: 14px 16px; border: 1.5px solid #cbd5e1; border-radius: 12px; background: #fff; cursor: pointer; transition: border-color 120ms ease, background-color 120ms ease; }
-.opt:hover { border-color: #1f5fd0; }
+.opt:hover { border-color: #4f46e5; }
 .opt:focus-within { outline: var(--motion-focus-width) solid var(--motion-focus); outline-offset: var(--motion-focus-offset); }
-.opt--selected { border-color: #1f5fd0; background: #e5eeff; }
-.opt input { width: 16px; height: 16px; flex: 0 0 16px; margin: 3px 0 0; accent-color: #1f5fd0; }
+.opt--selected { border-color: #4f46e5; background: #eef2ff; }
+.opt input { width: 16px; height: 16px; flex: 0 0 16px; margin: 3px 0 0; accent-color: #4f46e5; }
 .opt-copy { display: grid; gap: 4px; }
 .opt-title { color: #0b1c30; font-size: 14px; font-weight: 600; line-height: 1.45; }
 .opt-description { color: #444651; font-size: 12px; line-height: 1.45; }
 .login-card .v-input { margin-bottom: 10px; }
 .login-card .v-field { color: #0b1c30; }
 .login-card .v-label, .login-card .v-messages__message { color: #444651; }
-.pin-toggle { border: 0; padding: 4px; color: #1f5fd0; background: transparent; font-size: 13px; cursor: pointer; }
+.pin-toggle { border: 0; padding: 4px; color: #4f46e5; background: transparent; font-size: 13px; cursor: pointer; }
 .pin-toggle:focus-visible, .login-footer a:focus-visible { outline: var(--motion-focus-width) solid var(--motion-focus); outline-offset: var(--motion-focus-offset); border-radius: 4px; }
 .login-error { margin: 2px 0 14px; color: #b91c1c; background: #fef2f2; }
 .login-submit { margin-top: 2px; color: #fff !important; font-weight: 600; }
 .login-footer { display: grid; gap: 3px; margin-top: 24px; padding-top: 20px; border-top: 1px solid #e2e8f0; color: #444651; font-size: 14px; line-height: 1.6; }
-.login-footer a { width: fit-content; color: #1f5fd0; font-weight: 600; text-decoration: none; }
+.login-footer a { width: fit-content; color: #4f46e5; font-weight: 600; text-decoration: none; }
 .login-footer a:hover { text-decoration: underline; }
 .lockout-card { border-radius: 14px !important; }
 .lockout-title { color: #0b1c30; font: 600 20px 'Prompt', sans-serif; }
@@ -169,6 +169,19 @@ h1, h2, h3 { font-family: 'Prompt', sans-serif; }
 .app-layout-inner .block > :is(.section-title, .hint, .empty),
 .app-layout-inner .section-head {
   padding: 16px 18px;
+}
+
+/* Page headers and notices are glass panels like every card below them, so they
+   share the card corner. Pages that never set a radius used to show these as
+   square white slabs above rounded cards. */
+.app-layout-inner :is(main.content, main.page-main) > :is(.head, .page-head, .hint, .empty),
+.app-layout-inner .section-head {
+  border-radius: 20px;
+}
+
+/* A hint or empty notice inside a card is a smaller panel: same family, smaller corner. */
+.app-layout-inner :is(.hint, .empty) {
+  border-radius: 14px;
 }
 
 @media (max-width: 720px) {

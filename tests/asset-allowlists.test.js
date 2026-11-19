@@ -105,14 +105,13 @@ const ITEM_ICONS = [
 // reviewed; a new expression in a new file fails as unrecognized.
 const DYNAMIC_ICON_BINDINGS = {
   'src/components/AdminNav.vue|item.icon': { count: 2, icons: ITEM_ICONS },
-  'src/components/AppDock.vue|brandIcon': { count: 2, icons: ['groups', 'beach_access'] },
+  'src/components/AppDock.vue|brandIcon': { count: 2, icons: ['groups', 'beach_access', 'qr_code_2'] },
   'src/components/AppDock.vue|item.icon': { count: 3, icons: ITEM_ICONS },
   'src/components/AppDock.vue|leaving ? \'sync\' : \'logout\'': {
     count: 2,
     icons: ['sync', 'logout'],
   },
-  'src/components/ControllerNav.vue|item.icon': { count: 2, icons: ITEM_ICONS },
-  'src/components/AppLayout.vue|brand.icon': { count: 1, icons: ['groups', 'beach_access'] },
+  'src/components/AppLayout.vue|brand.icon': { count: 1, icons: ['groups', 'beach_access', 'qr_code_2'] },
   'src/pages/AdminPage.vue|stat.icon': {
     count: 1,
     icons: ['groups', 'pending_actions', 'how_to_reg', 'event_busy'],

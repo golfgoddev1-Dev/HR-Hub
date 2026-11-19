@@ -178,3 +178,11 @@ test("exactly 500 data rows is accepted", () => {
   assert.equal(result.ok, true);
   assert.equal(result.rows.length, MAX_DATA_ROWS);
 });
+
+test("parseXlsx refuses an archive that inflates past the size cap", async () => {
+  const { zipSync } = await import("fflate");
+  const { parseXlsx, XlsxError } = await import("../src/import/xlsx.js");
+  const bomb = zipSync({ "xl/worksheets/sheet1.xml": new Uint8Array(9 * 1024 * 1024) });
+  assert.ok(bomb.length < 100 * 1024, "the fixture must stay tiny when compressed");
+  assert.throws(() => parseXlsx(bomb), (error) => error instanceof XlsxError && error.code === "too_large");
+});

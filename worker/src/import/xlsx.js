@@ -17,6 +17,12 @@ const FORBIDDEN_ENTRY_PATTERNS = [
   /^xl\/ctrlProps\//i,
 ];
 
+// A 2 MB upload can inflate to gigabytes (zip bomb), which would exhaust the
+// Worker's memory and CPU. Sizes come from the archive's central directory, so
+// an oversized entry is refused before anything is inflated.
+const MAX_ENTRY_BYTES = 8 * 1024 * 1024;
+const MAX_TOTAL_BYTES = 24 * 1024 * 1024;
+
 const EXTERNAL_RELATIONSHIP = /TargetMode\s*=\s*"External"/i;
 const EXTERNAL_TYPES = /relationships\/(externalLink|oleObject|package)/i;
 
@@ -117,11 +123,29 @@ function readFirstSheetPath(entries) {
  */
 export function parseXlsx(bytes) {
   let entries;
+  let forbiddenEntry = null;
+  let tooLarge = false;
+  let totalBytes = 0;
   try {
-    entries = unzipSync(bytes);
+    entries = unzipSync(bytes, {
+      filter(file) {
+        if (FORBIDDEN_ENTRY_PATTERNS.some((pattern) => pattern.test(file.name))) {
+          forbiddenEntry = file.name;
+          return false;
+        }
+        totalBytes += file.originalSize;
+        if (file.originalSize > MAX_ENTRY_BYTES || totalBytes > MAX_TOTAL_BYTES) {
+          tooLarge = true;
+          return false;
+        }
+        return true;
+      },
+    });
   } catch {
     throw new XlsxError("not_zip", "not a zip archive");
   }
+  if (forbiddenEntry) throw new XlsxError("macro_or_object", forbiddenEntry);
+  if (tooLarge) throw new XlsxError("too_large", "archive expands too far");
 
   const names = Object.keys(entries);
   for (const name of names) {

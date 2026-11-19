@@ -47,6 +47,23 @@ app.use("*", async (c, next) => {
   }
 });
 
+// Defence in depth on top of the SameSite=Strict session cookie: a browser
+// always sends Origin on a cross-origin write, so a write whose Origin is not
+// this request's own origin is refused. Requests without Origin (server to
+// server, curl, same-origin GET) pass; the cookie rules still apply to them.
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+app.use("*", async (c, next) => {
+  c.header("X-Content-Type-Options", "nosniff");
+  if (!SAFE_METHODS.has(c.req.method)) {
+    const origin = c.req.header("Origin");
+    if (origin && origin !== new URL(c.req.url).origin) {
+      return c.json({ ok: false, message: "คำขอไม่ถูกต้อง" }, 403);
+    }
+  }
+  await next();
+});
+
 app.route("/api/auth", auth);
 app.route("/api/register", register);
 app.route("/api/notifications", notifications);
