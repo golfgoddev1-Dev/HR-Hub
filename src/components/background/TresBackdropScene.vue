@@ -7,7 +7,7 @@
 // camera setup, no scene construction and no manual render() call here - TresJS
 // does all of that. What is left is the per-frame animation, which writes instance
 // matrices from the pure layout functions in src/lib/background-scene.js.
-import { AdditiveBlending, BufferAttribute, BufferGeometry, Color, DoubleSide, DynamicDrawUsage, MeshBasicMaterial, MeshLambertMaterial, MeshStandardMaterial, Object3D, PointsMaterial, Shape, ShapeGeometry, SphereGeometry } from 'three'
+import { AdditiveBlending, BufferAttribute, BufferGeometry, Color, DoubleSide, DynamicDrawUsage, ExtrudeGeometry, IcosahedronGeometry, MeshBasicMaterial, MeshLambertMaterial, MeshStandardMaterial, Object3D, PointsMaterial, Shape, ShapeGeometry } from 'three'
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useLoop } from '@tresjs/core'
 import {
@@ -31,8 +31,8 @@ const props = defineProps({
 
 const plan = scenePlan(props.config)
 
-// A rounded rectangle, flat: one cheap shape for every card instance.
-function roundedGeometry({ width, height, radius }) {
+// A rounded rectangle outline, shared by the flat and the bevelled geometry.
+function roundedShape({ width, height, radius }) {
   const halfWidth = width / 2
   const halfHeight = height / 2
   const r = Math.min(radius, halfWidth, halfHeight)
@@ -46,12 +46,33 @@ function roundedGeometry({ width, height, radius }) {
   shape.quadraticCurveTo(-halfWidth, halfHeight, -halfWidth, halfHeight - r)
   shape.lineTo(-halfWidth, -halfHeight + r)
   shape.quadraticCurveTo(-halfWidth, -halfHeight, -halfWidth + r, -halfHeight)
-  return new ShapeGeometry(shape, 8)
+  return shape
+}
+
+// Flat: one cheap shape for every instance on the lower tiers.
+function roundedGeometry(size) {
+  return new ShapeGeometry(roundedShape(size), 8)
+}
+
+// High tier only: a thin bevelled slab, so the edge catches the moving light and
+// the tile reads as a piece of glass rather than a sticker. A few hundred
+// vertices per tile, instanced, is far under the frame budget.
+function slabGeometry(size) {
+  const slab = new ExtrudeGeometry(roundedShape(size), {
+    depth: 0.07,
+    bevelEnabled: true,
+    bevelThickness: 0.025,
+    bevelSize: 0.025,
+    bevelSegments: 2,
+    curveSegments: 6,
+  })
+  slab.translate(0, 0, -0.035)
+  return slab
 }
 
 // MeshStandardMaterial at high, Lambert at medium, Basic at low: the tier decides
 // how much light maths each card may cost.
-function makeMaterial(config, opacity) {
+function makeMaterial(config, opacity, flatShading = false) {
   const options = {
     color: 0xffffff,
     transparent: true,
@@ -60,22 +81,35 @@ function makeMaterial(config, opacity) {
     side: DoubleSide,
   }
   if (config.material === 'standard') {
-    return new MeshStandardMaterial({ ...options, roughness: 0.45, metalness: 0.05 })
+    // A faint self-glow keeps the tiles luminous against the pale gradient.
+    return new MeshStandardMaterial({
+      ...options,
+      roughness: 0.22,
+      metalness: 0.15,
+      emissive: 0x6366f1,
+      emissiveIntensity: 0.22,
+      flatShading,
+    })
   }
-  if (config.material === 'lambert') return new MeshLambertMaterial(options)
+  if (config.material === 'lambert') {
+    return new MeshLambertMaterial({ ...options, emissive: 0x6366f1, emissiveIntensity: 0.28, flatShading })
+  }
   return new MeshBasicMaterial(options)
 }
 
-const cardGeometry = roundedGeometry(CARD_SIZE)
+const cardGeometry = props.config.material === 'standard' ? slabGeometry(CARD_SIZE) : roundedGeometry(CARD_SIZE)
 const planeMaterials = plan.planes.map((plane) => makeMaterial(props.config, plane.opacity))
-const sphereGeometry = new SphereGeometry(
-  1,
-  Math.max(6, props.config.sphereSegments),
-  Math.max(5, Math.round(props.config.sphereSegments * 0.65))
-)
-const sphereMaterial = makeMaterial(props.config, 0.7)
+// Faceted crystals: flat-shaded icosahedra spin and flash as each face turns
+// to the light. Detail 1 at high, a plain 20-face gem below.
+const sphereGeometry = new IcosahedronGeometry(1, props.config.material === 'standard' ? 1 : 0)
+const sphereMaterial = makeMaterial(props.config, 0.78, true)
 const calendarGeometry = roundedGeometry(CALENDAR_CELL_SIZE)
-const calendarMaterial = plan.calendar.cells.length > 0 ? makeMaterial(props.config, 0.42) : null
+const calendarMaterial = plan.calendar.cells.length > 0 ? makeMaterial(props.config, 0.5) : null
+// The month grid glows a little, so it reads as lit cells rather than grey tiles.
+if (calendarMaterial?.emissive) {
+  calendarMaterial.emissive.set(0xffffff)
+  calendarMaterial.emissiveIntensity = 0.4
+}
 const glintGeometry = roundedGeometry(GLINT_SIZE)
 const glintMaterial =
   plan.glints.length > 0
@@ -108,6 +142,7 @@ const sphereRef = ref(null)
 const calendarRef = ref(null)
 const glintRef = ref(null)
 const pointsRef = ref(null)
+const lightRef = ref(null)
 
 const field = { width: 20, height: 12 }
 const pointer = { x: 0, y: 0, targetX: 0, targetY: 0 }
@@ -217,6 +252,15 @@ const stopLoop = onBeforeRender((context) => {
 
   const state = { time: elapsed, elapsed, field, pointer }
 
+  // The travelling light that makes the bevels and facets shimmer (high tier).
+  if (lightRef.value) {
+    lightRef.value.position.set(
+      Math.cos(elapsed * 0.35) * field.width * 0.42,
+      Math.sin(elapsed * 0.27) * field.height * 0.4,
+      3
+    )
+  }
+
   if (cameraRef.value) {
     cameraDrift(
       { elapsed, pointer, strength: props.config.mouseParallax ? MAX_PARALLAX : MAX_PARALLAX * 0.35 },
@@ -275,6 +319,15 @@ onBeforeUnmount(() => {
        colours to white and the cards read as grey slabs instead of indigo ones. -->
   <TresAmbientLight :intensity="0.62" />
   <TresDirectionalLight :position="[4, 7, 9]" :intensity="0.5" />
+  <!-- One light that wanders across the field, high tier only. -->
+  <TresPointLight
+    v-if="config.material === 'standard'"
+    ref="lightRef"
+    color="#c4b5fd"
+    :intensity="0.9"
+    :decay="0"
+    :position="[0, 0, 3]"
+  />
 
   <TresInstancedMesh
     v-for="(plane, planeIndex) in plan.planes"

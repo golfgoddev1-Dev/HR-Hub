@@ -16,12 +16,14 @@
 // every count below is read straight from the tier config.
 
 // Brand indigo and violet, plus the leave statuses the app already shows.
+// Luminous tints: the tiles read as coloured glass over the gradient, not as
+// grey slabs. Sky and rose are accents only; indigo and violet carry the field.
 export const CARD_TINTS = Object.freeze([
-  0x3730a3, 0x6d28d9, 0x818cf8, 0x4f46e5, 0x16a34a, 0x6d28d9, 0x818cf8, 0x3730a3,
-  0xd97706, 0x4f46e5, 0x16a34a, 0x818cf8, 0xdc2626, 0x6d28d9, 0x3730a3, 0x4f46e5,
+  0x6366f1, 0x8b5cf6, 0x38bdf8, 0x4f46e5, 0x16a34a, 0xa78bfa, 0x22d3ee, 0x818cf8,
+  0xd97706, 0xf472b6, 0x16a34a, 0x7c3aed, 0xdc2626, 0x60a5fa, 0x6366f1, 0x4f46e5,
 ])
 
-export const SPHERE_TINTS = Object.freeze([0x8b5cf6, 0x818cf8, 0x34d399])
+export const SPHERE_TINTS = Object.freeze([0x8b5cf6, 0x38bdf8, 0x34d399, 0xf472b6])
 
 export const CALENDAR_TINTS = Object.freeze([0xc7d2fe, 0x86efac, 0xfcd34d, 0xddd6fe, 0xa5b4fc, 0xfca5a5])
 
@@ -194,15 +196,18 @@ export function layoutCards(plan, state, out) {
 
     for (const card of plane.cards) {
       const target = slot(out, index)
-      const bob = Math.sin(time * 0.26 + card.phase)
-      const sway = Math.cos(time * 0.19 + card.phase)
-      target.x = card.nx * halfWidth * 0.94 + sway * 0.5 + pointer.x * share
-      target.y = card.ny * halfHeight * 0.94 + bob * card.bob - pointer.y * share * 0.7
-      target.z = card.nz * SCENE_DEPTH * 0.8 + baseZ
-      target.rx = card.tiltX + bob * 0.05
-      target.ry = card.tiltY + sway * 0.09
-      target.rz = card.tiltZ + bob * 0.04
-      target.scale = card.scale * size * (1 + bob * 0.015) * (0.72 + plane.depth * 0.28)
+      const bob = Math.sin(time * 0.55 + card.phase)
+      const sway = Math.cos(time * 0.4 + card.phase)
+      // A slow wave travels across the field, so neighbouring tiles lift and
+      // turn one after another instead of bobbing in isolation.
+      const wave = Math.sin(time * 0.6 + card.nx * 2.4 + plane.depth * 1.6)
+      target.x = card.nx * halfWidth * 0.94 + sway * 0.7 + pointer.x * share
+      target.y = card.ny * halfHeight * 0.94 + bob * card.bob * 1.5 - pointer.y * share * 0.7
+      target.z = card.nz * SCENE_DEPTH * 0.8 + baseZ + wave * 0.55
+      target.rx = card.tiltX + bob * 0.16 + wave * 0.06
+      target.ry = card.tiltY + sway * 0.34 + wave * 0.14
+      target.rz = card.tiltZ + bob * 0.07
+      target.scale = card.scale * size * (1 + bob * 0.03) * (0.72 + plane.depth * 0.28)
       index += 1
     }
   }
@@ -218,17 +223,20 @@ export function layoutSpheres(plan, state, out) {
   for (let index = 0; index < plan.spheres.length; index += 1) {
     const sphere = plan.spheres[index]
     const target = slot(out, index)
-    const drift = Math.sin(time * 0.21 + sphere.phase)
-    target.x = sphere.nx * halfWidth * 0.82 + drift * 0.3 + pointer.x * 0.4
+    const drift = Math.sin(time * 0.45 + sphere.phase)
+    // Each gem circles its own anchor and turns on two axes, so its facets
+    // catch the light as it goes.
+    const angle = time * 0.32 + sphere.phase
+    target.x = sphere.nx * halfWidth * 0.82 + Math.cos(angle) * 0.9 + pointer.x * 0.4
     target.y =
       sphere.ny * halfHeight * 0.82 +
-      Math.cos(time * 0.17 + sphere.phase) * 0.4 -
+      Math.sin(angle * 0.8) * 0.7 -
       pointer.y * 0.3
-    target.z = sphere.nz * SCENE_DEPTH - 4
-    target.rx = 0
-    target.ry = 0
+    target.z = sphere.nz * SCENE_DEPTH - 4 + drift * 0.4
+    target.rx = time * 0.5 + sphere.phase
+    target.ry = time * 0.36 + sphere.phase * 0.5
     target.rz = 0
-    target.scale = sphere.scale * (1 + drift * 0.06)
+    target.scale = sphere.scale * (1.05 + drift * 0.1)
   }
 
   return { count: plan.spheres.length }
@@ -244,13 +252,16 @@ export function layoutCalendar(plan, state, out) {
   for (let index = 0; index < plan.calendar.cells.length; index += 1) {
     const cell = plan.calendar.cells[index]
     const target = slot(out, index)
+    // A diagonal ripple of light crosses the month grid: the cells it passes
+    // swell and step forward, then settle.
+    const ripple = Math.max(0, Math.sin(time * 1.1 - (cell.x + cell.y) * 1.2))
     target.x = cell.x * compact + pointer.x * 0.2
     target.y = cell.y * compact + Math.sin(time * 0.3 + cell.phase) * 0.04 - pointer.y * 0.15
-    target.z = -8.6
+    target.z = -8.6 + ripple * 0.7
     target.rx = lean
     target.ry = lean * 0.6
     target.rz = 0
-    target.scale = 0.9
+    target.scale = 0.9 + ripple * 0.32
   }
 
   return { count: plan.calendar.cells.length }
@@ -263,7 +274,7 @@ export function layoutGlints(plan, state, out) {
 
   for (let index = 0; index < plan.glints.length; index += 1) {
     const streak = plan.glints[index]
-    const travel = (time * streak.speed + streak.phase) % 1
+    const travel = (time * streak.speed * 3 + streak.phase) % 1
     const fade = Math.sin(travel * Math.PI)
     const target = slot(out, index)
     target.x = travel * halfWidth * 2.4 - halfWidth * 1.2
@@ -290,9 +301,9 @@ export function driftDust(plan, state) {
   for (let index = 0; index < plan.dust.count; index += 1) {
     const at = index * 3
     const speed = 0.16 + seeds[index] * 0.34
-    positions[at + 1] += speed * 0.014
+    positions[at + 1] += speed * 0.024
     if (positions[at + 1] > halfHeight + 1) positions[at + 1] = -halfHeight - 1
-    positions[at] += Math.sin(time * 0.4 + seeds[index] * 6.28) * 0.004
+    positions[at] += Math.sin(time * 0.6 + seeds[index] * 6.28) * 0.007
     if (positions[at] > halfWidth + 1) positions[at] = -halfWidth - 1
     if (positions[at] < -halfWidth - 1) positions[at] = halfWidth + 1
   }
@@ -303,8 +314,8 @@ export function driftDust(plan, state) {
 /** The camera drifts on its own, then leans towards the pointer. */
 export function cameraDrift(state, camera) {
   const { elapsed, pointer, strength } = state
-  const x = Math.sin(elapsed * 0.16) * 0.55 + pointer.x * strength
-  const y = Math.cos(elapsed * 0.12) * 0.4 - pointer.y * strength * 0.7
+  const x = Math.sin(elapsed * 0.2) * 0.9 + pointer.x * strength
+  const y = Math.cos(elapsed * 0.15) * 0.6 - pointer.y * strength * 0.7
   camera.position.x = x
   camera.position.y = y
   camera.lookAt(0, 0, 0)
