@@ -28,21 +28,20 @@ import {
   initialTier,
 } from '../src/lib/background-quality.js'
 import {
-  CALENDAR_COLUMNS,
-  CALENDAR_TINTS,
-  CARD_TINTS,
-  GLINT_SIZE,
+  GEM_TINTS,
+  KNOT,
+  RIBBON_PALETTES,
   SCENE_DEPTH,
-  SPHERE_TINTS,
-  cardPlanes,
   driftDust,
-  dustField,
-  glintStreaks,
-  layoutCalendar,
-  layoutCards,
-  layoutGlints,
-  layoutSpheres,
+  heroFit,
+  hexToRgb,
+  layoutGems,
+  layoutKnot,
+  layoutRings,
+  layoutShell,
+  lightPositions,
   scenePlan,
+  waveRibbon,
 } from '../src/lib/background-scene.js'
 import { countUp, fadeRoute, installUiMotion } from '../src/lib/motion.js'
 import AppBackground3D from '../src/components/AppBackground3D.vue'
@@ -187,27 +186,35 @@ describe('the TresJS scene plan', () => {
     expect(scenePlan(QUALITY_TIERS.static).particleCount).toBe(0)
   })
 
-  it('splits the cards over three depth planes with different parallax shares', () => {
+  it('stacks the ribbons back to front, each with its own gradient', () => {
     const plan = scenePlan(QUALITY_TIERS.high)
-    expect(plan.planes).toHaveLength(3)
-    expect(plan.cardCount).toBe(QUALITY_TIERS.high.cardCount)
-    expect(plan.planes.map((plane) => plane.depth)).toEqual([0, 0.5, 1])
-    // Nearer planes are denser, which is what reads as depth.
-    expect(plan.planes[2].opacity).toBeGreaterThan(plan.planes[0].opacity)
+    expect(plan.ribbons).toHaveLength(QUALITY_TIERS.high.ribbonCount)
+    expect(plan.ribbons.length).toBeLessThanOrEqual(RIBBON_PALETTES.length)
+    // Each ribbon sits further back than the one in front of it.
+    for (let index = 1; index < plan.ribbons.length; index += 1) {
+      expect(plan.ribbons[index].z).toBeLessThan(plan.ribbons[index - 1].z)
+    }
+    // Every gradient has two ends, in linear 0..1 channels.
+    for (const ribbon of plan.ribbons) {
+      for (const channel of [...ribbon.from, ...ribbon.to]) {
+        expect(channel).toBeGreaterThanOrEqual(0)
+        expect(channel).toBeLessThanOrEqual(1)
+      }
+    }
   })
 
-  it('draws the status colours and a seven-column calendar motif, with no text', () => {
+  it('draws the status colours on the gems, and never any text', () => {
     // The three leave statuses the app uses, among the brand indigo and violet.
-    expect(CARD_TINTS).toContain(0x16a34a)
-    expect(CARD_TINTS).toContain(0xd97706)
-    expect(CARD_TINTS).toContain(0xdc2626)
-    expect(SPHERE_TINTS.length).toBeGreaterThan(0)
-    expect(CALENDAR_TINTS.length).toBeGreaterThan(0)
+    expect(GEM_TINTS).toContain(0x16a34a)
+    expect(GEM_TINTS).toContain(0xd97706)
+    expect(GEM_TINTS).toContain(0xdc2626)
 
-    const calendar = scenePlan(QUALITY_TIERS.high).calendar
-    expect(calendar.columns).toBe(CALENDAR_COLUMNS)
-    expect(calendar.columns).toBe(7)
-    expect(calendar.cells).toHaveLength(QUALITY_TIERS.high.calendarCellCount)
+    const plan = scenePlan(QUALITY_TIERS.high)
+    expect(plan.gems).toHaveLength(QUALITY_TIERS.high.gemCount)
+    expect(plan.rings).toHaveLength(QUALITY_TIERS.high.ringCount)
+    expect(plan.beadCount).toBe(QUALITY_TIERS.high.ringCount * QUALITY_TIERS.high.beadsPerRing)
+    expect(plan.knot).not.toBeNull()
+    expect(plan.shell).not.toBeNull()
 
     // Shapes only: no lettering is ever built.
     for (const source of [PLAN_SOURCE, SCENE_SOURCE, BACKDROP_SOURCE]) {
@@ -217,32 +224,116 @@ describe('the TresJS scene plan', () => {
     }
   })
 
-  it('drops the glints on the lowest tier and keeps them at high', () => {
-    expect(scenePlan(QUALITY_TIERS.low).glints).toHaveLength(0)
-    expect(scenePlan(QUALITY_TIERS.high).glints).toHaveLength(QUALITY_TIERS.high.glintCount)
+  it('drops the heavy parts on the lower tiers and keeps the lowest flat and small', () => {
+    const high = scenePlan(QUALITY_TIERS.high)
+    const medium = scenePlan(QUALITY_TIERS.medium)
+    const low = scenePlan(QUALITY_TIERS.low)
+    expect(medium.shell).toBeNull()
+    expect(low.shell).toBeNull()
+    expect(low.rings).toHaveLength(0)
+    expect(low.beadCount).toBe(0)
+    expect(low.knot).not.toBeNull()
+    expect(low.ribbons.length).toBeLessThan(medium.ribbons.length)
+    expect(low.gems.length).toBeLessThan(medium.gems.length)
+    expect(medium.gems.length).toBeLessThan(high.gems.length)
   })
 
-  it('moves instances with transform and scale only', () => {
+  it('moves everything with transforms and attribute writes only', () => {
     const plan = scenePlan(QUALITY_TIERS.high)
-    const state = { time: 3.25, elapsed: 3.25, field: { width: 20, height: 12 }, pointer: { x: 0.4, y: -0.2 } }
-    const cards = []
-    const { count } = layoutCards(plan, state, cards)
-    expect(count).toBe(plan.cardCount)
-    for (const card of cards) {
-      expect(Object.keys(card).sort()).toEqual(['rx', 'ry', 'rz', 'scale', 'x', 'y', 'z'])
-      for (const value of Object.values(card)) expect(Number.isFinite(value)).toBe(true)
-      expect(card.scale).toBeGreaterThan(0)
+    const state = { time: 3.25, elapsed: 3.25, field: { width: 20, height: 12 }, pointer: { x: 0.4, y: -0.2 }, fit: 1 }
+
+    const gems = []
+    expect(layoutGems(plan, state, gems).count).toBe(plan.gems.length)
+    for (const gem of gems) {
+      expect(Object.keys(gem).sort()).toEqual(['rx', 'ry', 'rz', 'scale', 'x', 'y', 'z'])
+      for (const value of Object.values(gem)) expect(Number.isFinite(value)).toBe(true)
+      expect(gem.scale).toBeGreaterThan(0)
     }
 
-    const spheres = []
-    expect(layoutSpheres(plan, state, spheres).count).toBe(plan.spheres.length)
-    const cells = []
-    expect(layoutCalendar(plan, state, cells).count).toBe(plan.calendar.cells.length)
-    const glints = []
-    expect(layoutGlints(plan, state, glints).count).toBe(plan.glints.length)
-    // A glint fades by scale but is never degenerate.
-    for (const glint of glints) expect(glint.scale).toBeGreaterThan(0)
-    expect(GLINT_SIZE.width).toBeGreaterThan(0)
+    const knot = layoutKnot(state, {})
+    const shell = layoutShell(state, {})
+    for (const pose of [knot, shell]) {
+      for (const value of Object.values(pose)) expect(Number.isFinite(value)).toBe(true)
+    }
+    // The shell turns against the knot.
+    expect(Math.sign(shell.ry)).toBe(-Math.sign(knot.ry))
+
+    const lights = lightPositions(state, state.field, [])
+    expect(lights).toHaveLength(3)
+    for (const light of lights) {
+      for (const value of Object.values(light)) expect(Number.isFinite(value)).toBe(true)
+    }
+  })
+
+  it('ripples a ribbon in place and keeps the crest on its top edge', () => {
+    const [ribbon] = scenePlan(QUALITY_TIERS.low).ribbons
+    const total = (ribbon.cols + 1) * (ribbon.rows + 1)
+    const positions = new Float32Array(total * 3)
+    for (let index = 0; index < total; index += 1) {
+      positions[index * 3] = (index % (ribbon.cols + 1)) * 0.5 - 12
+      positions[index * 3 + 1] = Math.floor(index / (ribbon.cols + 1)) * 0.3 - 1
+    }
+    const flat = Float32Array.from(positions)
+    const colors = new Float32Array(total * 3)
+    const crest = new Float32Array((ribbon.cols + 1) * 3)
+
+    waveRibbon(ribbon, 2.5, positions, colors, crest, true)
+
+    for (let index = 0; index < total; index += 1) {
+      // Only z moves: the flat sheet's x and y stay where they were.
+      expect(positions[index * 3]).toBe(flat[index * 3])
+      expect(positions[index * 3 + 1]).toBe(flat[index * 3 + 1])
+      expect(Number.isFinite(positions[index * 3 + 2])).toBe(true)
+    }
+    for (const value of colors) {
+      expect(value).toBeGreaterThanOrEqual(0)
+      expect(value).toBeLessThanOrEqual(1)
+    }
+    // The crest copies the first row, a hair in front of it.
+    for (let index = 0; index <= ribbon.cols; index += 1) {
+      expect(crest[index * 3]).toBe(positions[index * 3])
+      expect(crest[index * 3 + 2]).toBeCloseTo(positions[index * 3 + 2] + 0.02, 5)
+    }
+    // Without `paint`, colours and crest are left alone.
+    const before = Float32Array.from(colors)
+    waveRibbon(ribbon, 3, positions, colors, crest, false)
+    expect(Array.from(colors)).toEqual(Array.from(before))
+  })
+
+  it('keeps every bead on its ring', () => {
+    const plan = scenePlan(QUALITY_TIERS.high)
+    const rings = []
+    const beads = []
+    const state = { time: 7.5, field: { width: 20, height: 12 }, pointer: { x: 0, y: 0 }, fit: 1 }
+    const counts = layoutRings(plan, state, rings, beads)
+    expect(counts.rings).toBe(plan.rings.length)
+    expect(counts.beads).toBe(plan.beadCount)
+
+    let bead = 0
+    for (const ring of plan.rings) {
+      for (let k = 0; k < ring.beads; k += 1) {
+        const at = beads[bead]
+        const distance = Math.hypot(at.x, at.y, at.z - KNOT.z)
+        // A ring is a circle around the knot: every bead is one radius away.
+        expect(distance).toBeCloseTo(ring.radius, 4)
+        bead += 1
+      }
+    }
+
+    // A narrow screen scales the whole group down.
+    const small = []
+    layoutRings(plan, { ...state, fit: 0.5 }, [], small)
+    expect(Math.hypot(small[0].x, small[0].y, small[0].z - KNOT.z)).toBeCloseTo(plan.rings[0].radius * 0.5, 4)
+  })
+
+  it('converts palette colours to the renderer linear space and fits the hero to the screen', () => {
+    // sRGB mid-grey is darker once linear; black and white are unchanged.
+    expect(hexToRgb(0xffffff)).toEqual([1, 1, 1])
+    expect(hexToRgb(0x000000)).toEqual([0, 0, 0])
+    expect(hexToRgb(0x808080)[0]).toBeCloseTo(0.2158, 3)
+    expect(heroFit({ width: 40 })).toBe(1)
+    expect(heroFit({ width: 5.6 })).toBeLessThan(0.5)
+    expect(heroFit({ width: 1 })).toBeGreaterThanOrEqual(0.42)
   })
 
   it('wraps the dust inside the field instead of letting it drift away', () => {
@@ -263,9 +354,12 @@ describe('the TresJS scene plan', () => {
 
   it('draws nothing at all when the tier is static', () => {
     const plan = scenePlan(QUALITY_TIERS.static)
-    expect(plan.planes.every((plane) => plane.cards.length === 0)).toBe(true)
-    expect(plan.spheres).toHaveLength(0)
-    expect(plan.calendar.cells).toHaveLength(0)
+    expect(plan.ribbons).toHaveLength(0)
+    expect(plan.knot).toBeNull()
+    expect(plan.shell).toBeNull()
+    expect(plan.rings).toHaveLength(0)
+    expect(plan.gems).toHaveLength(0)
+    expect(plan.halos).toHaveLength(0)
     expect(plan.dust.count).toBe(0)
   })
 })
@@ -479,21 +573,26 @@ describe('tier constants', () => {
     expect(QUALITY_TIERS.low.particleCount).toBeLessThanOrEqual(40)
   })
 
-  it('splits each budget into the three planes, spheres, glints and calendar', () => {
+  it('builds every scene part out of the budget, never beyond it', () => {
     for (const name of ['high', 'medium', 'low']) {
       const tier = QUALITY_TIERS[name]
-      expect(
-        tier.cardCount + tier.sphereCount + tier.glintCount + tier.calendarCellCount,
-        name
-      ).toBe(tier.objectCount)
-      expect(tier.cardCount % tier.planeCount, name).toBe(0)
-      expect(tier.planeCount, name).toBe(3)
+      const plan = scenePlan(tier)
+      expect(plan.objectCount, name).toBeLessThanOrEqual(tier.objectCount)
+      expect(plan.objectCount, name).toBe(
+        tier.ribbonCount +
+          1 +
+          (tier.shell ? 1 : 0) +
+          tier.ringCount +
+          tier.ringCount * tier.beadsPerRing +
+          tier.gemCount +
+          tier.haloCount
+      )
     }
   })
 
-  it('drops the glints on the lowest 3D tier', () => {
+  it('keeps the lowest 3D tier on flat Basic material', () => {
     expect(QUALITY_TIERS.low.material).toBe('basic')
-    expect(QUALITY_TIERS.low.glintCount).toBe(0)
+    expect(QUALITY_TIERS.low.ringCount).toBe(0)
   })
 
   it('never enables shadow maps or post-processing', () => {
@@ -509,12 +608,10 @@ describe('tier constants', () => {
     expect(QUALITY_TIERS.low.material).toBe('basic')
   })
 
-  it('offers mouse parallax and card tilt only at high', () => {
+  it('offers mouse parallax only at high', () => {
     expect(QUALITY_TIERS.high.mouseParallax).toBe(true)
-    expect(QUALITY_TIERS.high.cardTilt).toBe(true)
     for (const name of ['medium', 'low', 'static']) {
       expect(QUALITY_TIERS[name].mouseParallax, name).toBe(false)
-      expect(QUALITY_TIERS[name].cardTilt, name).toBe(false)
     }
   })
 })
@@ -730,7 +827,7 @@ describe('the scene is the visible backdrop', () => {
     expect(sweep).not.toMatch(/background:\s*#[0-9a-f]{3,6}/i)
   })
 
-  it('draws the leave palette and a calendar motif inside the scene', () => {
+  it('draws the leave palette on the gems inside the scene', () => {
     // Brand indigo and violet plus the three leave-status colours. The palette
     // lives in the scene plan now, not in the component.
     expect(BACKGROUND_SOURCE).toContain('rgba(79, 70, 229, 0.95)')
@@ -739,23 +836,26 @@ describe('the scene is the visible backdrop', () => {
     expect(palette).toContain('0xd97706')
     expect(palette).toContain('0xdc2626')
     expect(BACKGROUND_SOURCE).toContain('rgba(139, 92, 246, 0.9)')
-    expect(palette).toContain('CALENDAR_TINTS')
+    expect(palette).toContain('GEM_TINTS')
     // Shapes only: the scene never draws lettering.
     expect(BACKGROUND_SOURCE).not.toContain('TextGeometry')
     expect(BACKGROUND_SOURCE).not.toContain('FontLoader')
   })
 
-  it('renders the planes, the calendar, the glints and the dust through TresJS', () => {
+  it('renders the ribbons, the knot, the rings, the gems and the dust through TresJS', () => {
     // The scene's objects are TresJS elements driven by the plan, so the counts
     // come from background-scene.js rather than from a hand-built scene graph.
-    expect(SCENE_SOURCE).toContain(':args="[cardGeometry, planeMaterials[planeIndex], plane.cards.length]"')
-    expect(SCENE_SOURCE).toContain(':args="[sphereGeometry, sphereMaterial, plan.spheres.length]"')
-    expect(SCENE_SOURCE).toContain(':args="[calendarGeometry, calendarMaterial, plan.calendar.cells.length]"')
-    expect(SCENE_SOURCE).toContain(':args="[glintGeometry, glintMaterial, plan.glints.length]"')
+    expect(SCENE_SOURCE).toContain(':args="[ribbonGeometries[ribbonIndex], ribbonMaterials[ribbonIndex]]"')
+    expect(SCENE_SOURCE).toContain(':args="[knotGeometry, knotMaterial]"')
+    expect(SCENE_SOURCE).toContain(':args="[shellGeometry, shellMaterial]"')
+    expect(SCENE_SOURCE).toContain(':args="[beadGeometry, beadMaterial, plan.beadCount]"')
+    expect(SCENE_SOURCE).toContain(':args="[gemGeometry, gemMaterial, plan.gems.length]"')
     expect(SCENE_SOURCE).toContain(':args="[dustGeometry, dustMaterial]"')
     // Everything it allocates is handed to TresJS, which disposes the scene graph
     // on unmount, and the loop hook is released by our own cleanup.
     expect(SCENE_SOURCE).toContain('stopLoop.off()')
+    // Textures are not part of the scene graph, so the scene disposes its own.
+    expect(SCENE_SOURCE).toContain('texture.dispose()')
     expect(tresMock.released).toBeGreaterThanOrEqual(0)
   })
 

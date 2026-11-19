@@ -5,10 +5,11 @@
 // real Three.js. src/components/AppBackground3D.vue owns the canvas; this module
 // owns the budget.
 //
-// The tiers, from the design brief. `objectCount` is the cap on every instanced
-// object in the scene (cards on the three depth planes + spheres + glints +
-// calendar cells); particles are counted separately because they are one draw
-// call of point sprites. `glassBlur` is the CSS cost the panels may spend at that
+// The tiers, from the design brief. `objectCount` is the cap on every object in
+// the scene (ribbons + the crystal knot and its shell + rings and their beads +
+// gems + glow halos; see scenePlan in background-scene.js, which is tested
+// against it); particles are counted separately because they are one draw call
+// of point sprites. `glassBlur` is the CSS cost the panels may spend at that
 // tier, so a mid or low device pays less for the frosting than for the scene.
 //
 // - high:   up to 120 objects, up to 300 particles, pixel ratio 1.5, 60 fps
@@ -22,11 +23,16 @@ export const QUALITY_TIERS = Object.freeze({
   high: Object.freeze({
     name: 'high',
     objectCount: 120,
-    cardCount: 60,
-    sphereCount: 14,
-    glintCount: 6,
-    calendarCellCount: 40,
-    planeCount: 3,
+    ribbonCount: 5,
+    ribbonCols: 150,
+    ribbonRows: 20,
+    knotSegments: 260,
+    knotRadial: 40,
+    shell: true,
+    ringCount: 3,
+    beadsPerRing: 6,
+    gemCount: 48,
+    haloCount: 3,
     particleCount: 260,
     pixelRatioCap: 1.5,
     targetFps: 60,
@@ -34,18 +40,21 @@ export const QUALITY_TIERS = Object.freeze({
     postProcessing: false,
     material: 'standard',
     mouseParallax: true,
-    cardTilt: true,
     glassBlur: 18,
-    sphereSegments: 20,
   }),
   medium: Object.freeze({
     name: 'medium',
     objectCount: 60,
-    cardCount: 30,
-    sphereCount: 8,
-    glintCount: 4,
-    calendarCellCount: 18,
-    planeCount: 3,
+    ribbonCount: 3,
+    ribbonCols: 80,
+    ribbonRows: 12,
+    knotSegments: 120,
+    knotRadial: 16,
+    shell: false,
+    ringCount: 2,
+    beadsPerRing: 3,
+    gemCount: 20,
+    haloCount: 2,
     particleCount: 120,
     pixelRatioCap: 1,
     targetFps: 30,
@@ -53,18 +62,21 @@ export const QUALITY_TIERS = Object.freeze({
     postProcessing: false,
     material: 'lambert',
     mouseParallax: false,
-    cardTilt: false,
     glassBlur: 8,
-    sphereSegments: 12,
   }),
   low: Object.freeze({
     name: 'low',
     objectCount: 24,
-    cardCount: 12,
-    sphereCount: 3,
-    glintCount: 0,
-    calendarCellCount: 9,
-    planeCount: 3,
+    ribbonCount: 2,
+    ribbonCols: 50,
+    ribbonRows: 8,
+    knotSegments: 64,
+    knotRadial: 10,
+    shell: false,
+    ringCount: 0,
+    beadsPerRing: 0,
+    gemCount: 6,
+    haloCount: 1,
     particleCount: 32,
     pixelRatioCap: 0.75,
     targetFps: 24,
@@ -72,18 +84,21 @@ export const QUALITY_TIERS = Object.freeze({
     postProcessing: false,
     material: 'basic',
     mouseParallax: false,
-    cardTilt: false,
     glassBlur: 8,
-    sphereSegments: 8,
   }),
   static: Object.freeze({
     name: 'static',
     objectCount: 0,
-    cardCount: 0,
-    sphereCount: 0,
-    glintCount: 0,
-    calendarCellCount: 0,
-    planeCount: 0,
+    ribbonCount: 0,
+    ribbonCols: 0,
+    ribbonRows: 0,
+    knotSegments: 0,
+    knotRadial: 0,
+    shell: false,
+    ringCount: 0,
+    beadsPerRing: 0,
+    gemCount: 0,
+    haloCount: 0,
     particleCount: 0,
     pixelRatioCap: 1,
     targetFps: 0,
@@ -91,9 +106,7 @@ export const QUALITY_TIERS = Object.freeze({
     postProcessing: false,
     material: 'none',
     mouseParallax: false,
-    cardTilt: false,
     glassBlur: 0,
-    sphereSegments: 0,
   }),
 })
 

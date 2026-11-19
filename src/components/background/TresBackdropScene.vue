@@ -1,28 +1,53 @@
 <script setup>
 // The scene graph itself, declared as TresJS components.
 //
-// Declarative: the depth planes, spheres, calendar grid, glints and dust are
-// <TresInstancedMesh> / <TresPoints> elements with their geometry, material and
-// instance count taken from the plan for this tier. There is no renderer, no
-// camera setup, no scene construction and no manual render() call here - TresJS
-// does all of that. What is left is the per-frame animation, which writes instance
-// matrices from the pure layout functions in src/lib/background-scene.js.
-import { AdditiveBlending, BufferAttribute, BufferGeometry, Color, DoubleSide, DynamicDrawUsage, ExtrudeGeometry, IcosahedronGeometry, MeshBasicMaterial, MeshLambertMaterial, MeshStandardMaterial, Object3D, PointsMaterial, Shape, ShapeGeometry } from 'three'
+// Declarative: the ribbons, the crystal knot and its shell, the rings, the gems,
+// the halos and the dust are <TresMesh>, <TresInstancedMesh>, <TresSprite> and
+// <TresPoints> elements whose geometry, material and counts come from the plan
+// for this tier. There is no renderer, no camera setup, no scene construction and
+// no manual render() call here - TresJS does all of that. What is left is the
+// per-frame animation, which writes geometry attributes and instance matrices
+// from the pure layout functions in src/lib/background-scene.js.
+import {
+  AdditiveBlending,
+  BufferAttribute,
+  BufferGeometry,
+  CanvasTexture,
+  Color,
+  DoubleSide,
+  DynamicDrawUsage,
+  EdgesGeometry,
+  IcosahedronGeometry,
+  LineBasicMaterial,
+  MeshBasicMaterial,
+  MeshLambertMaterial,
+  MeshStandardMaterial,
+  Object3D,
+  PlaneGeometry,
+  PointsMaterial,
+  SphereGeometry,
+  SpriteMaterial,
+  TorusGeometry,
+  TorusKnotGeometry,
+} from 'three'
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useLoop } from '@tresjs/core'
 import {
+  BEAD_RADIUS,
   CAMERA,
-  CARD_SIZE,
-  CALENDAR_CELL_SIZE,
-  GLINT_SIZE,
+  KNOT,
   MAX_PARALLAX,
+  RIBBON_SIZE,
   cameraDrift,
   driftDust,
-  layoutCalendar,
-  layoutCards,
-  layoutGlints,
-  layoutSpheres,
+  heroFit,
+  layoutGems,
+  layoutKnot,
+  layoutRings,
+  layoutShell,
+  lightPositions,
   scenePlan,
+  waveRibbon,
 } from '../../lib/background-scene.js'
 
 const props = defineProps({
@@ -30,98 +55,129 @@ const props = defineProps({
 })
 
 const plan = scenePlan(props.config)
+const lit = props.config.material !== 'basic'
 
-// A rounded rectangle outline, shared by the flat and the bevelled geometry.
-function roundedShape({ width, height, radius }) {
-  const halfWidth = width / 2
-  const halfHeight = height / 2
-  const r = Math.min(radius, halfWidth, halfHeight)
-  const shape = new Shape()
-  shape.moveTo(-halfWidth + r, -halfHeight)
-  shape.lineTo(halfWidth - r, -halfHeight)
-  shape.quadraticCurveTo(halfWidth, -halfHeight, halfWidth, -halfHeight + r)
-  shape.lineTo(halfWidth, halfHeight - r)
-  shape.quadraticCurveTo(halfWidth, halfHeight, halfWidth - r, halfHeight)
-  shape.lineTo(-halfWidth + r, halfHeight)
-  shape.quadraticCurveTo(-halfWidth, halfHeight, -halfWidth, halfHeight - r)
-  shape.lineTo(-halfWidth, -halfHeight + r)
-  shape.quadraticCurveTo(-halfWidth, -halfHeight, -halfWidth + r, -halfHeight)
-  return shape
-}
-
-// Flat: one cheap shape for every instance on the lower tiers.
-function roundedGeometry(size) {
-  return new ShapeGeometry(roundedShape(size), 8)
-}
-
-// High tier only: a thin bevelled slab, so the edge catches the moving light and
-// the tile reads as a piece of glass rather than a sticker. A few hundred
-// vertices per tile, instanced, is far under the frame budget.
-function slabGeometry(size) {
-  const slab = new ExtrudeGeometry(roundedShape(size), {
-    depth: 0.07,
-    bevelEnabled: true,
-    bevelThickness: 0.025,
-    bevelSize: 0.025,
-    bevelSegments: 2,
-    curveSegments: 6,
-  })
-  slab.translate(0, 0, -0.035)
-  return slab
-}
-
-// MeshStandardMaterial at high, Lambert at medium, Basic at low: the tier decides
-// how much light maths each card may cost.
-function makeMaterial(config, opacity, flatShading = false) {
-  const options = {
-    color: 0xffffff,
-    transparent: true,
-    opacity,
-    depthWrite: false,
-    side: DoubleSide,
+// standard at high, Lambert at medium, Basic at low: the tier decides how much
+// light maths each surface may cost. `glow` is a faint self-colour that keeps the
+// surfaces luminous against the pale gradient (Basic has no lighting to add it to).
+function surface(options, standard = {}, glow = null) {
+  if (props.config.material === 'standard') {
+    return new MeshStandardMaterial({ ...options, ...standard, ...(glow ?? {}) })
   }
-  if (config.material === 'standard') {
-    // A faint self-glow keeps the tiles luminous against the pale gradient.
-    return new MeshStandardMaterial({
-      ...options,
-      roughness: 0.22,
-      metalness: 0.15,
-      emissive: 0x6366f1,
-      emissiveIntensity: 0.22,
-      flatShading,
-    })
-  }
-  if (config.material === 'lambert') {
-    return new MeshLambertMaterial({ ...options, emissive: 0x6366f1, emissiveIntensity: 0.28, flatShading })
+  if (props.config.material === 'lambert') {
+    return new MeshLambertMaterial({ ...options, ...(glow ?? {}) })
   }
   return new MeshBasicMaterial(options)
 }
 
-const cardGeometry = props.config.material === 'standard' ? slabGeometry(CARD_SIZE) : roundedGeometry(CARD_SIZE)
-const planeMaterials = plan.planes.map((plane) => makeMaterial(props.config, plane.opacity))
-// Faceted crystals: flat-shaded icosahedra spin and flash as each face turns
-// to the light. Detail 1 at high, a plain 20-face gem below.
-const sphereGeometry = new IcosahedronGeometry(1, props.config.material === 'standard' ? 1 : 0)
-const sphereMaterial = makeMaterial(props.config, 0.78, true)
-const calendarGeometry = roundedGeometry(CALENDAR_CELL_SIZE)
-const calendarMaterial = plan.calendar.cells.length > 0 ? makeMaterial(props.config, 0.5) : null
-// The month grid glows a little, so it reads as lit cells rather than grey tiles.
-if (calendarMaterial?.emissive) {
-  calendarMaterial.emissive.set(0xffffff)
-  calendarMaterial.emissiveIntensity = 0.4
-}
-const glintGeometry = roundedGeometry(GLINT_SIZE)
-const glintMaterial =
-  plan.glints.length > 0
-    ? new MeshBasicMaterial({
-        color: 0xffffff,
-        transparent: true,
-        opacity: 0.32,
-        blending: AdditiveBlending,
-        depthWrite: false,
-        side: DoubleSide,
-      })
+// ---- Ribbons ----------------------------------------------------------------
+// Each ribbon is a plane whose z, colour and top-edge line are rewritten every
+// frame from waveRibbon(). Colours need their own attribute.
+const ribbonGeometries = []
+const crestGeometries = []
+const ribbonMaterials = plan.ribbons.map((ribbon) => {
+  const geometry = new PlaneGeometry(RIBBON_SIZE.width, RIBBON_SIZE.height, ribbon.cols, ribbon.rows)
+  const count = geometry.attributes.position.count
+  geometry.setAttribute('color', new BufferAttribute(new Float32Array(count * 3), 3))
+  geometry.attributes.position.setUsage(DynamicDrawUsage)
+  geometry.attributes.color.setUsage(DynamicDrawUsage)
+  ribbonGeometries.push(geometry)
+
+  const crest = new BufferGeometry()
+  const crestPositions = new BufferAttribute(new Float32Array((ribbon.cols + 1) * 3), 3)
+  crestPositions.setUsage(DynamicDrawUsage)
+  crest.setAttribute('position', crestPositions)
+  crestGeometries.push(crest)
+
+  return surface(
+    {
+      vertexColors: true,
+      transparent: true,
+      opacity: ribbon.opacity,
+      side: DoubleSide,
+      depthWrite: false,
+    },
+    { roughness: 0.3, metalness: 0.1 },
+    { emissive: 0x6366f1, emissiveIntensity: 0.28 }
+  )
+})
+const crestMaterials = plan.ribbons.map(
+  (ribbon) =>
+    new LineBasicMaterial({
+      color: ribbon.crest,
+      transparent: true,
+      opacity: 0.9,
+      blending: AdditiveBlending,
+      depthWrite: false,
+    })
+)
+
+// ---- Knot, shell, rings, beads, gems ------------------------------------------
+const knotGeometry = plan.knot
+  ? new TorusKnotGeometry(KNOT.radius, KNOT.tube, plan.knot.segments, plan.knot.radial, KNOT.p, KNOT.q)
+  : null
+const knotMaterial = plan.knot
+  ? surface(
+      { color: 0x6366f1, transparent: true, opacity: 0.9 },
+      { roughness: 0.1, metalness: 0.6 },
+      { emissive: 0x4f46e5, emissiveIntensity: 0.32 }
+    )
+  : null
+
+const shellGeometry = plan.shell ? new EdgesGeometry(new IcosahedronGeometry(plan.shell.radius, 1)) : null
+const shellMaterial = plan.shell
+  ? new LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.55, blending: AdditiveBlending })
+  : null
+
+const ringGeometries = plan.rings.map((ring) => new TorusGeometry(ring.radius, 0.04, 10, 160))
+const ringMaterials = plan.rings.map(
+  (ring) => new MeshBasicMaterial({ color: ring.tint, transparent: true, opacity: 0.75 })
+)
+const beadGeometry = plan.beadCount > 0 ? new SphereGeometry(BEAD_RADIUS, 12, 8) : null
+const beadMaterial = plan.beadCount > 0 ? new MeshBasicMaterial({ color: 0xffffff }) : null
+
+// A plain 20-face gem: flat shading turns each face to the light on its own.
+const gemGeometry = plan.gems.length > 0 ? new IcosahedronGeometry(1, 0) : null
+const gemMaterial =
+  plan.gems.length > 0
+    ? surface(
+        { color: 0xffffff, flatShading: true },
+        { roughness: 0.18, metalness: 0.35 },
+        { emissive: 0x6366f1, emissiveIntensity: 0.28 }
+      )
     : null
+
+// ---- Halos and dust ----------------------------------------------------------
+// One soft radial gradient per halo, drawn once on a tiny canvas. Disposed with
+// the scene below, because a texture is not part of the scene graph's geometry.
+const glowTextures = []
+function glowTexture(color) {
+  if (typeof document === 'undefined') return null
+  const canvas = document.createElement('canvas')
+  canvas.width = 128
+  canvas.height = 128
+  const context = canvas.getContext?.('2d')
+  if (!context) return null
+  const gradient = context.createRadialGradient(64, 64, 0, 64, 64, 64)
+  gradient.addColorStop(0, 'rgba(255,255,255,0.95)')
+  gradient.addColorStop(0.35, color)
+  gradient.addColorStop(1, 'rgba(255,255,255,0)')
+  context.fillStyle = gradient
+  context.fillRect(0, 0, 128, 128)
+  const texture = new CanvasTexture(canvas)
+  glowTextures.push(texture)
+  return texture
+}
+const haloMaterials = plan.halos.map(
+  (halo) =>
+    new SpriteMaterial({
+      map: glowTexture(halo.color),
+      transparent: true,
+      opacity: halo.opacity,
+      depthWrite: false,
+      blending: AdditiveBlending,
+    })
+)
 
 const dustGeometry = new BufferGeometry()
 if (plan.dust.count > 0) {
@@ -129,30 +185,39 @@ if (plan.dust.count > 0) {
 }
 const dustMaterial = new PointsMaterial({
   color: 0xffffff,
-  size: 0.055,
+  size: 0.09,
   transparent: true,
-  opacity: 0.5,
+  opacity: 0.8,
   depthWrite: false,
   sizeAttenuation: true,
+  blending: AdditiveBlending,
 })
 
+// ---- Refs and scratch state -----------------------------------------------------
 const cameraRef = ref(null)
-const planeRefs = ref([])
-const sphereRef = ref(null)
-const calendarRef = ref(null)
-const glintRef = ref(null)
+const ribbonRefs = ref([])
+const knotRef = ref(null)
+const shellRef = ref(null)
+const ringRefs = ref([])
+const beadRef = ref(null)
+const gemRef = ref(null)
+const haloRefs = ref([])
+const lightRefs = ref([])
 const pointsRef = ref(null)
-const lightRef = ref(null)
 
-const field = { width: 20, height: 12 }
+const field = { width: 20, height: 12, fit: 1 }
 const pointer = { x: 0, y: 0, targetX: 0, targetY: 0 }
-const cardSlots = []
-const sphereSlots = []
-const calendarSlots = []
-const glintSlots = []
+const knotPose = { rx: 0, ry: 0, rz: 0, z: 0 }
+const shellPose = { rx: 0, ry: 0, rz: 0, z: 0 }
+const ringSlots = []
+const beadSlots = []
+const gemSlots = []
+const lightSlots = []
 const tint = new Color()
+const dummy = new Object3D()
 
 let elapsed = 0
+let frame = 0
 let primed = false
 
 function measure() {
@@ -161,48 +226,29 @@ function measure() {
   const height = Math.max(1, Math.round(window.innerHeight || 1))
   field.height = 2 * Math.tan((CAMERA.fov * Math.PI) / 360) * CAMERA.z
   field.width = field.height * (width / height)
+  field.fit = heroFit(field)
 }
 
-/**
- * Tints every instance once, per mesh. Each mesh is tinted the first time it is
- * seen, so a mesh that TresJS mounts a frame later still gets its colours; a mesh
- * with no colours would render white, which is not a card in this palette.
- */
-function tintMesh(mesh, items) {
-  if (!mesh || mesh.userData.tinted) return
-  for (let index = 0; index < items.length; index += 1) {
-    mesh.setColorAt(index, tint.setHex(items[index].tint))
-  }
-  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
-  mesh.instanceMatrix.setUsage(DynamicDrawUsage)
-  mesh.userData.tinted = true
-}
-
-/** True once every mesh this tier draws exists and carries its tint. */
+/** Colours every gem once, the first time its mesh exists. */
 function prime() {
-  let ready = plan.planes.length > 0
-  for (let planeIndex = 0; planeIndex < plan.planes.length; planeIndex += 1) {
-    const mesh = planeRefs.value[planeIndex]
-    if (!mesh) ready = false
-    tintMesh(mesh, plan.planes[planeIndex].cards)
+  if (plan.gems.length > 0) {
+    const mesh = gemRef.value
+    if (!mesh) return false
+    if (!mesh.userData.tinted) {
+      for (let index = 0; index < plan.gems.length; index += 1) {
+        mesh.setColorAt(index, tint.setHex(plan.gems[index].tint))
+      }
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
+      mesh.instanceMatrix.setUsage(DynamicDrawUsage)
+      mesh.userData.tinted = true
+    }
   }
-
-  if (plan.spheres.length > 0) {
-    if (!sphereRef.value) ready = false
-    tintMesh(sphereRef.value, plan.spheres)
-  }
-
-  if (plan.calendar.cells.length > 0) {
-    if (!calendarRef.value) ready = false
-    tintMesh(calendarRef.value, plan.calendar.cells)
-  }
-
-  if (glintRef.value) glintRef.value.instanceMatrix.setUsage(DynamicDrawUsage)
-  return ready
+  if (beadRef.value) beadRef.value.instanceMatrix.setUsage(DynamicDrawUsage)
+  return true
 }
 
 /** Copies one layout slot into an instance matrix. */
-function write(mesh, index, slot, dummy) {
+function write(mesh, index, slot) {
   dummy.position.set(slot.x, slot.y, slot.z)
   dummy.rotation.set(slot.rx, slot.ry, slot.rz)
   dummy.scale.setScalar(slot.scale)
@@ -211,9 +257,6 @@ function write(mesh, index, slot, dummy) {
 }
 
 const { onBeforeRender } = useLoop()
-
-// One scratch object, reused every frame, so the loop allocates nothing.
-const dummy = new Object3D()
 
 onMounted(() => {
   measure()
@@ -250,16 +293,11 @@ const stopLoop = onBeforeRender((context) => {
   pointer.x += (pointer.targetX - pointer.x) * ease
   pointer.y += (pointer.targetY - pointer.y) * ease
 
-  const state = { time: elapsed, elapsed, field, pointer }
-
-  // The travelling light that makes the bevels and facets shimmer (high tier).
-  if (lightRef.value) {
-    lightRef.value.position.set(
-      Math.cos(elapsed * 0.35) * field.width * 0.42,
-      Math.sin(elapsed * 0.27) * field.height * 0.4,
-      3
-    )
-  }
+  frame += 1
+  // Positions move every frame; the gradient, the crest line and the normals are
+  // slower-moving and cost the most, so they refresh every other frame.
+  const paint = frame % 2 === 0
+  const state = { time: elapsed, elapsed, field, pointer, fit: field.fit }
 
   if (cameraRef.value) {
     cameraDrift(
@@ -268,43 +306,81 @@ const stopLoop = onBeforeRender((context) => {
     )
   }
 
-  for (let index = 0; index < plan.planes.length; index += 1) {
-    const mesh = planeRefs.value[index]
-    if (!mesh) continue
-    const { count } = layoutCards({ planes: [plan.planes[index]] }, state, cardSlots)
-    for (let card = 0; card < count; card += 1) write(mesh, card, cardSlots[card], dummy)
-    mesh.instanceMatrix.needsUpdate = true
-    // The near planes lean with the pointer at the top tier only.
-    if (props.config.cardTilt === true) mesh.rotation.y = pointer.x * 0.04
+  for (let index = 0; index < plan.ribbons.length; index += 1) {
+    const geometry = ribbonGeometries[index]
+    const crest = crestGeometries[index]
+    waveRibbon(
+      plan.ribbons[index],
+      elapsed,
+      geometry.attributes.position.array,
+      geometry.attributes.color.array,
+      crest.attributes.position.array,
+      paint
+    )
+    geometry.attributes.position.needsUpdate = true
+    if (paint) {
+      geometry.attributes.color.needsUpdate = true
+      crest.attributes.position.needsUpdate = true
+      if (lit) geometry.computeVertexNormals()
+    }
   }
 
-  if (sphereRef.value) {
-    const { count } = layoutSpheres(plan, state, sphereSlots)
-    for (let index = 0; index < count; index += 1) write(sphereRef.value, index, sphereSlots[index], dummy)
-    sphereRef.value.instanceMatrix.needsUpdate = true
+  if (knotRef.value) {
+    layoutKnot(state, knotPose)
+    knotRef.value.rotation.set(knotPose.rx, knotPose.ry, knotPose.rz)
+    knotRef.value.scale.setScalar(field.fit)
   }
 
-  if (calendarRef.value) {
-    const { count } = layoutCalendar(plan, state, calendarSlots)
-    for (let index = 0; index < count; index += 1) write(calendarRef.value, index, calendarSlots[index], dummy)
-    calendarRef.value.instanceMatrix.needsUpdate = true
+  if (shellRef.value) {
+    layoutShell(state, shellPose)
+    shellRef.value.rotation.set(shellPose.rx, shellPose.ry, shellPose.rz)
+    shellRef.value.scale.setScalar(field.fit)
   }
 
-  if (glintRef.value) {
-    const { count } = layoutGlints(plan, state, glintSlots)
-    for (let index = 0; index < count; index += 1) write(glintRef.value, index, glintSlots[index], dummy)
-    glintRef.value.instanceMatrix.needsUpdate = true
+  if (plan.rings.length > 0) {
+    layoutRings(plan, state, ringSlots, beadSlots)
+    for (let index = 0; index < plan.rings.length; index += 1) {
+      const mesh = ringRefs.value[index]
+      if (mesh) {
+        mesh.rotation.set(ringSlots[index].rx, ringSlots[index].ry, ringSlots[index].rz)
+        mesh.scale.setScalar(field.fit)
+      }
+    }
+    if (beadRef.value) {
+      for (let index = 0; index < plan.beadCount; index += 1) write(beadRef.value, index, beadSlots[index])
+      beadRef.value.instanceMatrix.needsUpdate = true
+    }
   }
+
+  if (gemRef.value) {
+    const { count } = layoutGems(plan, state, gemSlots)
+    for (let index = 0; index < count; index += 1) write(gemRef.value, index, gemSlots[index])
+    gemRef.value.instanceMatrix.needsUpdate = true
+  }
+
+  if (lightRefs.value.length > 0) {
+    lightPositions(state, field, lightSlots)
+    for (let index = 0; index < lightRefs.value.length; index += 1) {
+      const light = lightRefs.value[index]
+      if (light) light.position.set(lightSlots[index].x, lightSlots[index].y, lightSlots[index].z)
+    }
+  }
+
+  // The core halo breathes; the dust twinkles.
+  const core = haloMaterials[2]
+  if (core) core.opacity = 0.65 + Math.sin(elapsed * 1.2) * 0.15
 
   if (pointsRef.value && plan.dust.count > 0) {
     driftDust(plan, state)
     const attribute = dustGeometry.getAttribute('position')
     if (attribute) attribute.needsUpdate = true
+    dustMaterial.opacity = 0.65 + Math.sin(elapsed * 1.5) * 0.2
   }
 })
 
 onBeforeUnmount(() => {
   if (typeof stopLoop === 'object' && typeof stopLoop.off === 'function') stopLoop.off()
+  for (const texture of glowTextures) texture.dispose()
   window.removeEventListener('resize', measure)
   window.removeEventListener('orientationchange', measure)
   window.removeEventListener('pointermove', onPointerMove)
@@ -315,46 +391,79 @@ onBeforeUnmount(() => {
 <template>
   <TresPerspectiveCamera ref="cameraRef" :position="[0, 0, CAMERA.z]" :fov="CAMERA.fov" :near="CAMERA.near" :far="CAMERA.far" />
 
-  <!-- Ambient plus key stay below 1.0 combined: brighter light clips the instance
-       colours to white and the cards read as grey slabs instead of indigo ones. -->
-  <TresAmbientLight :intensity="0.62" />
-  <TresDirectionalLight :position="[4, 7, 9]" :intensity="0.5" />
-  <!-- One light that wanders across the field, high tier only. -->
-  <TresPointLight
-    v-if="config.material === 'standard'"
-    ref="lightRef"
-    color="#c4b5fd"
-    :intensity="0.9"
-    :decay="0"
-    :position="[0, 0, 3]"
+  <!-- Ambient plus key stay below 1.0 combined: brighter light clips the colours
+       to white and the surfaces read as grey slabs instead of indigo ones. -->
+  <TresAmbientLight :intensity="0.75" />
+  <TresDirectionalLight :position="[4, 7, 9]" :intensity="0.7" />
+  <!-- Three coloured lights wander across the field, high tier only. -->
+  <template v-if="config.material === 'standard'">
+    <TresPointLight
+      v-for="(color, lightIndex) in ['#c4b5fd', '#67e8f9', '#f9a8d4']"
+      :key="`light-${lightIndex}`"
+      :ref="(instance) => { if (instance) lightRefs[lightIndex] = instance }"
+      :color="color"
+      :intensity="[1.1, 0.9, 0.7][lightIndex]"
+      :decay="0"
+      :position="[0, 0, 3]"
+    />
+  </template>
+
+  <TresSprite
+    v-for="(halo, haloIndex) in plan.halos"
+    :key="`halo-${haloIndex}`"
+    :args="[haloMaterials[haloIndex]]"
+    :position="[halo.x, halo.y, halo.z]"
+    :scale="[halo.size, halo.size, 1]"
   />
 
-  <TresInstancedMesh
-    v-for="(plane, planeIndex) in plan.planes"
-    :key="`plane-${planeIndex}`"
-    :ref="(instance) => { if (instance) planeRefs[planeIndex] = instance }"
-    :args="[cardGeometry, planeMaterials[planeIndex], plane.cards.length]"
+  <TresMesh
+    v-for="(ribbon, ribbonIndex) in plan.ribbons"
+    :key="`ribbon-${ribbonIndex}`"
+    :ref="(instance) => { if (instance) ribbonRefs[ribbonIndex] = instance }"
+    :args="[ribbonGeometries[ribbonIndex], ribbonMaterials[ribbonIndex]]"
+    :position="[0, ribbon.y, ribbon.z]"
+    :rotation="[-0.35, 0, 0]"
+    :frustum-culled="false"
+  >
+    <TresLine :args="[crestGeometries[ribbonIndex], crestMaterials[ribbonIndex]]" :frustum-culled="false" />
+  </TresMesh>
+
+  <TresMesh
+    v-if="plan.knot"
+    ref="knotRef"
+    :args="[knotGeometry, knotMaterial]"
+    :position="[0, 0, KNOT.z]"
+    :frustum-culled="false"
+  />
+
+  <TresLineSegments
+    v-if="plan.shell"
+    ref="shellRef"
+    :args="[shellGeometry, shellMaterial]"
+    :position="[0, 0, KNOT.z]"
+    :frustum-culled="false"
+  />
+
+  <TresMesh
+    v-for="(ring, ringIndex) in plan.rings"
+    :key="`ring-${ringIndex}`"
+    :ref="(instance) => { if (instance) ringRefs[ringIndex] = instance }"
+    :args="[ringGeometries[ringIndex], ringMaterials[ringIndex]]"
+    :position="[0, 0, KNOT.z]"
     :frustum-culled="false"
   />
 
   <TresInstancedMesh
-    v-if="plan.spheres.length > 0"
-    ref="sphereRef"
-    :args="[sphereGeometry, sphereMaterial, plan.spheres.length]"
+    v-if="plan.beadCount > 0"
+    ref="beadRef"
+    :args="[beadGeometry, beadMaterial, plan.beadCount]"
     :frustum-culled="false"
   />
 
   <TresInstancedMesh
-    v-if="plan.calendar.cells.length > 0"
-    ref="calendarRef"
-    :args="[calendarGeometry, calendarMaterial, plan.calendar.cells.length]"
-    :frustum-culled="false"
-  />
-
-  <TresInstancedMesh
-    v-if="plan.glints.length > 0"
-    ref="glintRef"
-    :args="[glintGeometry, glintMaterial, plan.glints.length]"
+    v-if="plan.gems.length > 0"
+    ref="gemRef"
+    :args="[gemGeometry, gemMaterial, plan.gems.length]"
     :frustum-culled="false"
   />
 

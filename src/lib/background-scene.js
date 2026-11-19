@@ -1,41 +1,55 @@
 // The app background's content plan, separated from the renderer.
 //
-// Everything the scene draws is described here as plain data (positions, tilts,
-// tints, sizes) and every per-frame transform is a pure function of that data and
-// the clock. That keeps the visual budget testable without a GPU, and it is what
-// lets the TresJS components stay declarative: they render this plan and write the
-// matrices, they do not invent geometry.
+// Everything the scene draws is described here as plain data and every per-frame
+// transform is a pure function of that data and the clock. That keeps the visual
+// budget testable without a GPU, and it is what lets the TresJS components stay
+// declarative: they render this plan and write the numbers, they do not invent
+// geometry.
 //
-// The brief's motif: floating glass cards in three depth planes, soft spheres,
-// light glints, drifting dust and a month-grid calendar. The cards carry the three
-// leave-status colours the app already uses (approved green, pending amber,
-// rejected red) among the brand indigo/violet, so the field reads as a leave tool.
-// No lettering is ever drawn.
+// The motif is "crystal over aurora": five silk ribbons ripple at the back, a
+// metallic crystal knot with a faceted shell and three beaded rings turns in the
+// middle, gems orbit it in the leave-status colours and brand indigo, soft halos
+// glow behind, and star dust drifts up. No lettering is ever drawn.
 //
 // Budgets come from src/lib/background-quality.js and are never exceeded here:
 // every count below is read straight from the tier config.
 
-// Brand indigo and violet, plus the leave statuses the app already shows.
-// Luminous tints: the tiles read as coloured glass over the gradient, not as
-// grey slabs. Sky and rose are accents only; indigo and violet carry the field.
-export const CARD_TINTS = Object.freeze([
-  0x6366f1, 0x8b5cf6, 0x38bdf8, 0x4f46e5, 0x16a34a, 0xa78bfa, 0x22d3ee, 0x818cf8,
-  0xd97706, 0xf472b6, 0x16a34a, 0x7c3aed, 0xdc2626, 0x60a5fa, 0x6366f1, 0x4f46e5,
+// Ribbon gradients (start, end): brand indigo and violet carry the field, sky,
+// rose and teal are accents.
+export const RIBBON_PALETTES = Object.freeze([
+  Object.freeze([0x4f46e5, 0x38bdf8]),
+  Object.freeze([0x8b5cf6, 0xf472b6]),
+  Object.freeze([0x22d3ee, 0x6366f1]),
+  Object.freeze([0xa78bfa, 0x34d399]),
+  Object.freeze([0x6366f1, 0xf472b6]),
 ])
 
-export const SPHERE_TINTS = Object.freeze([0x8b5cf6, 0x38bdf8, 0x34d399, 0xf472b6])
+// Gems carry the three leave statuses the app already shows (approved green,
+// pending amber, rejected red) among the brand colours, so the field still reads
+// as a leave tool.
+export const GEM_TINTS = Object.freeze([
+  0x8b5cf6, 0x38bdf8, 0x34d399, 0xf472b6, 0xfcd34d, 0x16a34a, 0x818cf8, 0xd97706, 0x22d3ee, 0xdc2626,
+])
 
-export const CALENDAR_TINTS = Object.freeze([0xc7d2fe, 0x86efac, 0xfcd34d, 0xddd6fe, 0xa5b4fc, 0xfca5a5])
+export const RING_TINTS = Object.freeze([0x38bdf8, 0xf472b6, 0xa78bfa])
 
-export const CARD_SIZE = Object.freeze({ width: 1.7, height: 1.05, radius: 0.22 })
-export const CALENDAR_CELL_SIZE = Object.freeze({ width: 0.52, height: 0.34, radius: 0.07 })
-export const GLINT_SIZE = Object.freeze({ width: 2.4, height: 0.16, radius: 0.08 })
+// Halo colours as canvas gradient stops, and where each one sits in the field.
+export const HALOS = Object.freeze([
+  Object.freeze({ color: 'rgba(167,139,250,0.55)', size: 30, x: 6, y: 3, z: -16, opacity: 0.55 }),
+  Object.freeze({ color: 'rgba(56,189,248,0.5)', size: 26, x: -8, y: -2, z: -14, opacity: 0.45 }),
+  Object.freeze({ color: 'rgba(129,140,248,0.9)', size: 7.5, x: 0, y: 0, z: -2, opacity: 0.75 }),
+])
+
+export const RIBBON_SIZE = Object.freeze({ width: 38, height: 7 })
+export const KNOT = Object.freeze({ radius: 2.1, tube: 0.62, p: 2, q: 3, z: -2 })
+export const SHELL_RADIUS = 3.7
+export const GEM_BASE = 0.16
+export const BEAD_RADIUS = 0.13
 
 // The camera and the depth of the field, in world units.
-export const CAMERA = Object.freeze({ fov: 55, z: 14, near: 0.1, far: 80 })
+export const CAMERA = Object.freeze({ fov: 55, z: 11, near: 0.1, far: 80 })
 export const SCENE_DEPTH = 7
 export const MAX_PARALLAX = 0.85
-export const CALENDAR_COLUMNS = 7
 
 /** Deterministic pseudo-random in [0, 1): the same tier always draws the same field. */
 export function seeded(index) {
@@ -48,93 +62,83 @@ export function between(index, min, max) {
   return min + seeded(index) * (max - min)
 }
 
-/** Every card sits on one of three depth planes, each with its own parallax share. */
-export function cardPlanes(config) {
-  // The static tier draws nothing: no planes, no cards.
-  if (config.cardCount <= 0 || config.planeCount <= 0) return []
-
-  const planeCount = Math.max(1, config.planeCount)
-  const perPlane = Math.max(1, Math.floor(config.cardCount / planeCount))
-  const planes = []
-
-  for (let plane = 0; plane < planeCount; plane += 1) {
-    const cards = []
-    for (let index = 0; index < perPlane; index += 1) {
-      const seed = plane * 97 + index
-      cards.push({
-        nx: between(seed * 3 + 1, -1, 1),
-        ny: between(seed * 3 + 2, -1, 1),
-        nz: between(seed * 3 + 3, -1, 1),
-        scale: between(seed * 5 + 11, 0.55, 1.3),
-        tiltX: between(seed * 7 + 2, -0.4, 0.4),
-        tiltY: between(seed * 7 + 3, -0.5, 0.5),
-        tiltZ: between(seed * 7 + 4, -0.28, 0.28),
-        bob: between(seed * 11 + 5, 0.16, 0.5),
-        phase: between(seed * 13 + 7, 0, Math.PI * 2),
-        tint: CARD_TINTS[(plane * 7 + index) % CARD_TINTS.length],
-      })
-    }
-    planes.push({
-      index: plane,
-      // 0 for the far plane, 1 for the nearest: the parallax share.
-      depth: planeCount === 1 ? 1 : plane / (planeCount - 1),
-      // Nearer planes are denser, which is what reads as depth.
-      opacity: 0.46 + plane * 0.13,
-      cards,
-    })
-  }
-
-  return planes
+function toLinear(channel) {
+  return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
 }
 
-export function sphereField(config) {
-  const spheres = []
-  for (let index = 0; index < config.sphereCount; index += 1) {
-    spheres.push({
-      nx: between(index * 17 + 3, -0.9, 0.9),
-      ny: between(index * 19 + 5, -0.9, 0.9),
-      nz: between(index * 23 + 7, -1, 0),
-      scale: between(index * 29 + 11, 0.22, 0.62),
-      phase: between(index * 31 + 13, 0, Math.PI * 2),
-      tint: SPHERE_TINTS[index % SPHERE_TINTS.length],
-    })
-  }
-  return spheres
+/**
+ * 0xRRGGBB to [r, g, b] in 0..1 in the renderer's linear working space. Vertex
+ * colours are not converted by Three.js (a Color made from a hex is), so a raw
+ * sRGB value would render washed out and grey.
+ */
+export function hexToRgb(hex) {
+  return [
+    toLinear(((hex >> 16) & 255) / 255),
+    toLinear(((hex >> 8) & 255) / 255),
+    toLinear((hex & 255) / 255),
+  ]
 }
 
-/** The month grid: a shape made of cells, never a date or a label. */
-export function calendarField(config) {
-  if (config.calendarCellCount <= 0) return { columns: 0, rows: 0, cells: [] }
-
-  const cells = []
-  const rows = Math.ceil(config.calendarCellCount / CALENDAR_COLUMNS)
-  for (let index = 0; index < config.calendarCellCount; index += 1) {
-    const column = index % CALENDAR_COLUMNS
-    const row = Math.floor(index / CALENDAR_COLUMNS)
-    cells.push({
-      x: (column - (CALENDAR_COLUMNS - 1) / 2) * 0.62,
-      y: ((rows - 1) / 2 - row) * 0.44,
-      phase: between(index * 37 + 3, 0, Math.PI * 2),
-      tint: CALENDAR_TINTS[index % CALENDAR_TINTS.length],
-    })
-  }
-
-  return { columns: CALENDAR_COLUMNS, rows, cells }
+/**
+ * How much of the field the crystal group may fill: the whole thing on a wide
+ * screen, scaled down on a narrow phone so the knot never swallows the view.
+ */
+export function heroFit(field) {
+  return Math.min(1, Math.max(0.42, field.width / 15))
 }
 
-/** Additive streaks that sweep across the field and fade in and out by scale. */
-export function glintStreaks(config) {
-  const streaks = []
-  for (let index = 0; index < config.glintCount; index += 1) {
-    streaks.push({
-      y: between(index * 41 + 5, -0.85, 0.85),
-      phase: between(index * 43 + 7, 0, 1),
-      speed: between(index * 47 + 11, 0.018, 0.042),
-      lean: between(index * 53 + 13, -0.5, 0.5),
-      level: index % 3,
+/** Ribbons: wide silk sheets stacked back to front, each with its own gradient. */
+export function ribbonField(config) {
+  const ribbons = []
+  const count = Math.max(0, config.ribbonCount)
+  for (let index = 0; index < count; index += 1) {
+    const [from, to] = RIBBON_PALETTES[index % RIBBON_PALETTES.length]
+    ribbons.push({
+      index,
+      cols: config.ribbonCols,
+      rows: config.ribbonRows,
+      from: hexToRgb(from),
+      to: hexToRgb(to),
+      crest: to,
+      y: (index - (count - 1) / 2) * 1.9,
+      z: -5 - index * 1.4,
+      opacity: 0.55 - index * 0.04,
     })
   }
-  return streaks
+  return ribbons
+}
+
+export function ringField(config) {
+  const rings = []
+  for (let index = 0; index < config.ringCount; index += 1) {
+    rings.push({
+      index,
+      radius: 4.2 + index * 1.1,
+      tint: RING_TINTS[index % RING_TINTS.length],
+      beads: config.beadsPerRing,
+    })
+  }
+  return rings
+}
+
+/** Gems: each circles the knot on its own tilted orbit and turns as it goes. */
+export function gemField(config) {
+  const gems = []
+  for (let index = 0; index < config.gemCount; index += 1) {
+    gems.push({
+      radius: 4.8 + (index % 8) * 0.55,
+      angle: index * 0.7,
+      tilt: (index % 6) * 0.45,
+      speed: 0.15 + (index % 9) * 0.04,
+      scale: GEM_BASE + (index % 4) * 0.07,
+      tint: GEM_TINTS[index % GEM_TINTS.length],
+    })
+  }
+  return gems
+}
+
+export function haloField(config) {
+  return HALOS.slice(0, Math.max(0, config.haloCount))
 }
 
 /** Drifting motes, one Points draw call. Positions are seeded and wrapped in place. */
@@ -159,135 +163,203 @@ export function dustField(config) {
  * than it promised.
  */
 export function scenePlan(config) {
-  const planes = cardPlanes(config)
-  const spheres = sphereField(config)
-  const calendar = calendarField(config)
-  const glints = glintStreaks(config)
+  const ribbons = ribbonField(config)
+  const rings = ringField(config)
+  const gems = gemField(config)
+  const halos = haloField(config)
   const dust = dustField(config)
+  const knot =
+    config.knotSegments > 0
+      ? { ...KNOT, segments: config.knotSegments, radial: config.knotRadial }
+      : null
+  const shell = knot !== null && config.shell === true ? { radius: SHELL_RADIUS } : null
+  const beadCount = rings.reduce((total, ring) => total + ring.beads, 0)
 
-  const cardCount = planes.reduce((total, plane) => total + plane.cards.length, 0)
-  const objectCount = cardCount + spheres.length + calendar.cells.length + glints.length
+  const objectCount =
+    ribbons.length +
+    (knot ? 1 : 0) +
+    (shell ? 1 : 0) +
+    rings.length +
+    beadCount +
+    gems.length +
+    halos.length
 
-  return { planes, spheres, calendar, glints, dust, cardCount, objectCount, particleCount: dust.count }
+  return {
+    ribbons,
+    knot,
+    shell,
+    rings,
+    beadCount,
+    gems,
+    halos,
+    dust,
+    objectCount,
+    particleCount: dust.count,
+  }
 }
 
 // ---- Per-frame layout -------------------------------------------------------
 // Pure functions of (plan, clock, pointer, field). They write into reusable
 // arrays so a frame allocates nothing; the components only copy the numbers into
-// instance matrices.
+// geometry attributes and instance matrices.
 
 function slot(out, index) {
   if (!out[index]) out[index] = { x: 0, y: 0, z: 0, rx: 0, ry: 0, rz: 0, scale: 1 }
   return out[index]
 }
 
-/** Cards: bob, sway, a little lean, and a share of the pointer offset by depth. */
-export function layoutCards(plan, state, out) {
-  const { time, field, pointer, tilt } = state
-  const halfWidth = field.width / 2
-  const halfHeight = field.height / 2
-  // Cards keep their proportion on a narrow phone screen.
-  const size = Math.min(1.2, Math.max(0.42, field.width / 22))
-  let index = 0
+/**
+ * Ripples one ribbon. `positions` is the plane's position attribute (x and y are
+ * the flat sheet, z is written here). With `paint` the gradient is re-mixed and
+ * the glowing crest line (the sheet's top edge) is refreshed too; both are
+ * slower-moving, so the renderer asks for them every other frame.
+ */
+export function waveRibbon(ribbon, time, positions, colors, crest, paint) {
+  const k = ribbon.index
+  const total = positions.length / 3
+  for (let i = 0; i < total; i += 1) {
+    const at = i * 3
+    const x = positions[at]
+    const v = positions[at + 1]
+    const w =
+      Math.sin(x * 0.28 + time * 0.7 + k) * 1.5 +
+      Math.sin(x * 0.6 - time * 1.1 + k * 2) * 0.55 +
+      Math.sin(x * 1.3 + time * 1.9 + k) * 0.12
+    positions[at + 2] = w + v * 0.25 * Math.sin(time * 0.5 + x * 0.2)
 
-  for (const plane of plan.planes) {
-    const share = 0.16 + plane.depth * 0.5
-    const baseZ = -2.2 - (1 - plane.depth) * 4.4
-
-    for (const card of plane.cards) {
-      const target = slot(out, index)
-      const bob = Math.sin(time * 0.55 + card.phase)
-      const sway = Math.cos(time * 0.4 + card.phase)
-      // A slow wave travels across the field, so neighbouring tiles lift and
-      // turn one after another instead of bobbing in isolation.
-      const wave = Math.sin(time * 0.6 + card.nx * 2.4 + plane.depth * 1.6)
-      target.x = card.nx * halfWidth * 0.94 + sway * 0.7 + pointer.x * share
-      target.y = card.ny * halfHeight * 0.94 + bob * card.bob * 1.5 - pointer.y * share * 0.7
-      target.z = card.nz * SCENE_DEPTH * 0.8 + baseZ + wave * 0.55
-      target.rx = card.tiltX + bob * 0.16 + wave * 0.06
-      target.ry = card.tiltY + sway * 0.34 + wave * 0.14
-      target.rz = card.tiltZ + bob * 0.07
-      target.scale = card.scale * size * (1 + bob * 0.03) * (0.72 + plane.depth * 0.28)
-      index += 1
+    if (paint && colors) {
+      const mix = 0.5 + 0.5 * Math.sin(x * 0.18 + time * 0.4 + v * 0.3)
+      colors[at] = ribbon.from[0] + (ribbon.to[0] - ribbon.from[0]) * mix
+      colors[at + 1] = ribbon.from[1] + (ribbon.to[1] - ribbon.from[1]) * mix
+      colors[at + 2] = ribbon.from[2] + (ribbon.to[2] - ribbon.from[2]) * mix
     }
   }
 
-  return { count: index, tilt }
+  if (paint && crest) {
+    // The first row of a PlaneGeometry is its top edge: cols + 1 vertices.
+    for (let i = 0; i <= ribbon.cols; i += 1) {
+      const at = i * 3
+      crest[at] = positions[at]
+      crest[at + 1] = positions[at + 1]
+      crest[at + 2] = positions[at + 2] + 0.02
+    }
+  }
 }
 
-export function layoutSpheres(plan, state, out) {
-  const { time, field, pointer } = state
-  const halfWidth = field.width / 2
-  const halfHeight = field.height / 2
+/** The knot turns slowly on two axes and rocks a little on the third. */
+export function layoutKnot(state, out) {
+  const { time } = state
+  out.rx = time * 0.22
+  out.ry = time * 0.31
+  out.rz = Math.sin(time * 0.2) * 0.2
+  out.z = KNOT.z
+  return out
+}
 
-  for (let index = 0; index < plan.spheres.length; index += 1) {
-    const sphere = plan.spheres[index]
+/** The faceted shell counter-rotates against the knot. */
+export function layoutShell(state, out) {
+  const { time } = state
+  out.rx = -time * 0.12
+  out.ry = -time * 0.17
+  out.rz = 0
+  out.z = KNOT.z
+  return out
+}
+
+/**
+ * Rings tilt and spin, and each bead rides its ring. A bead's position is the
+ * ring's own rotation (Euler XYZ, like the torus mesh it rides on) applied to a
+ * point on the circle, so the bead stays exactly on the drawn ring.
+ */
+export function layoutRings(plan, state, ringOut, beadOut) {
+  const { time } = state
+  const fit = state.fit ?? 1
+  let bead = 0
+
+  for (const ring of plan.rings) {
+    const spin = time * (0.2 + ring.index * 0.07) * (ring.index % 2 ? -1 : 1)
+    const rx = 0.6 + ring.index * 0.7 + Math.sin(time * 0.3 + ring.index) * 0.25
+    const ry = spin
+    const rz = ring.index * 0.5
+    const target = slot(ringOut, ring.index)
+    target.x = 0
+    target.y = 0
+    target.z = KNOT.z
+    target.rx = rx
+    target.ry = ry
+    target.rz = rz
+    target.scale = fit
+
+    const cx = Math.cos(rx)
+    const sx = Math.sin(rx)
+    const cy = Math.cos(ry)
+    const sy = Math.sin(ry)
+    const cz = Math.cos(rz)
+    const sz = Math.sin(rz)
+
+    for (let k = 0; k < ring.beads; k += 1) {
+      const angle = time * (0.9 + ring.index * 0.25) + k * ((Math.PI * 2) / ring.beads)
+      const px = Math.cos(angle) * ring.radius * fit
+      const py = Math.sin(angle) * ring.radius * fit
+      // Rz, then Ry, then Rx.
+      const x1 = px * cz - py * sz
+      const y1 = px * sz + py * cz
+      const x2 = x1 * cy
+      const z2 = -x1 * sy
+      const y3 = y1 * cx - z2 * sx
+      const z3 = y1 * sx + z2 * cx
+      const out = slot(beadOut, bead)
+      out.x = x2
+      out.y = y3
+      out.z = z3 + KNOT.z
+      out.rx = 0
+      out.ry = 0
+      out.rz = 0
+      out.scale = fit
+      bead += 1
+    }
+  }
+
+  return { rings: plan.rings.length, beads: bead }
+}
+
+/** Gems circle the knot, bob on a tilted orbit and turn on two axes. */
+export function layoutGems(plan, state, out) {
+  const { time, pointer } = state
+  const fit = state.fit ?? 1
+
+  for (let index = 0; index < plan.gems.length; index += 1) {
+    const gem = plan.gems[index]
     const target = slot(out, index)
-    const drift = Math.sin(time * 0.45 + sphere.phase)
-    // Each gem circles its own anchor and turns on two axes, so its facets
-    // catch the light as it goes.
-    const angle = time * 0.32 + sphere.phase
-    target.x = sphere.nx * halfWidth * 0.82 + Math.cos(angle) * 0.9 + pointer.x * 0.4
-    target.y =
-      sphere.ny * halfHeight * 0.82 +
-      Math.sin(angle * 0.8) * 0.7 -
-      pointer.y * 0.3
-    target.z = sphere.nz * SCENE_DEPTH - 4 + drift * 0.4
-    target.rx = time * 0.5 + sphere.phase
-    target.ry = time * 0.36 + sphere.phase * 0.5
+    const angle = gem.angle + time * gem.speed
+    target.x = Math.cos(angle) * gem.radius * fit + pointer.x * 0.25
+    target.y = Math.sin(angle * 1.3 + gem.tilt) * 2.8 * fit - pointer.y * 0.2
+    target.z = Math.sin(angle) * gem.radius * 0.6 * fit + KNOT.z
+    target.rx = time * 0.6 + gem.angle
+    target.ry = time * 0.4
     target.rz = 0
-    target.scale = sphere.scale * (1.05 + drift * 0.1)
+    target.scale = gem.scale * fit * (1 + Math.sin(time * 0.8 + gem.angle) * 0.08)
   }
 
-  return { count: plan.spheres.length }
+  return { count: plan.gems.length }
 }
 
-/** The calendar sits behind everything, slanting very slightly like a sheet. */
-export function layoutCalendar(plan, state, out) {
-  const { time, field, pointer } = state
-  const halfHeight = field.height / 2
-  const lean = Math.sin(time * 0.17) * 0.06
-  const compact = Math.min(1, halfHeight / 4.2)
-
-  for (let index = 0; index < plan.calendar.cells.length; index += 1) {
-    const cell = plan.calendar.cells[index]
-    const target = slot(out, index)
-    // A diagonal ripple of light crosses the month grid: the cells it passes
-    // swell and step forward, then settle.
-    const ripple = Math.max(0, Math.sin(time * 1.1 - (cell.x + cell.y) * 1.2))
-    target.x = cell.x * compact + pointer.x * 0.2
-    target.y = cell.y * compact + Math.sin(time * 0.3 + cell.phase) * 0.04 - pointer.y * 0.15
-    target.z = -8.6 + ripple * 0.7
-    target.rx = lean
-    target.ry = lean * 0.6
-    target.rz = 0
-    target.scale = 0.9 + ripple * 0.32
-  }
-
-  return { count: plan.calendar.cells.length }
-}
-
-export function layoutGlints(plan, state, out) {
-  const { time, field } = state
-  const halfWidth = field.width / 2
-  const halfHeight = field.height / 2
-
-  for (let index = 0; index < plan.glints.length; index += 1) {
-    const streak = plan.glints[index]
-    const travel = (time * streak.speed * 3 + streak.phase) % 1
-    const fade = Math.sin(travel * Math.PI)
-    const target = slot(out, index)
-    target.x = travel * halfWidth * 2.4 - halfWidth * 1.2
-    target.y = streak.y * halfHeight * 0.9 + Math.sin(travel * Math.PI * 2) * 0.4
-    target.z = -3.4 - streak.level * 0.5
-    target.rx = 0
-    target.ry = 0
-    target.rz = streak.lean * 0.5
-    // Never exactly zero: a zero scale is a degenerate matrix.
-    target.scale = Math.max(0.001, fade)
-  }
-
-  return { count: plan.glints.length }
+/** The three wandering lights that make the metal and the facets shimmer. */
+export function lightPositions(state, field, out) {
+  const { time } = state
+  out[0] = out[0] || { x: 0, y: 0, z: 0 }
+  out[1] = out[1] || { x: 0, y: 0, z: 0 }
+  out[2] = out[2] || { x: 0, y: 0, z: 0 }
+  out[0].x = Math.cos(time * 0.6) * field.width * 0.36
+  out[0].y = Math.sin(time * 0.45) * field.height * 0.34
+  out[0].z = KNOT.z + 4
+  out[1].x = Math.cos(time * 0.4 + 2) * -field.width * 0.36
+  out[1].y = Math.sin(time * 0.5) * field.height * 0.34
+  out[1].z = KNOT.z + 3
+  out[2].x = Math.sin(time * 0.33) * field.width * 0.25
+  out[2].y = Math.cos(time * 0.7) * -field.height * 0.3
+  out[2].z = KNOT.z + 5
+  return out
 }
 
 /** Dust drifts up and wraps at the edge of the field, in place. */
@@ -311,12 +383,12 @@ export function driftDust(plan, state) {
   return positions
 }
 
-/** The camera drifts on its own, then leans towards the pointer. */
+/** The camera drifts on its own around the knot, then leans towards the pointer. */
 export function cameraDrift(state, camera) {
   const { elapsed, pointer, strength } = state
-  const x = Math.sin(elapsed * 0.2) * 0.9 + pointer.x * strength
-  const y = Math.cos(elapsed * 0.15) * 0.6 - pointer.y * strength * 0.7
+  const x = Math.sin(elapsed * 0.15) * 1.6 + pointer.x * strength
+  const y = Math.cos(elapsed * 0.12) * 0.9 - pointer.y * strength * 0.7
   camera.position.x = x
   camera.position.y = y
-  camera.lookAt(0, 0, 0)
+  camera.lookAt(0, 0, KNOT.z)
 }
