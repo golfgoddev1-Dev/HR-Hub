@@ -21,7 +21,7 @@ import {
 } from "../session.js";
 // The PIN attempt sequence lives in one shared implementation (login and the
 // dashboard reason route both run it verbatim).
-import { verifyPinAttempt } from "../pin-verify.js";
+import { PIN_BUSY_MESSAGE, counterFilter, verifyPinAttempt } from "../pin-verify.js";
 import { createDb } from "../db.js";
 import { normalizeEndpoint } from "../push/endpoint.js";
 import { isActiveApprover } from "../leave-approvers.js";
@@ -612,22 +612,35 @@ auth.post("/set-pin", async (c) => {
       return c.json({ ok: false, message: SET_PIN_INVALID_MESSAGE }, 401);
     }
 
+    // The attempt is claimed before the code is compared, on the count that was
+    // read: parallel guesses cannot all read the same count and each be judged
+    // (see src/pin-verify.js). The fifth attempt burns the code up front; a
+    // right fifth code still goes through below.
+    const attempts = failedAttempts(resetCode.attempts) + 1;
+    const claimPatch = { attempts };
+    if (attempts >= RESET_CODE_MAX_ATTEMPTS) claimPatch.used_at = nowIso;
+    const claimed = ensureOk(
+      await db.update(
+        RESET_CODES_TABLE,
+        claimPatch,
+        [
+          ["id", "eq", resetCode.id],
+          ["used_at", "is", null],
+          counterFilter("attempts", resetCode.attempts),
+        ],
+        { returning: true, columns: "id" }
+      )
+    );
+    if (!Array.isArray(claimed.data) || claimed.data.length === 0) {
+      return c.json({ ok: false, message: PIN_BUSY_MESSAGE }, 429);
+    }
+
     const expected = await hmacSha256Hex(
       getRequiredEnv(env, "PIN_RESET_SECRET"),
       `${employee.id}:${body.code}`
     );
 
     if (!timingSafeEqualHex(expected, resetCode.code_hash)) {
-      const attempts = failedAttempts(resetCode.attempts) + 1;
-      const patch = { attempts };
-      if (attempts >= RESET_CODE_MAX_ATTEMPTS) patch.used_at = nowIso;
-
-      ensureOk(
-        await db.update(RESET_CODES_TABLE, patch, [
-          ["id", "eq", resetCode.id],
-          ["used_at", "is", null],
-        ])
-      );
       return c.json({ ok: false, message: SET_PIN_INVALID_MESSAGE }, 401);
     }
 

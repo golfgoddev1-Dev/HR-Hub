@@ -191,6 +191,8 @@ async function createBackend(options = {}) {
       const patch = JSON.parse(init.body ?? "{}");
       credUpdates.push(patch);
       Object.assign(credential, patch);
+      // The attempt claim asks for the row back (return=representation).
+      if (String(init.headers?.Prefer ?? "").includes("return=representation")) return jsonResponse([{ employee_id: credential.employee_id }]);
       return emptyResponse();
     }
 

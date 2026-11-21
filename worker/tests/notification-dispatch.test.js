@@ -69,7 +69,7 @@ function matches(params, row) {
  * Fake PostgREST plus a push endpoint that always refuses. Tracks successful
  * pending -> sending claims so the double-send test can count them.
  */
-async function createBackend({ failQueueInsert = false, queue = [], subscriptions = [] } = {}) {
+async function createBackend({ failQueueInsert = false, queue = [], subscriptions = [], leaveRequests = [] } = {}) {
   const now = new Date();
   const session = {
     id: "session-1",
@@ -112,7 +112,7 @@ async function createBackend({ failQueueInsert = false, queue = [], subscription
     ],
     shift_options: [{ code: "DAY_FULL", label: "เต็มวัน", is_half: false }],
     holidays: [],
-    leave_requests: [],
+    leave_requests: leaveRequests,
     notification_queue: queue,
     push_subscriptions: subscriptions,
     audit_logs: [],
@@ -271,6 +271,62 @@ test("a failed notification insert never fails the leave submit", async (t) => {
   assert.equal(fake.state.notification_queue.length, 0);
   assert.equal(fake.state.leave_requests.length, 1);
   assert.equal(waits.length, 0);
+});
+
+// The submit harness lives here, so the date-overlap rule is checked here too.
+function existingLeave(status) {
+  return {
+    id: `leave-${status}`,
+    request_code: "LV-20261101-001",
+    employee_id: EMPLOYEE_ID,
+    start_date: "2026-11-09",
+    end_date: "2026-11-11",
+    status,
+  };
+}
+
+for (const status of ["pending", "approved"]) {
+  test(`a submit on days already covered by a ${status} leave is refused with 409`, async (t) => {
+    const fake = await createBackend({ leaveRequests: [existingLeave(status)] });
+    t.after(() => fake.restore());
+
+    const response = await submit(EMPLOYEE_TOKEN, { waitUntil() {} });
+    const body = await response.json();
+
+    assert.equal(response.status, 409, JSON.stringify(body));
+    assert.equal(body.conflictRequestCode, "LV-20261101-001");
+    assert.equal(body.conflictStatus, status);
+    // Nothing was saved and nobody was notified.
+    assert.equal(fake.state.leave_requests.length, 1);
+    assert.equal(fake.state.notification_queue.length, 0);
+    const overlapRead = fake.calls.find(
+      (call) => call.table === "leave_requests" && call.method === "GET" && call.url.includes("start_date=lte.")
+    );
+    assert.match(overlapRead.url, /employee_id=eq\./);
+    assert.match(overlapRead.url, /end_date=gte\.2026-11-10/);
+    assert.ok(overlapRead.url.includes("status=in.(pending,approved)"));
+  });
+}
+
+test("a rejected or cancelled leave on the same days does not block a new submit", async (t) => {
+  const fake = await createBackend({ leaveRequests: [existingLeave("rejected"), existingLeave("cancelled")] });
+  t.after(() => fake.restore());
+
+  const response = await submit(EMPLOYEE_TOKEN, { waitUntil() {} });
+  assert.equal(response.status, 201);
+  assert.equal(fake.state.leave_requests.length, 3);
+});
+
+test("a second identical submit is refused instead of saved twice", async (t) => {
+  const fake = await createBackend();
+  t.after(() => fake.restore());
+
+  const first = await submit(EMPLOYEE_TOKEN, { waitUntil() {} });
+  const second = await submit(EMPLOYEE_TOKEN, { waitUntil() {} });
+
+  assert.equal(first.status, 201);
+  assert.equal(second.status, 409);
+  assert.equal(fake.state.leave_requests.length, 1);
 });
 
 test("dispatch is handed to waitUntil and never awaited", async (t) => {

@@ -42,6 +42,7 @@ import {
 import { deleteCertificate, uploadCertificate } from "../leave-storage.js";
 import { isSickLeaveName, sendCertificate } from "../medical-certificate.js";
 import { insertWithRequestCode } from "../leave-request-code.js";
+import { BLOCKING_STATUSES, findOverlappingRequest } from "../leave-overlap.js";
 import { applyLeaveDecision } from "../leave-decision.js";
 import { notifyLeaveDecisionSafely } from "../decision-notify.js";
 import { createApprovalLinkEmail } from "../approval-link.js";
@@ -533,6 +534,35 @@ leave.post("/requests", async (c) => {
     });
     if (computed.ok !== true) return c.json({ ok: false, message: computed.message }, 400);
 
+    // A pending or approved request of this employee on any of these days blocks
+    // the new one (a double click or a retry would otherwise save the same days
+    // twice and the balance would count them twice). Same rule and answer as
+    // the HR backdated route.
+    const endDate = computed.days === 0.5 ? startDate : fields.endDate ?? startDate;
+    const candidates = await db.select(LEAVE_REQUESTS_TABLE, {
+      columns: "id,request_code,start_date,end_date,status",
+      filters: [
+        ["employee_id", "eq", employee.id],
+        ["status", "in", BLOCKING_STATUSES],
+        ["end_date", "gte", startDate],
+        ["start_date", "lte", endDate],
+      ],
+      order: "start_date.asc",
+      limit: 20,
+    });
+    const overlap = findOverlappingRequest(candidates, { startDate, endDate });
+    if (overlap) {
+      return c.json(
+        {
+          ok: false,
+          message: `ช่วงวันที่ทับกับใบลา ${overlap.requestCode ?? "(ไม่ทราบรหัส)"}`,
+          conflictRequestCode: overlap.requestCode,
+          conflictStatus: overlap.status,
+        },
+        409
+      );
+    }
+
     // Same normalisation the HR backdated route uses (src/leave-backdated.js),
     // minus the attachment URL: the certificate is a file in this route.
     const optional = normalizeOptionalFields({
@@ -588,7 +618,7 @@ leave.post("/requests", async (c) => {
       other_type_detail: optional.otherTypeDetail,
       ot_option: computed.otOption,
       start_date: startDate,
-      end_date: computed.days === 0.5 ? startDate : fields.endDate ?? startDate,
+      end_date: endDate,
       days: computed.days,
       return_date: computed.returnDate,
       return_time: computed.returnTime,

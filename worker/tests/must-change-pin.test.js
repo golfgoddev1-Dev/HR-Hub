@@ -139,9 +139,8 @@ async function createFake({ mustChangePin = true, role = "hr" } = {}) {
     }
     if (method === "PATCH") {
       const patch = body ?? {};
-      for (const row of state[table] ?? []) {
-        if (matches(params, row)) Object.assign(row, patch);
-      }
+      const matched = (state[table] ?? []).filter((row) => matches(params, row));
+      for (const row of matched) Object.assign(row, patch);
       writes.push({ method, table, body: patch });
       if (table === "employee_credentials") {
         for (const row of state.auth_sessions ?? []) {
@@ -153,6 +152,8 @@ async function createFake({ mustChangePin = true, role = "hr" } = {}) {
           }
         }
       }
+      // The attempt claim asks for the matched rows back (return=representation).
+      if (String(init.headers?.Prefer ?? "").includes("return=representation")) return jsonResponse(matched);
       return new Response(null, { status: 204 });
     }
 

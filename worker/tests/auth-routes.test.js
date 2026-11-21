@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { createHash, createHmac } from "node:crypto";
 
 import app from "../src/app.js";
+import { PIN_BUSY_MESSAGE } from "../src/pin-verify.js";
 
 // Fake project values. Not real credentials, PINs, IDs or codes.
 const PIN_PEPPER = "test-pin-pepper";
@@ -106,6 +107,7 @@ function createFakeDb(overrides = {}) {
     patchStatus: overrides.patchStatus ?? {},
     insertStatus: overrides.insertStatus ?? {},
     failGet: overrides.failGet === true,
+    claimLost: overrides.claimLost ?? [],
   };
 
   return installFetch(({ url, init }) => {
@@ -162,6 +164,11 @@ function createFakeDb(overrides = {}) {
     if (method === "PATCH") {
       const status = state.patchStatus[table];
       if (status) return jsonResponse({ code: "patch_failed" }, status);
+      // A conditional claim (return=representation) matches one row, unless the
+      // test says a parallel attempt already moved the counter.
+      if (String(init.headers?.Prefer ?? "").includes("return=representation")) {
+        return jsonResponse(state.claimLost.includes(table) ? [] : [{}]);
+      }
       return emptyResponse(204);
     }
 
@@ -382,6 +389,98 @@ test("login: the fifth wrong PIN locks for 15 minutes and resets the count", asy
   });
 });
 
+test("login: an attempt that loses the counter race is refused before the PIN is compared", async (t) => {
+  freeze(t);
+  const fake = createFakeDb({
+    credentials: [credential({ failed_attempts: 2 })],
+    employees: [employee()],
+    admins: { hr_admins: [{ employee_id: EMPLOYEE_ID }] },
+    claimLost: ["employee_credentials"],
+  });
+  t.after(() => fake.restore());
+
+  // Even the right PIN gets no answer about itself: a parallel attempt moved
+  // the counter first, so this one is turned away without a session.
+  const res = await login({ loginType: "hr", nationalId: FAKE_NATIONAL_ID, pin: PIN });
+  assert.equal(res.status, 429);
+  assert.deepEqual(await res.json(), { ok: false, message: PIN_BUSY_MESSAGE });
+
+  const patches = callsTo(fake.calls, "employee_credentials", "PATCH");
+  assert.equal(patches.length, 1);
+  assert.match(patches[0].url, /failed_attempts=eq\.2/);
+  assert.equal(callsTo(fake.calls, "auth_sessions", "POST").length, 0);
+});
+
+test("login: ten parallel wrong PINs that read the same count are judged once", async (t) => {
+  freeze(t);
+  const BURST = 10;
+  const row = credential();
+  const fake = createFakeDb({ credentials: [row], employees: [employee()] });
+  t.after(() => fake.restore());
+
+  // Every attempt reads the counter before any of them writes (a barrier on
+  // the credential read), and the claim behaves like PostgREST's conditional
+  // PATCH: it only matches the count it filtered on.
+  const fakeFetch = globalThis.fetch;
+  let reads = 0;
+  let release;
+  const allRead = new Promise((resolve) => {
+    release = resolve;
+  });
+  let applied = 0;
+  globalThis.fetch = async (url, init = {}) => {
+    const parsed = new URL(url);
+    const credentials = parsed.pathname.endsWith("/employee_credentials");
+    if (credentials && (init.method ?? "GET") === "GET") {
+      const response = await fakeFetch(url, init);
+      reads += 1;
+      if (reads === BURST) release();
+      await allRead;
+      return response;
+    }
+    if (credentials && init.method === "PATCH") {
+      const wanted = parsed.searchParams.get("failed_attempts");
+      if (wanted !== null && wanted !== `eq.${row.failed_attempts}`) {
+        return new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      applied += 1;
+      Object.assign(row, JSON.parse(init.body));
+    }
+    return fakeFetch(url, init);
+  };
+  t.after(() => {
+    globalThis.fetch = fakeFetch;
+  });
+
+  const responses = await Promise.all(
+    Array.from({ length: BURST }, () =>
+      login({ loginType: "employee", nationalId: FAKE_NATIONAL_ID, pin: WRONG_PIN })
+    )
+  );
+  const statuses = responses.map((res) => res.status).sort();
+
+  // One guess was judged and counted; the other nine were turned away unjudged.
+  assert.equal(applied, 1);
+  assert.equal(row.failed_attempts, 1);
+  assert.deepEqual(statuses, [401, ...Array(BURST - 1).fill(429)]);
+});
+
+test("set-pin: an attempt that loses the counter race is refused before the code is compared", async (t) => {
+  freeze(t);
+  const fake = createFakeDb({
+    credentials: [credential()],
+    employees: [employee()],
+    resetCodes: [resetCode()],
+    claimLost: ["pin_reset_codes"],
+  });
+  t.after(() => fake.restore());
+
+  const res = await setPin({ nationalId: FAKE_NATIONAL_ID, code: RESET_CODE, pin: NEW_PIN, pinConfirm: NEW_PIN });
+  assert.equal(res.status, 429);
+  assert.deepEqual(await res.json(), { ok: false, message: PIN_BUSY_MESSAGE });
+  assert.equal(callsTo(fake.calls, "employee_credentials", "PATCH").length, 0);
+});
+
 test("login: correct PIN with the wrong role counts as a failed attempt", async (t) => {
   freeze(t);
   const fake = createFakeDb({
@@ -437,9 +536,13 @@ test("login: correct PIN sets the session cookie and clears the counters", async
   assert.match(setCookie, /Max-Age=43200/);
   assert.match(setCookie, /Secure/);
 
+  // The attempt is claimed on the count that was read (3 -> 4) before the PIN is
+  // compared, and the match then clears the counter and the lock.
   const patches = callsTo(fake.calls, "employee_credentials", "PATCH");
-  assert.equal(patches.length, 1);
-  assert.deepEqual(JSON.parse(patches[0].init.body), {
+  assert.equal(patches.length, 2);
+  assert.match(patches[0].url, /failed_attempts=eq\.3/);
+  assert.deepEqual(JSON.parse(patches[0].init.body), { failed_attempts: 4, updated_at: NOW_ISO });
+  assert.deepEqual(JSON.parse(patches[1].init.body), {
     failed_attempts: 0,
     locked_until: null,
     updated_at: NOW_ISO,
@@ -835,9 +938,12 @@ test("set-pin: success stores the new hash, revokes sessions and writes audit", 
   assert.equal(credentialBody.locked_until, null);
   assert.equal(credentialBody.updated_at, NOW_ISO);
 
+  // The attempt is claimed on the count that was read, then the code is spent.
   const codePatches = callsTo(fake.calls, "pin_reset_codes", "PATCH");
-  assert.equal(codePatches.length, 1);
-  assert.deepEqual(JSON.parse(codePatches[0].init.body), { used_at: NOW_ISO });
+  assert.equal(codePatches.length, 2);
+  assert.deepEqual(JSON.parse(codePatches[0].init.body), { attempts: 1 });
+  assert.match(codePatches[0].url, /attempts=eq\.0/);
+  assert.deepEqual(JSON.parse(codePatches[1].init.body), { used_at: NOW_ISO });
 
   const sessionPatches = callsTo(fake.calls, "auth_sessions", "PATCH");
   assert.equal(sessionPatches.length, 1);
