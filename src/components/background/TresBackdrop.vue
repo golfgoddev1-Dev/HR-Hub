@@ -12,16 +12,22 @@
 // and releases every geometry and material, so the GPU memory goes with it. The
 // only things this component adds are listeners, removed in onBeforeUnmount.
 import { TresCanvas } from '@tresjs/core'
+import { computed } from 'vue'
+import { sceneMood } from '../../lib/background-scene.js'
 import TresBackdropScene from './TresBackdropScene.vue'
 
-defineProps({
+const props = defineProps({
   // The tier config from src/lib/background-quality.js.
   config: { type: Object, required: true },
   // The device pixel ratio range, clamped by the tier's pixelRatioCap.
   dpr: { type: [Number, Array], default: 1 },
+  // The current route: landing pages frame the crystal beside the content,
+  // working pages calm it. Resolved here so the shell chunk stays scene-free.
+  path: { type: String, default: '' },
 })
 
 const emit = defineEmits(['failed'])
+const mood = computed(() => sceneMood(props.path))
 </script>
 
 <template>
@@ -38,7 +44,7 @@ const emit = defineEmits(['failed'])
     window-size
     @error="emit('failed')"
   >
-    <TresBackdropScene :config="config" />
+    <TresBackdropScene :config="config" :mood="mood" />
   </TresCanvas>
 </template>
 

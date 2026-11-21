@@ -30,7 +30,7 @@ import {
   TorusGeometry,
   TorusKnotGeometry,
 } from 'three'
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useLoop } from '@tresjs/core'
 import {
   BEAD_RADIUS,
@@ -40,18 +40,22 @@ import {
   RIBBON_SIZE,
   cameraDrift,
   driftDust,
+  easeFrame,
   heroFit,
   layoutGems,
   layoutKnot,
   layoutRings,
   layoutShell,
   lightPositions,
+  moodFrame,
   scenePlan,
   waveRibbon,
 } from '../../lib/background-scene.js'
 
 const props = defineProps({
   config: { type: Object, required: true },
+  // 'hero' or 'quiet', from sceneMood(route.path) in the shell.
+  mood: { type: String, default: 'quiet' },
 })
 
 const plan = scenePlan(props.config)
@@ -206,6 +210,9 @@ const lightRefs = ref([])
 const pointsRef = ref(null)
 
 const field = { width: 20, height: 12, fit: 1 }
+// The framing the page asks for, and the live one easing towards it.
+const target = { x: 0, scale: 1, speed: 1 }
+const frameNow = { x: 0, scale: 1, speed: 1 }
 const pointer = { x: 0, y: 0, targetX: 0, targetY: 0 }
 const knotPose = { rx: 0, ry: 0, rz: 0, z: 0 }
 const shellPose = { rx: 0, ry: 0, rz: 0, z: 0 }
@@ -227,7 +234,13 @@ function measure() {
   field.height = 2 * Math.tan((CAMERA.fov * Math.PI) / 360) * CAMERA.z
   field.width = field.height * (width / height)
   field.fit = heroFit(field)
+  moodFrame(props.mood, field, target)
 }
+
+watch(
+  () => props.mood,
+  () => moodFrame(props.mood, field, target)
+)
 
 /** Colours every gem once, the first time its mesh exists. */
 function prime() {
@@ -260,6 +273,8 @@ const { onBeforeRender } = useLoop()
 
 onMounted(() => {
   measure()
+  // The first page is framed at once; only a route change eases.
+  Object.assign(frameNow, target)
   window.addEventListener('resize', measure)
   window.addEventListener('orientationchange', measure)
   if (props.config.mouseParallax && typeof window !== 'undefined') {
@@ -284,7 +299,9 @@ const stopLoop = onBeforeRender((context) => {
   // TresJS reports delta in seconds; guard a millisecond clock just in case.
   const raw = Number(context?.delta) || 0
   const step = raw > 0.5 ? raw / 1000 : raw
-  elapsed += step > 0 && step < 1 ? step : 1 / 60
+  const tick = step > 0 && step < 1 ? step : 1 / 60
+  easeFrame(frameNow, target, tick)
+  elapsed += tick * frameNow.speed
 
   if (!primed) primed = prime()
   if (!primed) return
@@ -297,11 +314,17 @@ const stopLoop = onBeforeRender((context) => {
   // Positions move every frame; the gradient, the crest line and the normals are
   // slower-moving and cost the most, so they refresh every other frame.
   const paint = frame % 2 === 0
-  const state = { time: elapsed, elapsed, field, pointer, fit: field.fit }
+  const fit = field.fit * frameNow.scale
+  const state = { time: elapsed, elapsed, field, pointer, fit }
 
   if (cameraRef.value) {
     cameraDrift(
-      { elapsed, pointer, strength: props.config.mouseParallax ? MAX_PARALLAX : MAX_PARALLAX * 0.35 },
+      {
+        elapsed,
+        pointer,
+        strength: props.config.mouseParallax ? MAX_PARALLAX : MAX_PARALLAX * 0.35,
+        offsetX: frameNow.x,
+      },
       cameraRef.value
     )
   }
@@ -328,13 +351,13 @@ const stopLoop = onBeforeRender((context) => {
   if (knotRef.value) {
     layoutKnot(state, knotPose)
     knotRef.value.rotation.set(knotPose.rx, knotPose.ry, knotPose.rz)
-    knotRef.value.scale.setScalar(field.fit)
+    knotRef.value.scale.setScalar(fit)
   }
 
   if (shellRef.value) {
     layoutShell(state, shellPose)
     shellRef.value.rotation.set(shellPose.rx, shellPose.ry, shellPose.rz)
-    shellRef.value.scale.setScalar(field.fit)
+    shellRef.value.scale.setScalar(fit)
   }
 
   if (plan.rings.length > 0) {
@@ -343,7 +366,7 @@ const stopLoop = onBeforeRender((context) => {
       const mesh = ringRefs.value[index]
       if (mesh) {
         mesh.rotation.set(ringSlots[index].rx, ringSlots[index].ry, ringSlots[index].rz)
-        mesh.scale.setScalar(field.fit)
+        mesh.scale.setScalar(fit)
       }
     }
     if (beadRef.value) {

@@ -154,7 +154,7 @@ onBeforeUnmount(() => {
     data-app-background
     aria-hidden="true"
   >
-    <TresBackdrop v-if="!isStatic" :key="tier" :config="config" :dpr="dpr" @failed="fallbackToStatic" />
+    <TresBackdrop v-if="!isStatic" :key="tier" :config="config" :dpr="dpr" :path="route?.path" @failed="fallbackToStatic" />
     <!-- A slow light sweep over the gradient. Purely CSS, transparent, and drawn
          under every panel; the static and reduced-motion tiers switch it off. -->
     <div class="app-background-sweep" aria-hidden="true"></div>

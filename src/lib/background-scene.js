@@ -40,7 +40,8 @@ export const HALOS = Object.freeze([
   Object.freeze({ color: 'rgba(129,140,248,0.9)', size: 7.5, x: 0, y: 0, z: -2, opacity: 0.75 }),
 ])
 
-export const RIBBON_SIZE = Object.freeze({ width: 38, height: 7 })
+// Wide enough that the hero framing (camera panned left) never shows a sheet edge.
+export const RIBBON_SIZE = Object.freeze({ width: 50, height: 7 })
 export const KNOT = Object.freeze({ radius: 2.1, tube: 0.62, p: 2, q: 3, z: -2 })
 export const SHELL_RADIUS = 3.7
 export const GEM_BASE = 0.16
@@ -383,12 +384,52 @@ export function driftDust(plan, state) {
   return positions
 }
 
+// ---- Scene mood per page ------------------------------------------------------
+// Landing pages give the crystal the open side of the screen at full speed; the
+// working pages (queues, tables, forms) shrink it behind the panel and slow it
+// almost to a stop, so nothing busy moves behind dense data.
+export const SCENE_MOODS = Object.freeze({
+  hero: Object.freeze({ shift: 0.18, scale: 1, speed: 1 }),
+  quiet: Object.freeze({ shift: 0, scale: 0.72, speed: 0.15 }),
+})
+
+const HERO_PATHS = new Set(['/leave', '/hr', '/meeting/controller', '/meeting/controller/dashboard', '/admin'])
+
+/** 'hero' for the landing pages, 'quiet' for every working page. */
+export function sceneMood(path) {
+  const clean = String(path ?? '').replace(/\/+$/, '') || '/'
+  return HERO_PATHS.has(clean) ? 'hero' : 'quiet'
+}
+
+/**
+ * The framing a mood asks for on this screen. The camera moves left so the
+ * crystal sits right of the content; a portrait phone has no open side, so it
+ * stays centred there.
+ */
+export function moodFrame(mood, field, out = {}) {
+  const preset = SCENE_MOODS[mood] ?? SCENE_MOODS.quiet
+  out.x = field.width > field.height ? 0 - preset.shift * field.width : 0
+  out.scale = preset.scale
+  out.speed = preset.speed
+  return out
+}
+
+/** Eases the live frame towards the target: ~95% of the way in 0.38s. */
+export function easeFrame(current, target, step) {
+  const k = 1 - Math.exp(-Math.max(0, step) * 8)
+  current.x += (target.x - current.x) * k
+  current.scale += (target.scale - current.scale) * k
+  current.speed += (target.speed - current.speed) * k
+  return current
+}
+
 /** The camera drifts on its own around the knot, then leans towards the pointer. */
 export function cameraDrift(state, camera) {
   const { elapsed, pointer, strength } = state
+  const offset = state.offsetX ?? 0
   const x = Math.sin(elapsed * 0.15) * 1.6 + pointer.x * strength
   const y = Math.cos(elapsed * 0.12) * 0.9 - pointer.y * strength * 0.7
-  camera.position.x = x
+  camera.position.x = x + offset
   camera.position.y = y
-  camera.lookAt(0, 0, KNOT.z)
+  camera.lookAt(offset, 0, KNOT.z)
 }

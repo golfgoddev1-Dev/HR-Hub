@@ -32,7 +32,10 @@ import {
   KNOT,
   RIBBON_PALETTES,
   SCENE_DEPTH,
+  SCENE_MOODS,
+  cameraDrift,
   driftDust,
+  easeFrame,
   heroFit,
   hexToRgb,
   layoutGems,
@@ -40,6 +43,8 @@ import {
   layoutRings,
   layoutShell,
   lightPositions,
+  moodFrame,
+  sceneMood,
   scenePlan,
   waveRibbon,
 } from '../src/lib/background-scene.js'
@@ -352,6 +357,49 @@ describe('the TresJS scene plan', () => {
     expect(SCENE_DEPTH).toBeGreaterThan(0)
   })
 
+  it('frames the landing pages as hero and every working page as quiet', () => {
+    for (const path of ['/leave', '/hr', '/hr/', '/meeting/controller', '/meeting/controller/dashboard', '/admin']) {
+      expect(sceneMood(path)).toBe('hero')
+    }
+    for (const path of ['/leave/approvals', '/hr/leave', '/hr/employees/42', '/profile', '/', '', undefined]) {
+      expect(sceneMood(path)).toBe('quiet')
+    }
+  })
+
+  it('moves the crystal beside the content on wide screens only, and calms working pages', () => {
+    const wide = { width: 20, height: 11 }
+    const tall = { width: 5, height: 11 }
+    expect(moodFrame('hero', wide).x).toBeCloseTo(-SCENE_MOODS.hero.shift * 20)
+    expect(moodFrame('hero', tall).x).toBe(0)
+    expect(moodFrame('quiet', wide)).toMatchObject({ x: 0, scale: 0.72, speed: 0.15 })
+    expect(moodFrame('nonsense', wide)).toMatchObject(moodFrame('quiet', wide))
+    expect(SCENE_MOODS.quiet.speed).toBeLessThan(SCENE_MOODS.hero.speed)
+  })
+
+  it('eases between moods inside the route fade window and never overshoots', () => {
+    const live = { x: 0, scale: 1, speed: 1 }
+    const goal = moodFrame('quiet', { width: 20, height: 11 })
+    let previous = live.scale
+    for (let frame = 0; frame < 23; frame += 1) {
+      easeFrame(live, goal, 1 / 60)
+      expect(live.scale).toBeLessThanOrEqual(previous)
+      expect(live.scale).toBeGreaterThanOrEqual(goal.scale)
+      previous = live.scale
+    }
+    // 23 frames ≈ 0.38s: at least 95% of the way there.
+    expect((1 - live.scale) / (1 - goal.scale)).toBeGreaterThan(0.95)
+    easeFrame(live, goal, 0)
+    expect(live.scale).toBe(previous)
+  })
+
+  it('pans the camera and its target together by the mood offset', () => {
+    const at = { x: 0, y: 0 }
+    const camera = { position: { x: 0, y: 0 }, lookAt: (x, y) => Object.assign(at, { x, y }) }
+    cameraDrift({ elapsed: 0, pointer: { x: 0, y: 0 }, strength: 0, offsetX: -3 }, camera)
+    expect(camera.position.x).toBeCloseTo(-3)
+    expect(at.x).toBe(-3)
+  })
+
   it('draws nothing at all when the tier is static', () => {
     const plan = scenePlan(QUALITY_TIERS.static)
     expect(plan.ribbons).toHaveLength(0)
@@ -414,6 +462,8 @@ describe('the TresJS components', () => {
   })
 })
 
+const SHELL_SOURCE_FOR_MOOD = readSource('src/components/AppBackground3D.vue')
+
 describe('the background shell', () => {
   /** Mounts the shell and waits for the lazily imported canvas component. */
   async function mountShell() {
@@ -445,6 +495,15 @@ describe('the background shell', () => {
     expect(tresMock.canvases.length).toBeGreaterThan(0)
     expect(tresMock.loopHooks.length).toBeGreaterThan(0)
     wrapper.unmount()
+  })
+
+  it('hands the scene the mood of the current route', () => {
+    expect(SHELL_SOURCE_FOR_MOOD).toContain(':path="route?.path"')
+    // The scene module stays out of the shell chunk, so a static visitor never loads it.
+    expect(SHELL_SOURCE_FOR_MOOD).not.toMatch(/^import .*background-scene/m)
+    const backdrop = readSource('src/components/background/TresBackdrop.vue')
+    expect(backdrop).toContain('sceneMood(props.path)')
+    expect(backdrop).toContain(':mood="mood"')
   })
 
   it('publishes the tier for the CSS and removes it on unmount', async () => {
