@@ -7,12 +7,13 @@ import { readFileSync } from "node:fs";
 
 import app from "../src/app.js";
 import { sha256Hex } from "../src/crypto.js";
-import { hashApprovalToken } from "../src/approval-token.js";
+import { hashApprovalNonce, signApprovalToken } from "../src/approval-token.js";
 
 const BASE_ENV = {
   SUPABASE_URL: "https://fake-project.supabase.co",
   SUPABASE_SERVICE_ROLE_KEY: "fake-service-role-key",
   APP_PUBLIC_URL: "https://hr.example.test",
+  APPROVAL_LINK_SECRET: "test-approval-secret-0123456789-abcdef",
 };
 
 const REQUESTER_ID = "11111111-1111-4111-8111-111111111111";
@@ -22,10 +23,31 @@ const REQUEST_ID = "44444444-4444-4444-8444-444444444444";
 const TYPE_ID = "55555555-5555-4555-8555-555555555555";
 const DEPT_ID = "66666666-6666-4666-8666-666666666666";
 
+const OTHER_REQUEST_ID = "77777777-7777-4777-8777-777777777777";
+
 const HR_TOKEN = "h".repeat(43);
 const EMPLOYEE_TOKEN = "e".repeat(43);
-const RAW_TOKEN = "T".repeat(43);
-const OTHER_TOKEN = "U".repeat(43);
+const APPROVER_SESSION = "a".repeat(43);
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+// The leave starts 30 days out, so the 72-hour limit (not the start date) is the
+// expiry unless a test moves the start date closer.
+const START_DATE = new Date(Date.now() + 30 * DAY_MS).toISOString().slice(0, 10);
+const TOKEN_EXP = Date.now() + 72 * 60 * 60 * 1000;
+const NONCE = "nonce-one";
+const OTHER_NONCE = "nonce-two";
+
+function signed({ leaveId = REQUEST_ID, approverId = APPROVER_ID, exp, nonce = NONCE } = {}) {
+  return signApprovalToken(BASE_ENV.APPROVAL_LINK_SECRET, {
+    leaveId,
+    approverId,
+    exp: exp ?? TOKEN_EXP,
+    nonce,
+  });
+}
+
+const RAW_TOKEN = await signed();
+const OTHER_TOKEN = await signed({ nonce: OTHER_NONCE });
 
 const APPROVER_EMAIL = "approver@example.test";
 const REQUESTER_EMAIL = "requester@example.test";
@@ -106,7 +128,7 @@ function selectColumns(row, select) {
 async function session(token, employeeId, role) {
   const now = new Date();
   return {
-    id: `session-${role}`,
+    id: `session-${role}-${employeeId}`,
     token_hash: await sha256Hex(token),
     employee_id: employeeId,
     login_role: role,
@@ -123,6 +145,7 @@ async function buildState({ requestStatus = "pending", grants = true } = {}) {
     auth_sessions: [
       await session(HR_TOKEN, HR_ID, "hr"),
       await session(EMPLOYEE_TOKEN, REQUESTER_ID, "employee"),
+      await session(APPROVER_SESSION, APPROVER_ID, "employee"),
     ],
     employees: [
       {
@@ -177,8 +200,8 @@ async function buildState({ requestStatus = "pending", grants = true } = {}) {
         approver_id: APPROVER_ID,
         leave_type_id: TYPE_ID,
         other_type_detail: null,
-        start_date: "2026-11-10",
-        end_date: "2026-11-11",
+        start_date: START_DATE,
+        end_date: START_DATE,
         days: 2,
         return_date: "2026-11-12",
         return_time: "08:00",
@@ -201,9 +224,9 @@ async function buildState({ requestStatus = "pending", grants = true } = {}) {
         id: "token-1",
         leave_request_id: REQUEST_ID,
         approver_employee_id: APPROVER_ID,
-        token_hash: await hashApprovalToken(RAW_TOKEN),
+        nonce_hash: await hashApprovalNonce(NONCE),
         created_at: now.toISOString(),
-        expires_at: new Date(now.getTime() + 72 * 60 * 60 * 1000).toISOString(),
+        expires_at: new Date(TOKEN_EXP).toISOString(),
         used_at: null,
         invalidated_at: null,
         created_by: null,
@@ -277,9 +300,10 @@ async function setup(t, options = {}) {
   return { state, fake, env };
 }
 
-function call(env, path, { token = null, method = "GET", body } = {}) {
+function call(env, path, { token = null, method = "GET", body, csrf = false } = {}) {
   const headers = {};
   if (token) headers.Cookie = `hr_session=${token}`;
+  if (csrf) headers["X-Approval-Request"] = "1";
   const init = { method, headers };
   if (body !== undefined) {
     headers["Content-Type"] = "application/json";
@@ -288,8 +312,18 @@ function call(env, path, { token = null, method = "GET", body } = {}) {
   return app.request(`https://fake.local${path}`, init, env);
 }
 
-function decide(env, body, token = RAW_TOKEN) {
-  return call(env, `/api/approve-link/${token}/decision`, { method: "POST", body });
+// The approval POSTs: token in the body and the CSRF header. No session cookie by
+// default: the token is the only credential.
+function post(env, action, body, { session: cookie = null, csrf = true } = {}) {
+  return call(env, `/api/approve-link/${action}`, { method: "POST", body, token: cookie, csrf });
+}
+
+function detail(env, token = RAW_TOKEN, options) {
+  return post(env, "detail", { token }, options);
+}
+
+function decide(env, body, token = RAW_TOKEN, options) {
+  return post(env, "decision", { token, ...body }, options);
 }
 
 function assertPrivateHeaders(response) {
@@ -302,12 +336,12 @@ function writes(calls) {
   return calls.filter((entry) => entry.method !== "GET");
 }
 
-// --- GET -------------------------------------------------------------------
+// --- detail (read only) -------------------------------------------------------------------
 
-test("GET with a valid link returns the detail fields and writes nothing", async (t) => {
+test("detail with a valid link returns the detail fields and writes nothing", async (t) => {
   const { state, fake, env } = await setup(t);
 
-  const response = await call(env, `/api/approve-link/${RAW_TOKEN}`);
+  const response = await detail(env);
   const body = await response.json();
 
   assert.equal(response.status, 200);
@@ -319,8 +353,8 @@ test("GET with a valid link returns the detail fields and writes nothing", async
   assert.equal(body.request.departmentName, "ฝ่ายบุคคล");
   assert.equal(body.request.leaveTypeName, "ลากิจ");
   assert.equal(body.request.otherTypeDetail, null);
-  assert.equal(body.request.startDate, "2026-11-10");
-  assert.equal(body.request.endDate, "2026-11-11");
+  assert.equal(body.request.startDate, START_DATE);
+  assert.equal(body.request.endDate, START_DATE);
   assert.equal(body.request.days, 2);
   assert.equal(body.request.returnDate, "2026-11-12");
   assert.equal(body.request.returnTime, "08:00");
@@ -335,17 +369,14 @@ test("GET with a valid link returns the detail fields and writes nothing", async
     assert.equal(text.includes(forbidden), false, forbidden);
   }
 
-  // The page is public and read-only: no session read, no write at all.
-  assert.equal(fake.calls.some((entry) => entry.table === "auth_sessions"), false);
+  // Read-only: nothing is written.
   assert.deepEqual(writes(fake.calls), []);
   assert.deepEqual(env.RL_SUBMIT_IP.calls, ["approve-link|unknown"]);
 });
 
 test("an expired link answers expired and changes nothing", async (t) => {
   const { state, fake, env } = await setup(t);
-  state.approval_tokens[0].expires_at = new Date(Date.now() - 1000).toISOString();
-
-  const response = await call(env, `/api/approve-link/${RAW_TOKEN}`);
+  const response = await detail(env, await signed({ exp: Date.now() - 1000 }));
   const body = await response.json();
 
   assert.equal(response.status, 410);
@@ -359,7 +390,7 @@ test("a used link answers used and changes nothing", async (t) => {
   const { state, fake, env } = await setup(t);
   state.approval_tokens[0].used_at = new Date().toISOString();
 
-  const response = await call(env, `/api/approve-link/${RAW_TOKEN}`);
+  const response = await detail(env);
   assert.equal(response.status, 410);
   assert.deepEqual(await response.json(), {
     ok: false,
@@ -373,7 +404,7 @@ test("a replaced link answers invalid and changes nothing", async (t) => {
   const { state, fake, env } = await setup(t);
   state.approval_tokens[0].invalidated_at = new Date().toISOString();
 
-  const response = await call(env, `/api/approve-link/${RAW_TOKEN}`);
+  const response = await detail(env);
   assert.equal(response.status, 410);
   assert.deepEqual(await response.json(), {
     ok: false,
@@ -386,7 +417,7 @@ test("a replaced link answers invalid and changes nothing", async (t) => {
 test("an unknown token answers invalid without a database write", async (t) => {
   const { fake, env } = await setup(t);
 
-  const response = await call(env, `/api/approve-link/${OTHER_TOKEN}`);
+  const response = await detail(env, OTHER_TOKEN);
   const body = await response.json();
 
   assert.equal(response.status, 410);
@@ -397,7 +428,7 @@ test("an unknown token answers invalid without a database write", async (t) => {
 test("a request already decided in the app answers invalid", async (t) => {
   const { fake, env } = await setup(t, { requestStatus: "approved" });
 
-  const response = await call(env, `/api/approve-link/${RAW_TOKEN}`);
+  const response = await detail(env);
   assert.equal(response.status, 410);
   assert.deepEqual(await response.json(), {
     ok: false,
@@ -410,7 +441,7 @@ test("a request already decided in the app answers invalid", async (t) => {
 test("an approver who is no longer responsible answers invalid", async (t) => {
   const { fake, env } = await setup(t, { grants: false });
 
-  const response = await call(env, `/api/approve-link/${RAW_TOKEN}`);
+  const response = await detail(env);
   assert.equal(response.status, 410);
   assert.deepEqual(await response.json(), {
     ok: false,
@@ -423,7 +454,7 @@ test("an approver who is no longer responsible answers invalid", async (t) => {
 // --- decisions -------------------------------------------------------------
 
 test("approve marks the token used, approves the request and audits channel email", async (t) => {
-  const { state, fake, env } = await setup(t);
+  const { state, env } = await setup(t);
 
   const response = await decide(env, { decision: "approve" });
   const body = await response.json();
@@ -455,8 +486,6 @@ test("approve marks the token used, approves the request and audits channel emai
   assert.ok(queued);
   assert.equal(queued.employee_id, REQUESTER_ID);
 
-  // No session is read on the public decision path either.
-  assert.equal(fake.calls.some((entry) => entry.table === "auth_sessions"), false);
   assert.deepEqual(env.RL_SUBMIT_TOKEN.calls.length, 1);
   assert.match(env.RL_SUBMIT_TOKEN.calls[0], /^submit\|[0-9a-f]{64}$/);
   assert.equal(env.RL_SUBMIT_TOKEN.calls[0].includes(RAW_TOKEN), false);
@@ -514,15 +543,18 @@ test("the same token cannot decide twice", async (t) => {
   const first = await decide(env, { decision: "approve" });
   assert.equal(first.status, 200);
 
+  // The request is no longer pending, so the re-check refuses the replay.
   const second = await decide(env, { decision: "reject", reason: "เปลี่ยนใจ" });
   assert.equal(second.status, 410);
-  assert.deepEqual(await second.json(), {
-    ok: false,
-    code: "link_unusable",
-    category: "used",
-  });
+  assert.equal((await second.json()).code, "link_unusable");
 
-  assert.equal(state.leave_requests[0].status, "approved");
+  // Even if the request were pending again, the spent nonce stays spent.
+  state.leave_requests[0].status = "pending";
+  const third = await decide(env, { decision: "reject", reason: "เปลี่ยนใจ" });
+  assert.equal(third.status, 410);
+  assert.deepEqual(await third.json(), { ok: false, code: "link_unusable", category: "used" });
+  assert.equal(state.leave_requests[0].status, "pending");
+
   assert.equal(state.audit_logs.length, 1);
   assert.equal(state.notification_queue.length, 1);
 });
@@ -563,7 +595,7 @@ test("HR resend invalidates old links, issues a 72-hour link and audits the chan
     id: "token-2",
     leave_request_id: REQUEST_ID,
     approver_employee_id: APPROVER_ID,
-    token_hash: await hashApprovalToken(OTHER_TOKEN),
+    nonce_hash: await hashApprovalNonce(OTHER_NONCE),
     created_at: new Date().toISOString(),
     expires_at: new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString(),
     used_at: null,
@@ -585,7 +617,7 @@ test("HR resend invalidates old links, issues a 72-hour link and audits the chan
   const text = JSON.stringify(body);
   assert.equal(text.includes(RAW_TOKEN), false);
   assert.equal(text.includes(OTHER_TOKEN), false);
-  assert.equal(text.includes("/approve/"), false);
+  assert.equal(text.includes("/approve#"), false);
 
   assert.equal(state.approval_tokens.length, 3);
   assert.notEqual(state.approval_tokens[0].invalidated_at, null);
@@ -614,14 +646,14 @@ test("HR resend invalidates old links, issues a 72-hour link and audits the chan
     REQUESTER_EMAIL,
     EMPLOYEE_NAME,
     REASON_TEXT,
-    fresh.token_hash,
+    fresh.nonce_hash,
   ]) {
     assert.equal(audit.detail.includes(forbidden), false, forbidden);
   }
 
   // Both old links are now unusable.
   for (const old of [RAW_TOKEN, OTHER_TOKEN]) {
-    const page = await call(env, `/api/approve-link/${old}`);
+    const page = await detail(env, old);
     assert.equal(page.status, 410);
     assert.equal((await page.json()).category, "invalid");
   }
@@ -665,19 +697,20 @@ test("both routes carry the three response headers on success and failure", asyn
   const { env } = await setup(t);
 
   const responses = [
-    await call(env, `/api/approve-link/${RAW_TOKEN}`),
-    await call(env, `/api/approve-link/${OTHER_TOKEN}`),
+    await detail(env),
+    await detail(env, OTHER_TOKEN),
     await decide(env, { decision: "approve" }),
     await decide(env, { decision: "reject", reason: "ไม่สะดวก" }),
+    await call(env, `/api/approve-link/${RAW_TOKEN}`),
   ];
 
-  assert.deepEqual(responses.map((response) => response.status), [200, 410, 200, 410]);
+  assert.deepEqual(responses.map((response) => response.status), [200, 410, 200, 410, 405]);
   for (const response of responses) assertPrivateHeaders(response);
 });
 
 test("both routes use the existing limiters", async (t) => {
   const limitedIp = await setup(t, { envOptions: { ipSuccess: false } });
-  const ipResponse = await call(limitedIp.env, `/api/approve-link/${RAW_TOKEN}`);
+  const ipResponse = await detail(limitedIp.env);
   assert.equal(ipResponse.status, 429);
   assert.deepEqual(await ipResponse.json(), { ok: false, code: "rate_limited" });
   assert.deepEqual(limitedIp.env.RL_SUBMIT_IP.calls, ["approve-link|unknown"]);
@@ -703,9 +736,10 @@ test("no log line carries a raw token, hash, address, reason or name", async (t)
   });
 
   const read = await setup(t);
+  await detail(read.env);
+  await detail(read.env, OTHER_TOKEN);
+  await detail(read.env, "not-a-token");
   await call(read.env, `/api/approve-link/${RAW_TOKEN}`);
-  await call(read.env, `/api/approve-link/${OTHER_TOKEN}`);
-  await call(read.env, `/api/approve-link/not-a-token`);
   await decide(read.env, { decision: "approve" });
   await decide(read.env, { decision: "reject" });
 
@@ -730,9 +764,9 @@ test("no log line carries a raw token, hash, address, reason or name", async (t)
     )
     .join("\n");
 
-  const hash = await hashApprovalToken(RAW_TOKEN);
+  const hash = await hashApprovalNonce(NONCE);
   assert.equal(resend.state.approval_tokens.length, 2);
-  const newHash = resend.state.approval_tokens.at(-1).token_hash;
+  const newHash = resend.state.approval_tokens.at(-1).nonce_hash;
 
   for (const forbidden of [
     RAW_TOKEN,
@@ -757,4 +791,218 @@ test("the public route module never builds a link from request headers", () => {
   assert.equal(/req\.header\([^)]*[Hh]ost/.test(routes), false);
   assert.equal(routes.includes("APP_PUBLIC_URL"), false);
   assert.equal(service.includes("publicUrl"), true);
+});
+
+// --- hardening -------------------------------------------------------------
+
+test("GET never changes state, reads no token and touches no table", async (t) => {
+  const { state, fake, env } = await setup(t);
+
+  for (const path of [
+    `/api/approve-link/${RAW_TOKEN}`,
+    `/api/approve-link/${RAW_TOKEN}/decision`,
+    "/api/approve-link/detail",
+    "/api/approve-link/decision",
+  ]) {
+    const response = await call(env, path, { token: APPROVER_SESSION });
+    assert.equal(response.status, 405, path);
+    assertPrivateHeaders(response);
+  }
+
+  assert.deepEqual(fake.calls, []);
+  assert.equal(state.approval_tokens[0].used_at, null);
+  assert.equal(state.leave_requests[0].status, "pending");
+});
+
+test("a POST without the custom header or the right body changes nothing", async (t) => {
+  const { state, env } = await setup(t);
+
+  const noHeader = await decide(env, { decision: "approve" }, RAW_TOKEN, { csrf: false });
+  assert.equal(noHeader.status, 403);
+
+  const tokenInPath = await call(env, `/api/approve-link/${RAW_TOKEN}/decision`, {
+    method: "POST",
+    body: { decision: "approve" },
+    csrf: true,
+  });
+  assert.equal(tokenInPath.status, 404);
+
+  assert.equal(state.approval_tokens[0].used_at, null);
+  assert.equal(state.leave_requests[0].status, "pending");
+});
+
+test("the link works with no session cookie at all", async (t) => {
+  const { state, fake, env } = await setup(t);
+
+  const page = await detail(env);
+  assert.equal(page.status, 200);
+
+  const response = await decide(env, { decision: "approve" });
+  assert.equal(response.status, 200);
+  assert.equal(state.leave_requests[0].status, "approved");
+  // Nothing consulted a session.
+  assert.equal(fake.calls.some((entry) => entry.table === "auth_sessions"), false);
+});
+
+test("a different signed-in user changes nothing: identity is the token's approverId", async (t) => {
+  for (const cookie of [EMPLOYEE_TOKEN, HR_TOKEN]) {
+    const { state, fake, env } = await setup(t);
+
+    const page = await detail(env, RAW_TOKEN, { session: cookie });
+    assert.equal(page.status, 200);
+
+    const response = await decide(env, { decision: "approve" }, RAW_TOKEN, { session: cookie });
+    assert.equal(response.status, 200);
+    assert.equal(fake.calls.some((entry) => entry.table === "auth_sessions"), false);
+
+    assert.equal(state.leave_requests[0].status, "approved");
+    assert.equal(state.leave_requests[0].approved_by ?? APPROVER_ID, APPROVER_ID);
+    const audit = state.audit_logs.find((row) => row.action === "leave_approved");
+    assert.equal(audit.actor_id, APPROVER_ID);
+  }
+});
+
+test("a replayed link is refused and the request is decided once", async (t) => {
+  const { state, env } = await setup(t);
+
+  assert.equal((await decide(env, { decision: "approve" })).status, 200);
+  const replay = await decide(env, { decision: "reject", reason: "ไม่สะดวก" });
+  assert.equal(replay.status, 410);
+  assert.equal(state.leave_requests[0].status, "approved");
+});
+
+test("the link is valid at 71h59m and expired at 72h01m after issuance", async (t) => {
+  const issued = Date.now();
+  const exp = issued + 72 * 60 * 60 * 1000;
+  const token = await signed({ exp });
+  const minute = 60 * 1000;
+
+  // Expired first, so the valid case is the one that mutates state.
+  const late = await setup(t);
+  late.state.approval_tokens[0].expires_at = new Date(exp).toISOString();
+  t.mock.timers.enable({ apis: ["Date"], now: exp + minute });
+  const expired = await decide(late.env, { decision: "approve" }, token);
+  assert.equal(expired.status, 410);
+  assert.deepEqual(await expired.json(), { ok: false, code: "link_unusable", category: "expired" });
+  assert.equal(late.state.leave_requests[0].status, "pending");
+  assert.equal(late.state.approval_tokens[0].used_at, null);
+  assert.deepEqual(writes(late.fake.calls), []);
+
+  const early = await setup(t);
+  early.state.approval_tokens[0].expires_at = new Date(exp).toISOString();
+  t.mock.timers.setTime(exp - minute);
+  const ok = await decide(early.env, { decision: "approve" }, token);
+  assert.equal(ok.status, 200);
+  assert.equal(early.state.leave_requests[0].status, "approved");
+});
+
+test("an expired token cannot decide", async (t) => {
+  const { state, env } = await setup(t);
+
+  const response = await decide(env, { decision: "approve" }, await signed({ exp: Date.now() - 1 }));
+  assert.equal(response.status, 410);
+  assert.equal((await response.json()).category, "expired");
+  assert.equal(state.leave_requests[0].status, "pending");
+  assert.equal(state.approval_tokens[0].used_at, null);
+});
+
+test("a tampered signature or payload is refused", async (t) => {
+  const { state, env } = await setup(t);
+  const [body, signature] = RAW_TOKEN.split(".");
+
+  const flipped = `${body}.${(signature[0] === "0" ? "1" : "0") + signature.slice(1)}`;
+  // Same signature, payload swapped to another leave request.
+  const swapped = await signed({ leaveId: OTHER_REQUEST_ID });
+  const forgedBody = `${swapped.split(".")[0]}.${signature}`;
+  // Signed with another key.
+  const foreign = await signApprovalToken("another-secret-another-secret-0000000", {
+    leaveId: REQUEST_ID,
+    approverId: APPROVER_ID,
+    exp: Date.now() + DAY_MS,
+    nonce: NONCE,
+  });
+
+  for (const token of [flipped, forgedBody, foreign, `${body}.`, `.${signature}`, "x"]) {
+    const response = await decide(env, { decision: "approve" }, token);
+    assert.ok([400, 410].includes(response.status), String(response.status));
+  }
+  assert.equal(state.leave_requests[0].status, "pending");
+  assert.equal(state.approval_tokens[0].used_at, null);
+});
+
+test("a token for leave A never decides leave B", async (t) => {
+  const { state, env } = await setup(t);
+  state.leave_requests.push({
+    ...state.leave_requests[0],
+    id: OTHER_REQUEST_ID,
+    request_code: "LV-20261109-002",
+  });
+
+  // A valid token for B whose nonce was never issued: nothing to consume.
+  const tokenB = await signed({ leaveId: OTHER_REQUEST_ID, nonce: "nonce-for-b" });
+  const response = await decide(env, { decision: "approve" }, tokenB);
+  assert.equal(response.status, 410);
+  assert.equal(state.leave_requests[1].status, "pending");
+
+  // A's token decides only A.
+  const ok = await decide(env, { decision: "approve" });
+  assert.equal(ok.status, 200);
+  assert.equal(state.leave_requests[0].status, "approved");
+  assert.equal(state.leave_requests[1].status, "pending");
+});
+
+test("a revoked approver or a cancelled leave cannot be decided by link", async (t) => {
+  const revoked = await setup(t, { grants: false });
+  const revokedResponse = await decide(revoked.env, { decision: "approve" });
+  assert.equal(revokedResponse.status, 410);
+  assert.equal(revoked.state.leave_requests[0].status, "pending");
+  assert.equal(revoked.state.approval_tokens[0].used_at, null);
+
+  const deactivated = await setup(t);
+  deactivated.state.employees[0].is_active = false;
+  const deactivatedResponse = await decide(deactivated.env, { decision: "approve" });
+  assert.equal(deactivatedResponse.status, 410);
+  assert.equal(deactivated.state.approval_tokens[0].used_at, null);
+  assert.equal(deactivated.state.leave_requests[0].status, "pending");
+
+  const cancelled = await setup(t, { requestStatus: "cancelled" });
+  const cancelledResponse = await decide(cancelled.env, { decision: "approve" });
+  assert.equal(cancelledResponse.status, 410);
+  assert.equal(cancelled.state.leave_requests[0].status, "cancelled");
+  assert.equal(cancelled.state.approval_tokens[0].used_at, null);
+});
+
+test("the nonce is consumed by one conditional update on its hash", async (t) => {
+  const { fake, env } = await setup(t);
+  await decide(env, { decision: "approve" });
+
+  const consume = fake.calls.find(
+    (entry) => entry.method === "PATCH" && entry.table === "approval_tokens"
+  );
+  assert.equal(consume.params.nonce_hash, `eq.${await hashApprovalNonce(NONCE)}`);
+  assert.equal(consume.params.used_at, "is.null");
+  assert.ok(consume.params.expires_at.startsWith("gt."));
+});
+
+test("a resend expires 72 hours after issuance, whatever the leave start date", async (t) => {
+  const { state, env } = await setup(t);
+  // Retroactive and near-future leaves both keep the full 72 hours.
+  for (const startDate of ["2026-01-05", new Date(Date.now() + DAY_MS).toISOString().slice(0, 10)]) {
+    state.leave_requests[0].start_date = startDate;
+
+    const response = await call(env, `/api/leave/hr/requests/${REQUEST_ID}/approval-link`, {
+      token: HR_TOKEN,
+      method: "POST",
+      csrf: true,
+    });
+    assert.equal(response.status, 200);
+
+    const fresh = state.approval_tokens.at(-1);
+    assert.equal(
+      Date.parse(fresh.expires_at) - Date.parse(fresh.created_at),
+      72 * 60 * 60 * 1000
+    );
+    assert.equal(fresh.token_hash, undefined);
+    assert.match(fresh.nonce_hash, /^[0-9a-f]{64}$/);
+  }
 });

@@ -163,7 +163,7 @@ describe('persistent shell route', () => {
   it('declares the same path strings as before, plus nothing new', () => {
     const expected = [
       '/login',
-      '/approve/:token',
+      '/approve',
       '/pending',
       '/',
       '/set-pin',

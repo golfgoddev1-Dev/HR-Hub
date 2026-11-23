@@ -1,17 +1,20 @@
-// Public approval-by-email routes, mounted at /api/approve-link by src/app.js.
+// Approval-by-email routes, mounted at /api/approve-link by src/app.js.
 //
 // Rules kept here:
-// - no session cookie and no PIN: the link is the authority, and the approver is
-//   still checked against the existing scope function at decision time;
-// - GET changes nothing, so an email scanner that opens the link cannot decide
-//   a request; only the POST does, and only when a human presses a button;
-// - the decision marks the token used with a conditional update first, then
-//   calls the same applyLeaveDecision() the in-app route uses. If the request
-//   was decided elsewhere in between, the token is put back and the same
-//   generic answer is returned;
-// - every unusable link answers one shape with a category only: link_unusable
-//   plus "used", "expired" or "invalid". No token, reason or personal data is
-//   ever echoed, and errors are fixed codes;
+// - no login: the signed token is the only credential and its approverId is the
+//   approver's identity, whoever (or nobody) is signed in in this browser;
+// - the token travels only in a POST body (the page reads it from the URL
+//   fragment); no path or query carries one, so no log does. Any GET under this
+//   prefix answers 405 and touches nothing, so a scanner that opens a link
+//   cannot decide a request;
+// - POSTs need the custom X-Approval-Request header (CSRF);
+// - /detail only reads. /decision re-checks at use time (request still pending,
+//   approver still responsible under the shared scope rule), then consumes the
+//   nonce with one atomic conditional update before calling the same
+//   applyLeaveDecision() the in-app route uses. If the request was decided
+//   elsewhere in between, the nonce is put back;
+// - every unusable link answers one shape with a category only. No token, reason
+//   or personal data is ever echoed or logged, and errors are fixed codes;
 // - both routes use the existing Durable Object limiters and carry no-store,
 //   noindex and no-referrer headers.
 
@@ -58,8 +61,10 @@ function requestContext(c) {
 }
 
 const MAX_BODY_BYTES = 8 * 1024;
-const DECISION_KEYS = ["decision", "reason"];
+const DETAIL_KEYS = ["token"];
+const DECISION_KEYS = ["token", "decision", "reason"];
 const DECISIONS = ["approve", "reject"];
+const CSRF_HEADER = "X-Approval-Request";
 
 export const APPROVAL_LINK_CODES = Object.freeze({
   unusable: "link_unusable",
@@ -129,8 +134,8 @@ function unusable(c, category) {
   );
 }
 
-function invalidRequest(c) {
-  return c.json({ ok: false, code: APPROVAL_LINK_CODES.invalidRequest }, 400);
+function invalidRequest(c, status = 400) {
+  return c.json({ ok: false, code: APPROVAL_LINK_CODES.invalidRequest }, status);
 }
 
 async function enforceLimit(c, bindingName, key) {
@@ -152,10 +157,32 @@ function logError(scope, error) {
   console.error(scope, { name: error?.name, code: error?.code });
 }
 
-// --- GET /api/approve-link/:token -------------------------------------------
-// Read-only: opening the page (including by an email scanner) changes nothing.
+function approvalSecret(c) {
+  const secret = c.env?.APPROVAL_LINK_SECRET;
+  return typeof secret === "string" && secret.length >= 32 ? secret : null;
+}
 
-approveLink.get("/:token", async (c) => {
+/**
+ * Shared front of both POSTs: CSRF header and strict JSON body. Returns
+ * { body } or a Response.
+ */
+async function openRequest(c, keys) {
+  if (c.req.header(CSRF_HEADER) !== "1") return invalidRequest(c, 403);
+
+  const body = await readStrictJson(c);
+  if (!hasOnlyKeys(body, keys) || !isApprovalToken(body.token)) return invalidRequest(c);
+  return { body };
+}
+
+// A GET never reads a token and never touches the database.
+approveLink.on(["GET", "HEAD", "PUT", "PATCH", "DELETE"], "*", (c) =>
+  c.json({ ok: false, code: APPROVAL_LINK_CODES.invalidRequest }, 405)
+);
+
+// --- POST /api/approve-link/detail ------------------------------------------
+// Read-only: nothing is written here.
+
+approveLink.post("/detail", async (c) => {
   const limited = await enforceLimit(
     c,
     RATE_LIMIT_IP_BINDING,
@@ -163,12 +190,19 @@ approveLink.get("/:token", async (c) => {
   );
   if (limited) return limited;
 
-  const rawToken = c.req.param("token");
-  if (!isApprovalToken(rawToken)) return unusable(c, "invalid");
+  const secret = approvalSecret(c);
+  if (!secret) return c.json({ ok: false, code: APPROVAL_LINK_CODES.unavailable }, 503);
+
+  const opened = await openRequest(c, DETAIL_KEYS);
+  if (opened instanceof Response) return opened;
 
   try {
     const db = createDb(c.env);
-    const context = await loadApprovalContext(db, rawToken);
+    const context = await loadApprovalContext(db, {
+      secret,
+      rawToken: opened.body.token,
+      readRow: true,
+    });
     if (context.ok !== true) return unusable(c, context.category);
 
     const request = await loadApprovalDetail(db, context.token, context.request);
@@ -179,21 +213,23 @@ approveLink.get("/:token", async (c) => {
   }
 });
 
-// --- POST /api/approve-link/:token/decision ---------------------------------
+// --- POST /api/approve-link/decision ----------------------------------------
 
-approveLink.post("/:token/decision", async (c) => {
-  const rawToken = c.req.param("token");
+approveLink.post("/decision", async (c) => {
+  const secret = approvalSecret(c);
+  if (!secret) return c.json({ ok: false, code: APPROVAL_LINK_CODES.unavailable }, 503);
+
+  const opened = await openRequest(c, DECISION_KEYS);
+  if (opened instanceof Response) return opened;
+  const { body } = opened;
+
   const limited = await enforceLimit(
     c,
     RATE_LIMIT_TOKEN_BINDING,
-    await tokenRateLimitKey(rawToken)
+    await tokenRateLimitKey(body.token)
   );
   if (limited) return limited;
 
-  if (!isApprovalToken(rawToken)) return unusable(c, "invalid");
-
-  const body = await readStrictJson(c);
-  if (!hasOnlyKeys(body, DECISION_KEYS)) return invalidRequest(c);
   if (!DECISIONS.includes(body.decision)) return invalidRequest(c);
 
   let note = null;
@@ -213,20 +249,25 @@ approveLink.post("/:token/decision", async (c) => {
 
   try {
     const db = createDb(c.env);
-    const context = await loadApprovalContext(db, rawToken);
+    const context = await loadApprovalContext(db, {
+      secret,
+      rawToken: body.token,
+    });
     if (context.ok !== true) return unusable(c, context.category);
 
     const now = new Date();
     const nowIso = now.toISOString();
     const status = body.decision === "approve" ? "approved" : "rejected";
+    const nonceHash = context.token.nonce_hash;
 
-    // The single-use gate: this conditional update is the only way a token
-    // becomes used, and it only matches an unexpired, uninvalidated row.
+    // The single-use gate: one conditional update, one row. It only matches an
+    // unused, uninvalidated, unexpired row, so of two parallel uses exactly one
+    // wins. A nonce the database never issued matches nothing.
     const marked = await db.update(
       APPROVAL_TOKENS_TABLE,
       { used_at: nowIso },
       [
-        ["id", "eq", context.token.id],
+        ["nonce_hash", "eq", nonceHash],
         ["used_at", "is", null],
         ["invalidated_at", "is", null],
         ["expires_at", "gt", nowIso],
@@ -238,9 +279,8 @@ approveLink.post("/:token/decision", async (c) => {
         code: marked.error.code,
       });
     }
-    // A parallel decision took the token first: nothing else has changed.
-    if (!Array.isArray(marked.data) || marked.data.length === 0) {
-      return unusable(c, "invalid");
+    if (!Array.isArray(marked.data) || marked.data.length !== 1) {
+      return unusable(c, "used");
     }
 
     const applied = await applyLeaveDecision(db, {
@@ -253,12 +293,12 @@ approveLink.post("/:token/decision", async (c) => {
 
     if (applied.ok !== true) {
       // The request was decided in the app between the read and this write.
-      // Put the token back so "no change" stays true, then answer generically.
+      // Put the nonce back so "no change" stays true, then answer generically.
       await db.update(
         APPROVAL_TOKENS_TABLE,
         { used_at: null },
         [
-          ["id", "eq", context.token.id],
+          ["nonce_hash", "eq", nonceHash],
           ["used_at", "eq", nowIso],
         ]
       );
@@ -288,7 +328,7 @@ approveLink.post("/:token/decision", async (c) => {
     }
 
     // The requester's in-app notice, same kind the in-app route enqueues. The
-    // cron sends it, so this public route never waits for a push service.
+    // cron sends it, so this route never waits for a push service.
     await enqueueNotificationSafely(db, {
       employeeId: context.request.employee_id,
       leaveRequestId: context.request.id,

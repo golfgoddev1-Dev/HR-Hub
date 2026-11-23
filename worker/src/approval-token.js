@@ -1,19 +1,20 @@
-// Approval-link token rules, shared by the public page and the decision route.
+// Approval-link token rules, shared by the page route and the decision route.
 //
-// Only the SHA-256 hash of a link token is stored (approval_tokens.token_hash);
-// the raw token exists in the email and in the page URL, never in the database.
-// A token is 32 random bytes from the platform CSPRNG, base64url encoded to 43
-// characters with no padding.
+// A link token is `<base64url payload>.<hex HMAC-SHA256>` (APPROVAL_LINK_SECRET).
+// The payload is {l: leaveId, a: approverId, e: expiry ms, n: nonce}; it never
+// carries the decision. Only sha256(nonce) is stored (approval_tokens.nonce_hash)
+// with used_at, so a token is single-use and the database never holds a value
+// that could be replayed.
 //
-// The link base comes from APP_PUBLIC_URL, a plain Worker variable. It is never
-// built from a request header, so a forged Host cannot move an approval link to
-// another site.
+// The link is `<APP_PUBLIC_URL>/approve#t=<token>`: the fragment is never sent
+// to a server, a log or a Referer header; the page puts it in a POST body. The
+// base comes from APP_PUBLIC_URL, a plain Worker variable, never from a request
+// header.
 
-import { sha256Hex } from "./crypto.js";
+import { hmacSha256Hex, sha256Hex, timingSafeEqualHex } from "./crypto.js";
 
-export const APPROVAL_TOKEN_BYTES = 32;
-export const APPROVAL_TOKEN_LENGTH = 43;
-export const APPROVAL_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
+export const APPROVAL_NONCE_BYTES = 16;
+export const APPROVAL_TOKEN_PATTERN = /^[A-Za-z0-9_-]{20,600}\.[a-f\d]{64}$/;
 export const APPROVAL_LINK_TTL_MS = 72 * 60 * 60 * 1000;
 
 // Same rule as the in-app reject note (worker/src/leave-rules.js): whitespace is
@@ -27,28 +28,72 @@ function base64UrlFromBytes(bytes) {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-/** A new raw link token: 32 random bytes, base64url, no padding. */
-export function randomApprovalToken() {
-  const bytes = new Uint8Array(APPROVAL_TOKEN_BYTES);
+function textToBase64Url(text) {
+  return base64UrlFromBytes(new TextEncoder().encode(text));
+}
+
+function base64UrlToText(value) {
+  const padded = value.replace(/-/g, "+").replace(/_/g, "/");
+  const binary = atob(padded + "=".repeat((4 - (padded.length % 4)) % 4));
+  return new TextDecoder("utf-8", { fatal: true }).decode(
+    Uint8Array.from(binary, (char) => char.charCodeAt(0))
+  );
+}
+
+/** A new random nonce: 16 CSPRNG bytes, base64url. */
+export function randomApprovalNonce() {
+  const bytes = new Uint8Array(APPROVAL_NONCE_BYTES);
   crypto.getRandomValues(bytes);
   return base64UrlFromBytes(bytes);
 }
 
-/** The stored form of a link token. The raw value is never persisted. */
-export async function hashApprovalToken(rawToken) {
-  return sha256Hex(String(rawToken));
+/** The stored form of a nonce. The nonce itself is never persisted. */
+export async function hashApprovalNonce(nonce) {
+  return sha256Hex(String(nonce));
 }
 
-/** True for a well-formed raw link token (43 base64url characters). */
+/** True for a well-formed token shape; the signature is checked separately. */
 export function isApprovalToken(value) {
   return typeof value === "string" && APPROVAL_TOKEN_PATTERN.test(value);
 }
 
-/** created_at + 72 hours, or null for an unusable creation time. */
-export function approvalTokenExpiresAt(createdAt = new Date()) {
+/** Signs {leaveId, approverId, exp (ms), nonce}. */
+export async function signApprovalToken(secret, { leaveId, approverId, exp, nonce }) {
+  const body = textToBase64Url(JSON.stringify({ l: leaveId, a: approverId, e: exp, n: nonce }));
+  return `${body}.${await hmacSha256Hex(secret, body)}`;
+}
+
+/**
+ * The payload of a token with a valid signature, or null. The signature is
+ * compared in constant time; nothing is parsed before it matches. Expiry is the
+ * caller's check (it needs its own category).
+ */
+export async function verifyApprovalToken(secret, token) {
+  if (typeof secret !== "string" || secret.length === 0 || !isApprovalToken(token)) return null;
+
+  const [body, signature] = token.split(".");
+  if (!timingSafeEqualHex(await hmacSha256Hex(secret, body), signature)) return null;
+
+  let payload;
+  try {
+    payload = JSON.parse(base64UrlToText(body));
+  } catch {
+    return null;
+  }
+  const { l, a, e, n } = payload ?? {};
+  if (typeof l !== "string" || typeof a !== "string" || typeof n !== "string") return null;
+  if (!Number.isFinite(e)) return null;
+  return { leaveId: l, approverId: a, exp: e, nonce: n };
+}
+
+/**
+ * Expiry in ms: 72 hours after issuance, nothing else (retroactive leaves are
+ * legitimate, so the leave's start date never shortens it). null for an
+ * unusable creation time.
+ */
+export function approvalTokenExpiryMs(createdAt = new Date()) {
   const base = createdAt instanceof Date ? createdAt.getTime() : Date.parse(String(createdAt));
-  if (!Number.isFinite(base)) return null;
-  return new Date(base + APPROVAL_LINK_TTL_MS).toISOString();
+  return Number.isFinite(base) ? base + APPROVAL_LINK_TTL_MS : null;
 }
 
 /**
@@ -73,11 +118,11 @@ export function approvalLinkBase(publicUrl) {
   return `${url.origin}${path}`;
 }
 
-/** `<APP_PUBLIC_URL>/approve/<token>`, or null for bad input. */
-export function buildApprovalLink(publicUrl, rawToken) {
+/** `<APP_PUBLIC_URL>/approve#t=<token>`, or null for bad input. */
+export function buildApprovalLink(publicUrl, token) {
   const base = approvalLinkBase(publicUrl);
-  if (!base || !isApprovalToken(rawToken)) return null;
-  return `${base}/approve/${rawToken}`;
+  if (!base || !isApprovalToken(token)) return null;
+  return `${base}/approve#t=${token}`;
 }
 
 /** The in-app rule: collapse runs of whitespace, then trim. */

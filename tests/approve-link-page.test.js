@@ -83,7 +83,7 @@ afterEach(() => {
 
 describe('public route', () => {
   it('is outside the signed-in shell and needs no auth', () => {
-    const start = ROUTER.indexOf("path: '/approve/:token'")
+    const start = ROUTER.indexOf("path: '/approve',")
     const end = ROUTER.indexOf("path: '/pending'")
     const shellStart = ROUTER.indexOf('component: RoleShell')
     const shellEnd = ROUTER.indexOf("path: '/leave/hr/requests/:id/print'")
@@ -96,7 +96,7 @@ describe('public route', () => {
     expect(block).not.toContain('requiresAuth')
 
     // The shell block never declares the approval page.
-    expect(ROUTER.slice(shellStart, shellEnd)).not.toContain('/approve/')
+    expect(ROUTER.slice(shellStart, shellEnd)).not.toContain("path: '/approve'")
 
     // The page and the view never read the session or a router guard.
     for (const source of [PAGE, COMPONENT]) {
@@ -104,7 +104,6 @@ describe('public route', () => {
       expect(source).not.toContain('requiresAuth')
       expect(source).not.toContain('RoleShell')
       expect(source).not.toContain('AppLayout')
-      expect(source).not.toContain('/login')
       expect(source).not.toContain('window.location')
     }
   })
@@ -116,10 +115,13 @@ describe('public route', () => {
     await flushPromises()
 
     expect(fetchSpy).toHaveBeenCalledTimes(1)
-    expect(fetchSpy).toHaveBeenCalledWith(
-      `/api/approve-link/${TOKEN}`,
-      expect.objectContaining({ credentials: 'omit' })
-    )
+    // The token goes in a POST body with the custom header, never in the URL.
+    const [url, init] = fetchSpy.mock.calls[0]
+    expect(url).toBe('/api/approve-link/detail')
+    expect(init.method).toBe('POST')
+    expect(init.credentials).toBe('same-origin')
+    expect(init.headers['X-Approval-Request']).toBe('1')
+    expect(JSON.parse(init.body)).toEqual({ token: TOKEN })
 
     const text = wrapper.text()
     expect(text).toContain(EMPLOYEE_NAME)
@@ -134,6 +136,27 @@ describe('public route', () => {
     expect(document.title).toBe('อนุมัติใบลา · HR Hub')
     expect(document.title).not.toContain(EMPLOYEE_NAME)
     expect(document.title).not.toContain(EMPLOYEE_CODE)
+  })
+})
+
+describe('the approver needs no sign-in', () => {
+  it('never shows a sign-in notice and shows the expiry guidance on an expired link', async () => {
+    mockFetch(() => response({ ok: false, code: 'link_unusable', category: 'expired' }, 410))
+
+    const wrapper = mount(ApprovalLinkView, { props: { token: TOKEN } })
+    await flushPromises()
+
+    const text = wrapper.text()
+    expect(text).toContain('ลิงก์หมดอายุแล้ว กรุณาอนุมัติในระบบ หรือแจ้งฝ่ายบุคคลให้ส่งลิงก์ใหม่')
+    expect(text).not.toContain('เข้าสู่ระบบ')
+    expect(approveButton(wrapper)).toBeUndefined()
+    expect(COMPONENT).not.toContain('signInNeeded')
+  })
+
+  it('reads the token from the URL fragment only', () => {
+    expect(PAGE).toContain('route.hash')
+    expect(PAGE).not.toContain('route.params')
+    expect(PAGE).not.toContain('route.query')
   })
 })
 
@@ -172,7 +195,7 @@ describe('submitting a decision', () => {
     })
 
     const fetchSpy = mockFetch((url, init) => {
-      if (init?.method === 'POST') return pending
+      if (url.endsWith('/decision')) return pending
       return response({ ok: true, request: DETAIL })
     })
 
@@ -182,10 +205,11 @@ describe('submitting a decision', () => {
     await approveButton(wrapper).trigger('click')
     await approveButton(wrapper).trigger('click')
 
-    const posts = fetchSpy.mock.calls.filter(([, init]) => init?.method === 'POST')
+    const posts = fetchSpy.mock.calls.filter(([url]) => url.endsWith('/decision'))
     expect(posts).toHaveLength(1)
-    expect(posts[0][0]).toBe(`/api/approve-link/${TOKEN}/decision`)
-    expect(JSON.parse(posts[0][1].body)).toEqual({ decision: 'approve' })
+    expect(posts[0][0]).toBe('/api/approve-link/decision')
+    expect(posts[0][1].headers['X-Approval-Request']).toBe('1')
+    expect(JSON.parse(posts[0][1].body)).toEqual({ token: TOKEN, decision: 'approve' })
 
     resolveDecision(await response({ ok: true, status: 'approved' }))
     await flushPromises()
@@ -196,7 +220,7 @@ describe('submitting a decision', () => {
 
   it('shows the rejection confirmation', async () => {
     mockFetch((url, init) => {
-      if (init?.method === 'POST') return response({ ok: true, status: 'rejected' })
+      if (url.endsWith('/decision')) return response({ ok: true, status: 'rejected' })
       return response({ ok: true, request: DETAIL })
     })
 

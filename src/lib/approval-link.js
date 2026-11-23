@@ -15,7 +15,7 @@ export const REJECT_REASON_TOO_LONG = `เหตุผลต้องไม่�
 
 // Category only, no personal data.
 export const INVALID_LINK_LABELS = {
-  expired: 'ลิงก์หมดอายุแล้ว',
+  expired: 'ลิงก์หมดอายุแล้ว กรุณาอนุมัติในระบบ หรือแจ้งฝ่ายบุคคลให้ส่งลิงก์ใหม่',
   used: 'ลิงก์นี้ถูกใช้ไปแล้ว',
   invalid: 'ลิงก์ไม่ถูกต้องหรือถูกแทนที่แล้ว',
 }
@@ -42,6 +42,11 @@ export function daysLabel(days) {
   return Number.isInteger(value) ? `${value} วัน` : `${value} วัน (ครึ่งวัน)`
 }
 
-export function approvalPathForToken(token) {
-  return `/api/approve-link/${encodeURIComponent(String(token ?? ''))}`
+export const APPROVAL_DETAIL_URL = '/api/approve-link/detail'
+export const APPROVAL_DECISION_URL = '/api/approve-link/decision'
+
+// A POST needs this header; the token in the body is the only credential.
+export const APPROVAL_HEADERS = {
+  'Content-Type': 'application/json',
+  'X-Approval-Request': '1',
 }

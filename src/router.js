@@ -25,7 +25,7 @@ export const router = createRouter({
     // signed-in shell and carries no requiresAuth, so the guard never redirects
     // it to /login. Opening the page changes nothing; only a button does.
     {
-      path: '/approve/:token',
+      path: '/approve',
       component: page(() => import('./pages/ApproveLinkPage.vue')),
       meta: { publicPage: true },
     },

@@ -1,12 +1,13 @@
 <script setup>
-// The public page route: reads the token from /approve/:token and hands it to
-// the content component. No shell, no session, no redirect.
+// The approval page route: reads the token from the URL fragment (/approve#t=...,
+// never sent to a server) and hands it to the content component. No shell and
+// no redirect; the API checks the signed-in approver.
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import ApprovalLinkView from '../components/ApprovalLinkView.vue'
 
 const route = useRoute()
-const token = computed(() => (typeof route.params.token === 'string' ? route.params.token : ''))
+const token = computed(() => new URLSearchParams(route.hash.replace(/^#/, '')).get('t') ?? '')
 </script>
 
 <template>

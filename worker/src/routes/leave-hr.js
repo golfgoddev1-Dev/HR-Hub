@@ -609,6 +609,7 @@ leaveHr.post("/requests/:id/approval-link", async (c) => {
     const issued = await createApprovalLinkEmail({
       db,
       publicUrl: c.env.APP_PUBLIC_URL,
+      secret: c.env.APPROVAL_LINK_SECRET,
       leaveRequestId: id,
       approverEmployeeId: row.approver_id,
       createdBy: session.employeeId,

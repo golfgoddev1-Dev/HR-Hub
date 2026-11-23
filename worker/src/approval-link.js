@@ -1,7 +1,7 @@
 // Approval-link service: issue, validate and read the email-link token.
 //
 // Data rules:
-// - only the SHA-256 hash is written to approval_tokens; the raw token is
+// - only sha256(nonce) is written to approval_tokens; the signed token is
 //   returned once, in memory, to the email job;
 // - the approver's responsibility is re-read from the existing approver tables
 //   and evaluated with the existing scope function at read and decision time;
@@ -14,12 +14,13 @@ import { canViewLeaveRequest } from "./leave-scope.js";
 import { buildApprovalEmailJob } from "./email/approval-queue.js";
 import {
   approvalLinkBase,
-  approvalTokenExpiresAt,
+  approvalTokenExpiryMs,
   approvalTokenFailureCategory,
   buildApprovalLink,
-  hashApprovalToken,
-  isApprovalToken,
-  randomApprovalToken,
+  hashApprovalNonce,
+  randomApprovalNonce,
+  signApprovalToken,
+  verifyApprovalToken,
 } from "./approval-token.js";
 
 export const APPROVAL_TOKENS_TABLE = "approval_tokens";
@@ -29,7 +30,7 @@ export const LEAVE_TYPES_TABLE = "leave_types";
 export const DEPARTMENTS_TABLE = "departments";
 
 export const APPROVAL_TOKEN_COLUMNS =
-  "id,leave_request_id,approver_employee_id,token_hash,created_at,expires_at,used_at,invalidated_at,created_by";
+  "id,leave_request_id,approver_employee_id,nonce_hash,created_at,expires_at,used_at,invalidated_at,created_by";
 
 export const APPROVAL_REQUEST_COLUMNS =
   "id,request_code,employee_id,approver_id,leave_type_id,other_type_detail,start_date,end_date,days,return_date,return_time,status,ot_option,shift_option_code,shift_end_override,reason,has_medical_certificate,created_at";
@@ -48,14 +49,15 @@ export async function invalidateOpenApprovalTokens(db, leaveRequestId, nowIso) {
 }
 
 /**
- * Inserts one token row. The raw token is returned for the email job and is
- * never part of the row. `created_by` is the HR employee for a resend and null
- * for the first email.
+ * Signs a token and inserts its row (sha256 of the nonce only). The raw token is
+ * returned once, for the email job, and is never part of the row. `created_by`
+ * is the HR employee for a resend and null for the first email.
  */
 export async function createApprovalToken(
   db,
-  { leaveRequestId, approverEmployeeId, createdBy = null, now = new Date() } = {}
+  { secret, leaveRequestId, approverEmployeeId, createdBy = null, now = new Date() } = {}
 ) {
+  if (typeof secret !== "string" || secret.length === 0) return { ok: false, code: "config" };
   if (typeof leaveRequestId !== "string" || leaveRequestId.length === 0) {
     return { ok: false, code: "missing_request" };
   }
@@ -64,18 +66,24 @@ export async function createApprovalToken(
   }
 
   const createdAt = now instanceof Date ? now : new Date(now);
-  const expiresAt = approvalTokenExpiresAt(createdAt);
-  if (!expiresAt) return { ok: false, code: "invalid_time" };
+  const exp = approvalTokenExpiryMs(createdAt);
+  if (exp === null) return { ok: false, code: "invalid_time" };
 
-  const rawToken = randomApprovalToken();
-  const tokenHash = await hashApprovalToken(rawToken);
+  const nonce = randomApprovalNonce();
+  const rawToken = await signApprovalToken(secret, {
+    leaveId: leaveRequestId,
+    approverId: approverEmployeeId,
+    exp,
+    nonce,
+  });
+  const expiresAt = new Date(exp).toISOString();
 
   const inserted = await db.insert(
     APPROVAL_TOKENS_TABLE,
     {
       leave_request_id: leaveRequestId,
       approver_employee_id: approverEmployeeId,
-      token_hash: tokenHash,
+      nonce_hash: await hashApprovalNonce(nonce),
       created_at: createdAt.toISOString(),
       expires_at: expiresAt,
       used_at: null,
@@ -96,23 +104,21 @@ export async function createApprovalToken(
   return { ok: true, id, rawToken, expiresAt };
 }
 
-/** The token row for a raw token, or null. Never logs or returns the raw value. */
-export async function findApprovalToken(db, rawToken) {
-  if (!isApprovalToken(rawToken)) return null;
-  const tokenHash = await hashApprovalToken(rawToken);
-  return db.select(APPROVAL_TOKENS_TABLE, {
-    columns: APPROVAL_TOKEN_COLUMNS,
-    filters: [["token_hash", "eq", tokenHash]],
-    single: true,
-  });
-}
-
 /**
  * True when the stored approver is still responsible for this request under the
  * shared scope rule: the named approver of the requester, or an approver of the
- * requester's current department. A deactivated approver row grants nothing.
+ * requester's current department. A deactivated approver row grants nothing, and
+ * neither does a deactivated employee: with no session to revoke, the account's
+ * active flag is the use-time check that the signed approverId is still valid.
  */
 export async function approverIsResponsible(db, token, request) {
+  const approver = await db.select(EMPLOYEES_TABLE, {
+    columns: "id,is_active",
+    filters: [["id", "eq", token.approver_employee_id]],
+    single: true,
+  });
+  if (approver?.is_active !== true) return false;
+
   const grants = await readApproverGrants(db, token.approver_employee_id);
   const requester = await db.select(EMPLOYEES_TABLE, {
     columns: "id,department_id",
@@ -130,16 +136,46 @@ export async function approverIsResponsible(db, token, request) {
 }
 
 /**
- * Full validation for a page read or a decision. Any failure is one of the
- * three public categories; the caller never learns which check failed.
+ * Full validation for a page read or a decision. The token is the only
+ * credential: the approver is the signed token's approverId, never a session.
+ * The signature is checked before any database call; the request is then
+ * re-read and the approver's scope re-evaluated now. Any failure is a category
+ * only; the caller never learns which check failed.
+ *
+ * `readRow` also reads the token row, so a page read can say "used" or
+ * "invalid" (replaced by an HR resend). A decision skips it: its atomic consume
+ * is the single-use check.
  */
-export async function loadApprovalContext(db, rawToken, now = new Date()) {
-  const token = await findApprovalToken(db, rawToken);
-  if (!token) return { ok: false, category: "invalid" };
+export async function loadApprovalContext(
+  db,
+  { secret, rawToken, now = new Date(), readRow = false }
+) {
+  const payload = await verifyApprovalToken(secret, rawToken);
+  if (!payload) return { ok: false, category: "invalid" };
+
+  const token = {
+    leave_request_id: payload.leaveId,
+    approver_employee_id: payload.approverId,
+    nonce_hash: await hashApprovalNonce(payload.nonce),
+    expires_at: new Date(payload.exp).toISOString(),
+    used_at: null,
+    invalidated_at: null,
+  };
+
+  if (readRow) {
+    const row = await db.select(APPROVAL_TOKENS_TABLE, {
+      columns: "used_at,invalidated_at",
+      filters: [["nonce_hash", "eq", token.nonce_hash]],
+      single: true,
+    });
+    if (!row) return { ok: false, category: "invalid" };
+    token.used_at = row.used_at ?? null;
+    token.invalidated_at = row.invalidated_at ?? null;
+  }
 
   const request = await db.select(LEAVE_REQUESTS_TABLE, {
     columns: APPROVAL_REQUEST_COLUMNS,
-    filters: [["id", "eq", token.leave_request_id]],
+    filters: [["id", "eq", payload.leaveId]],
     single: true,
   });
 
@@ -214,6 +250,7 @@ export async function loadApprovalDetail(db, token, request) {
 export async function createApprovalLinkEmail({
   db,
   publicUrl,
+  secret,
   leaveRequestId,
   approverEmployeeId,
   createdBy = null,
@@ -231,6 +268,7 @@ export async function createApprovalLinkEmail({
   if (recipient.length === 0) return { ok: false, code: "missing_recipient" };
 
   const issued = await createApprovalToken(db, {
+    secret,
     leaveRequestId,
     approverEmployeeId,
     createdBy,

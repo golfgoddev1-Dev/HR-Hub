@@ -228,7 +228,7 @@ function stubFor(session) {
 // already measured on /pending.
 const ROUTES = [
   { path: '/login', session: null, publicPage: true },
-  { path: '/approve/sample-token-1234', session: null, publicPage: true, name: '/approve/:token' },
+  { path: '/approve#t=sample-token', session: null, publicPage: true, name: '/approve' },
   { path: '/pending', session: null },
   { path: '/set-pin', session: null },
   { path: '/change-pin', session: ADMIN },

@@ -23,7 +23,7 @@ const PUBLIC_PAGES = [
   { path: '/pending', page: 'src/pages/PendingPage.vue', routerImport: './pages/PendingPage.vue' },
   { path: '/set-pin', page: 'src/pages/SetPinPage.vue', routerImport: './pages/SetPinPage.vue' },
   {
-    path: '/approve/:token',
+    path: '/approve',
     page: 'src/pages/ApproveLinkPage.vue',
     routerImport: './pages/ApproveLinkPage.vue',
   },

@@ -11,6 +11,12 @@
   Cross-Origin-Opener-Policy: same-origin
   Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; worker-src 'self' blob:; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
 
+# The approval page: the link token sits in the URL fragment; never cache the
+# page or send a referrer from it.
+/approve
+  Referrer-Policy: no-referrer
+  Cache-Control: no-store
+
 # Vite fingerprints everything under /assets, so it never changes in place.
 /assets/*
   Cache-Control: public, max-age=31536000, immutable

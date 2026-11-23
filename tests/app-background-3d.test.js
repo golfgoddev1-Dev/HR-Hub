@@ -854,7 +854,7 @@ describe('layer contract', () => {
     }
     // The signed-out routes are not under the shell that renders the layout.
     const shellStart = ROUTER_SOURCE.indexOf('component: RoleShell')
-    for (const path of ["'/login'", "'/pending'", "'/set-pin'", "'/approve/:token'"]) {
+    for (const path of ["'/login'", "'/pending'", "'/set-pin'", "'/approve'"]) {
       expect(ROUTER_SOURCE.indexOf(path)).toBeLessThan(shellStart)
     }
   })

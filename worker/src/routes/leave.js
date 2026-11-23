@@ -741,6 +741,7 @@ leave.post("/requests", async (c) => {
         const issued = await createApprovalLinkEmail({
           db,
           publicUrl: c.env.APP_PUBLIC_URL,
+          secret: c.env.APPROVAL_LINK_SECRET,
           leaveRequestId: inserted.data.id,
           approverEmployeeId: approverId,
           createdBy: null,

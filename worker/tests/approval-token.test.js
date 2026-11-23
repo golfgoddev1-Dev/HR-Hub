@@ -7,17 +7,18 @@ import { readFileSync } from "node:fs";
 
 import {
   APPROVAL_LINK_TTL_MS,
-  APPROVAL_TOKEN_BYTES,
   APPROVAL_TOKEN_PATTERN,
   approvalLinkBase,
-  approvalTokenExpiresAt,
+  approvalTokenExpiryMs,
   approvalTokenFailureCategory,
   buildApprovalLink,
   decisionReasonProblem,
-  hashApprovalToken,
+  hashApprovalNonce,
   isApprovalToken,
   normalizeDecisionReason,
-  randomApprovalToken,
+  randomApprovalNonce,
+  signApprovalToken,
+  verifyApprovalToken,
 } from "../src/approval-token.js";
 import { createApprovalToken } from "../src/approval-link.js";
 import { DECISION_NOTE_MAX_LENGTH } from "../src/leave-rules.js";
@@ -27,15 +28,21 @@ const REQUEST_ID = "11111111-1111-4111-8111-111111111111";
 const APPROVER_ID = "22222222-2222-4222-8222-222222222222";
 const EMPLOYEE_ID = "33333333-3333-4333-8333-333333333333";
 
-const RAW = "T".repeat(43);
+const SECRET = "unit-test-secret-unit-test-secret-00";
 const OTHER_RAW = "U".repeat(43);
+const RAW = await signApprovalToken(SECRET, {
+  leaveId: REQUEST_ID,
+  approverId: APPROVER_ID,
+  exp: Date.parse("2026-11-12T03:00:00.000Z"),
+  nonce: "n1",
+});
 
 function tokenRow(overrides = {}) {
   return {
     id: "token-1",
     leave_request_id: REQUEST_ID,
     approver_employee_id: APPROVER_ID,
-    token_hash: "a".repeat(64),
+    nonce_hash: "a".repeat(64),
     created_at: CREATE_TIME.toISOString(),
     expires_at: "2026-11-12T03:00:00.000Z",
     used_at: null,
@@ -55,21 +62,32 @@ function requestRow(overrides = {}) {
   };
 }
 
-test("a raw token is 32 random bytes in base64url", () => {
-  const first = randomApprovalToken();
-  const second = randomApprovalToken();
+test("a token is a signed payload that verifies in constant time and carries no decision", async () => {
+  const payload = { leaveId: REQUEST_ID, approverId: APPROVER_ID, exp: 1_800_000_000_000, nonce: "n1" };
+  const token = await signApprovalToken(SECRET, payload);
 
-  assert.equal(first.length, 43);
-  assert.match(first, APPROVAL_TOKEN_PATTERN);
-  assert.equal(Buffer.from(first, "base64url").length, APPROVAL_TOKEN_BYTES);
-  assert.notEqual(first, second);
-  assert.equal(isApprovalToken(first), true);
-  assert.equal(isApprovalToken("short"), false);
-  assert.equal(isApprovalToken("T".repeat(44)), false);
-  assert.equal(isApprovalToken(null), false);
+  assert.match(token, APPROVAL_TOKEN_PATTERN);
+  assert.equal(isApprovalToken(token), true);
+  assert.deepEqual(await verifyApprovalToken(SECRET, token), payload);
+  assert.deepEqual(
+    JSON.parse(Buffer.from(token.split(".")[0], "base64url").toString()),
+    { l: REQUEST_ID, a: APPROVER_ID, e: 1_800_000_000_000, n: "n1" }
+  );
+
+  const [body, signature] = token.split(".");
+  assert.equal(await verifyApprovalToken("other-secret-other-secret-other-00", token), null);
+  assert.equal(await verifyApprovalToken(SECRET, `${body}.${"0".repeat(64)}`), null);
+  assert.equal(await verifyApprovalToken(SECRET, `${body}x.${signature}`), null);
+  assert.equal(await verifyApprovalToken("", token), null);
+  assert.equal(await verifyApprovalToken(SECRET, "short"), null);
+  assert.equal(await verifyApprovalToken(SECRET, null), null);
+  assert.equal(isApprovalToken("T".repeat(43)), false);
+
+  const nonces = new Set([randomApprovalNonce(), randomApprovalNonce()]);
+  assert.equal(nonces.size, 2);
 });
 
-test("only the SHA-256 hash is stored, with a 72-hour expiry", async () => {
+test("only sha256(nonce) is stored, with a 72-hour expiry", async () => {
   const rows = [];
   const db = {
     insert: async (table, row, options) => {
@@ -79,8 +97,10 @@ test("only the SHA-256 hash is stored, with a 72-hour expiry", async () => {
   };
 
   const issued = await createApprovalToken(db, {
+    secret: SECRET,
     leaveRequestId: REQUEST_ID,
     approverEmployeeId: APPROVER_ID,
+    startDate: "2026-12-30",
     now: CREATE_TIME,
   });
 
@@ -89,18 +109,28 @@ test("only the SHA-256 hash is stored, with a 72-hour expiry", async () => {
   assert.equal(rows.length, 1);
   assert.equal(rows[0].table, "approval_tokens");
 
+  const payload = await verifyApprovalToken(SECRET, issued.rawToken);
   const row = rows[0].row;
-  const expected = createHash("sha256").update(issued.rawToken, "utf8").digest("hex");
-  assert.equal(row.token_hash, expected);
-  assert.equal(await hashApprovalToken(issued.rawToken), expected);
+  const expected = createHash("sha256").update(payload.nonce, "utf8").digest("hex");
+  assert.equal(row.nonce_hash, expected);
+  assert.equal(await hashApprovalNonce(payload.nonce), expected);
+  assert.equal("token_hash" in row, false);
   assert.equal(JSON.stringify(row).includes(issued.rawToken), false);
+  assert.equal(JSON.stringify(row).includes(payload.nonce), false);
   assert.equal(row.created_at, CREATE_TIME.toISOString());
   assert.equal(row.expires_at, "2026-11-12T03:00:00.000Z");
-  assert.equal(Date.parse(row.expires_at) - Date.parse(row.created_at), 72 * 60 * 60 * 1000);
+  assert.equal(payload.exp, Date.parse(row.expires_at));
   assert.equal(row.used_at, null);
   assert.equal(row.invalidated_at, null);
   assert.equal(row.created_by, null);
   assert.equal(APPROVAL_LINK_TTL_MS, 72 * 60 * 60 * 1000);
+
+  const noSecret = await createApprovalToken(db, {
+    leaveRequestId: REQUEST_ID,
+    approverEmployeeId: APPROVER_ID,
+  });
+  assert.deepEqual(noSecret, { ok: false, code: "config" });
+  assert.equal(rows.length, 1);
 });
 
 test("a resend records the HR employee as created_by", async () => {
@@ -113,6 +143,7 @@ test("a resend records the HR employee as created_by", async () => {
   };
 
   await createApprovalToken(db, {
+    secret: SECRET,
     leaveRequestId: REQUEST_ID,
     approverEmployeeId: APPROVER_ID,
     createdBy: "44444444-4444-4444-8444-444444444444",
@@ -125,15 +156,15 @@ test("a resend records the HR employee as created_by", async () => {
 test("the link is built from the configured public URL only", () => {
   assert.equal(
     buildApprovalLink("https://hr.example.test", RAW),
-    `https://hr.example.test/approve/${RAW}`
+    `https://hr.example.test/approve#t=${RAW}`
   );
   assert.equal(
     buildApprovalLink("https://hr.example.test/app/", RAW),
-    `https://hr.example.test/app/approve/${RAW}`
+    `https://hr.example.test/app/approve#t=${RAW}`
   );
   assert.equal(
     buildApprovalLink("  https://hr.example.test  ", RAW),
-    `https://hr.example.test/approve/${RAW}`
+    `https://hr.example.test/approve#t=${RAW}`
   );
   assert.equal(approvalLinkBase("https://hr.example.test///"), "https://hr.example.test");
 
@@ -149,10 +180,11 @@ test("the link is built from the configured public URL only", () => {
   assert.equal(/req\.header|request\.headers|new URL\(request\b/.test(service), false);
 });
 
-test("expiry is exactly 72 hours after creation", () => {
-  assert.equal(approvalTokenExpiresAt(CREATE_TIME), "2026-11-12T03:00:00.000Z");
-  assert.equal(approvalTokenExpiresAt(CREATE_TIME.toISOString()), "2026-11-12T03:00:00.000Z");
-  assert.equal(approvalTokenExpiresAt("not-a-date"), null);
+test("expiry is 72 hours after issuance and nothing else", () => {
+  const at = (ms) => new Date(ms).toISOString();
+  assert.equal(at(approvalTokenExpiryMs(CREATE_TIME)), "2026-11-12T03:00:00.000Z");
+  assert.equal(at(approvalTokenExpiryMs(CREATE_TIME.toISOString())), "2026-11-12T03:00:00.000Z");
+  assert.equal(approvalTokenExpiryMs("not-a-date"), null);
 });
 
 test("the reject reason uses the in-app rule: 1 to 500 code points", () => {

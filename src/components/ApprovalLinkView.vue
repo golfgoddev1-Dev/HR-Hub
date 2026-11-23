@@ -1,7 +1,7 @@
 <script setup>
-// The public approval page body. It is deliberately outside the signed-in
-// shell: the email link is the whole authority, so there is no session read and
-// no redirect to the sign-in page. Opening the page only reads; a decision is
+// The approval page body. It is outside the signed-in shell and never redirects.
+// The token comes from the URL fragment and travels only in POST bodies; it is
+// the only credential (no sign-in). Opening the page only reads; a decision is
 // one POST.
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { formatThaiDate, formatThaiDateRange } from '../lib/thai-date.js'
@@ -11,7 +11,9 @@ import {
   APPROVAL_LOAD_ERROR,
   APPROVAL_LINK_MESSAGE,
   APPROVAL_REJECTED_MESSAGE,
-  approvalPathForToken,
+  APPROVAL_DECISION_URL,
+  APPROVAL_DETAIL_URL,
+  APPROVAL_HEADERS,
   daysLabel,
   invalidLinkLabel,
   normalizeReason,
@@ -46,9 +48,12 @@ async function load() {
   invalidCategory.value = ''
 
   try {
-    const response = await fetch(approvalPathForToken(props.token), {
-      credentials: 'omit',
+    const response = await fetch(APPROVAL_DETAIL_URL, {
+      method: 'POST',
+      credentials: 'same-origin',
       cache: 'no-store',
+      headers: APPROVAL_HEADERS,
+      body: JSON.stringify({ token: props.token }),
     })
     const data = await response.json().catch(() => ({}))
 
@@ -92,12 +97,12 @@ async function decide(action) {
 
   busy.value = true
   try {
-    const response = await fetch(`${approvalPathForToken(props.token)}/decision`, {
+    const response = await fetch(APPROVAL_DECISION_URL, {
       method: 'POST',
-      credentials: 'omit',
+      credentials: 'same-origin',
       cache: 'no-store',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      headers: APPROVAL_HEADERS,
+      body: JSON.stringify({ token: props.token, ...body }),
     })
     const data = await response.json().catch(() => ({}))
 
