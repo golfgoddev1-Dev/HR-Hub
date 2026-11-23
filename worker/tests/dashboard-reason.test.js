@@ -162,12 +162,13 @@ async function createBackend(options = {}) {
     }
     if (["hr_admins", "meeting_admins", "system_admins"].includes(table)) {
       // allowedLoginTypesFor runs twice per request: once inside readSession
-      // (hr_admins, then meeting_admins) and again at the reason route's PIN
-      // step. The fake tracks the running count so `roleGranted: false` can
-      // deny membership only in the PIN wave (every second meeting_admins
-      // select) while the session wave stays valid.
+      // and again at the reason route's PIN step. Since the parallel lookup it
+      // asks hr_admins, meeting_admins and system_admins together, so one wave
+      // is 3 selects (not 2) and every second wave is the PIN wave. The fake
+      // tracks the running count so `roleGranted: false` can deny membership
+      // only in the PIN wave while the session wave stays valid.
       adminSelectCount += 1;
-      const pinWave = adminSelectCount % 4 === 0;
+      const pinWave = Math.floor((adminSelectCount - 1) / 3) % 2 === 1;
       const controllerRow = table === "meeting_admins" &&
         params.get("employee_id") === `eq.${CONTROLLER_ID}` &&
         lastSessionRole === "meeting_controller" &&

@@ -148,13 +148,15 @@ test("readSession: inactive employee is revoked and rejected", async (t) => {
   t.after(() => fake.restore());
 
   assert.deepEqual(await readSession(ENV, TOKEN), { ok: false });
-  assert.equal(fake.calls.length, 3);
+  // Session read, then the employee and the three admin-table lookups in
+  // parallel, then the revoke PATCH.
+  assert.equal(fake.calls.length, 6);
   assert.equal(
     fake.calls[1].url,
     `${BASE}/employees?select=*&id=eq.${EMPLOYEE_ID}&limit=1`
   );
-  assert.equal(fake.calls[2].init.method, "PATCH");
-  assert.deepEqual(JSON.parse(fake.calls[2].init.body), { revoked_at: NOW_ISO });
+  assert.equal(fake.calls[5].init.method, "PATCH");
+  assert.deepEqual(JSON.parse(fake.calls[5].init.body), { revoked_at: NOW_ISO });
 });
 
 test("readSession: role that is no longer allowed is revoked and rejected", async (t) => {
@@ -191,13 +193,14 @@ test("readSession: success touches last_active_at", async (t) => {
     role: "hr",
     redirectTo: "/hr",
   });
-  assert.equal(fake.calls.length, 4);
-  assert.equal(fake.calls[3].init.method, "PATCH");
+  // Session read, employee + 3 admin lookups in parallel, then the touch PATCH.
+  assert.equal(fake.calls.length, 6);
+  assert.equal(fake.calls[5].init.method, "PATCH");
   assert.equal(
-    fake.calls[3].url,
+    fake.calls[5].url,
     `${BASE}/auth_sessions?id=eq.${SESSION_ID}&revoked_at=is.null`
   );
-  assert.deepEqual(JSON.parse(fake.calls[3].init.body), { last_active_at: NOW_ISO });
+  assert.deepEqual(JSON.parse(fake.calls[5].init.body), { last_active_at: NOW_ISO });
 });
 
 test("readSession: employee with a pending leave is routed to approvals", async (t) => {
@@ -249,7 +252,8 @@ test("allowedLoginTypesFor: hr_admins wins over meeting_admins", async (t) => {
   t.after(() => fake.restore());
 
   assert.deepEqual(await allowedLoginTypesFor(ENV, EMPLOYEE_ID), ["hr"]);
-  assert.equal(fake.calls.length, 1);
+  // All three tables are asked at once, so precedence is decided in code.
+  assert.equal(fake.calls.length, 3);
 });
 
 test("allowedLoginTypesFor: maps each table and falls back to employee", async (t) => {

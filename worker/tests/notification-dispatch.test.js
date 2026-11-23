@@ -50,6 +50,10 @@ function matches(params, row) {
       if (String(row[key] ?? "") !== value.slice(3)) return false;
       continue;
     }
+    if (value.startsWith("neq.")) {
+      if (String(row[key] ?? "") === value.slice(4)) return false;
+      continue;
+    }
     if (value.startsWith("lte.")) {
       const left = Date.parse(String(row[key] ?? ""));
       const right = Date.parse(value.slice(4));
@@ -327,6 +331,28 @@ test("a second identical submit is refused instead of saved twice", async (t) =>
   assert.equal(first.status, 201);
   assert.equal(second.status, 409);
   assert.equal(fake.state.leave_requests.length, 1);
+  // The refusal names the first request, so it is a real overlap and not the
+  // guard tripping over its own row.
+  assert.equal((await second.json()).conflictRequestCode, fake.state.leave_requests[0].request_code);
+});
+
+test("the post-insert overlap guard excludes the row it just inserted", async (t) => {
+  const fake = await createBackend();
+  t.after(() => fake.restore());
+
+  const response = await submit(EMPLOYEE_TOKEN, { waitUntil() {} });
+  assert.equal(response.status, 201);
+  assert.equal(fake.state.leave_requests.length, 1);
+
+  const insertedId = fake.state.leave_requests[0].id;
+  const guardReads = fake.calls.filter(
+    (call) =>
+      call.table === "leave_requests" && call.method === "GET" && call.url.includes("id=neq.")
+  );
+  assert.equal(guardReads.length, 1);
+  assert.ok(guardReads[0].url.includes(`id=neq.${insertedId}`));
+  // The guard found no other row, so it deleted nothing.
+  assert.equal(fake.calls.some((call) => call.table === "leave_requests" && call.method === "DELETE"), false);
 });
 
 test("dispatch is handed to waitUntil and never awaited", async (t) => {
