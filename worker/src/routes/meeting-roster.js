@@ -5,6 +5,7 @@ import { Hono } from "hono";
 
 import { createDb } from "../db.js";
 import { requireRole } from "../require-role.js";
+import { buildSearchFilter as buildEmployeeSearchFilter } from "../search-filter.js";
 import {
   escapeIlike,
   isValidSearchQuery,
@@ -169,23 +170,6 @@ function toCandidate(row) {
     departmentName: firstEmbedded(row.departments)?.name ?? DASH,
     positionName: firstEmbedded(row.positions)?.name ?? DASH,
   };
-}
-
-/**
- * The or filter for name and employee code ilike searches. The pattern is
- * URL-encoded so percent signs, commas and parentheses from the search text
- * cannot break the or=() structure; PostgREST decodes each leaf value itself.
- * encodeURIComponent leaves parentheses raw, so they are encoded explicitly:
- * a raw ( or ) would open or close an or-group inside PostgREST.
- */
-function encodeOrValue(value) {
-  return encodeURIComponent(value).replace(/\(/g, "%28").replace(/\)/g, "%29");
-}
-
-function buildEmployeeSearchFilter(pattern) {
-  const nameClause = `full_name.ilike.${encodeOrValue(pattern)}`;
-  const codeClause = `employee_code.ilike.${encodeOrValue(pattern)}`;
-  return `or=(${nameClause},${codeClause})`;
 }
 
 // --- GET /api/meeting/roster --------------------------------------------------

@@ -1,8 +1,8 @@
-// Date collision rule for an HR backdated entry.
+// Date collision rule for leave requests.
 //
 // A request that is already pending or approved for the same employee blocks a
 // new one; rejected and cancelled rows do not, because that leave never counted.
-// Pure functions: the route fetches candidate rows, this decides.
+// Pure functions plus a post-insert guard for the TOCTOU race.
 
 export const BLOCKING_STATUSES = ["pending", "approved"];
 
@@ -41,4 +41,33 @@ export function findOverlappingRequest(rows, { startDate, endDate } = {}) {
   }
 
   return null;
+}
+
+/**
+ * Post-insert guard: re-reads overlapping rows for the same employee and
+ * deletes the just-inserted row if a concurrent insert created a conflict.
+ * Returns the conflicting request (same shape as findOverlappingRequest), or
+ * null when the insert stands. The caller's row is excluded by id.
+ */
+export async function guardOverlapAfterInsert(
+  db,
+  table,
+  { insertedId, employeeId, startDate, endDate }
+) {
+  const rows = await db.select(table, {
+    columns: "id,request_code,start_date,end_date,status",
+    filters: [
+      ["employee_id", "eq", employeeId],
+      ["status", "in", BLOCKING_STATUSES],
+      ["end_date", "gte", startDate],
+      ["start_date", "lte", endDate],
+      ["id", "neq", insertedId],
+    ],
+    limit: 1,
+  });
+  const conflict = findOverlappingRequest(rows, { startDate, endDate });
+  if (!conflict) return null;
+
+  await db.remove(table, [["id", "eq", insertedId]]);
+  return conflict;
 }

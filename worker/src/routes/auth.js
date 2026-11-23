@@ -52,9 +52,6 @@ async function credentialRateLimited(c, scope) {
   return c.json({ ok: false, message: result.message }, result.status);
 }
 
-const MAX_FAILED_ATTEMPTS = 5;
-const LOCK_MINUTES = 15;
-const LOCK_MS = LOCK_MINUTES * 60 * 1000;
 const RESET_CODE_MAX_ATTEMPTS = 5;
 
 const LOGIN_ROLES = {
@@ -199,9 +196,6 @@ auth.post("/login", async (c) => {
       return c.json({ ok: false, message: LOGIN_INVALID_MESSAGE }, 401);
     }
 
-    const lockedUntilMs = credential.locked_until
-      ? new Date(credential.locked_until).getTime()
-      : NaN;
     // The attempt sequence (lock window, HMAC compare with the pepper, role
     // check only on a PIN match, counter rule 5 / 15 minutes) is shared with
     // the dashboard reason route; see src/pin-verify.js.

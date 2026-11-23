@@ -18,6 +18,7 @@ import { bangkokToday } from "../register-window.js";
 import { requireRole } from "../require-role.js";
 import { hmacSha256Hex } from "../crypto.js";
 import { pinHash, validatePin } from "../pin-rules.js";
+import { normalizeSearch, buildSearchFilter } from "../search-filter.js";
 
 const hrEmployees = new Hono();
 
@@ -302,24 +303,6 @@ function publicRows(entries) {
 /** First row of a to-one embed, which PostgREST returns as object or array. */
 function firstEmbedded(value) {
   return Array.isArray(value) ? value[0] ?? null : value ?? null;
-}
-
-/** Collapses whitespace and trims. The search text is never logged. */
-function normalizeSearch(raw) {
-  return String(raw ?? "").replace(/\s+/g, " ").trim();
-}
-
-/**
- * The or filter for the name and employee code search. Each value is
- * URL-encoded so a comma or parenthesis in the typed text cannot open or close
- * the or=() group; PostgREST decodes each leaf value itself.
- */
-function buildSearchFilter(pattern) {
-  const encodeOrValue = (value) =>
-    encodeURIComponent(value).replace(/\(/g, "%28").replace(/\)/g, "%29");
-  const nameClause = `full_name.ilike.${encodeOrValue(pattern)}`;
-  const codeClause = `employee_code.ilike.${encodeOrValue(pattern)}`;
-  return `or=(${nameClause},${codeClause})`;
 }
 
 /** The hr login role is not enough: membership is re-read on every request. */

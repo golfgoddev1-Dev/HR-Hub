@@ -32,18 +32,21 @@ export function landingPathFor(loginRole, hasPending) {
  */
 export async function allowedLoginTypesFor(env, employeeId) {
   const db = createDb(env);
-  const one = async (table) => {
-    const row = await db.select(table, {
+  const check = (table) =>
+    db.select(table, {
       columns: "employee_id",
       filters: [["employee_id", "eq", employeeId]],
       single: true,
-    });
-    return row !== null;
-  };
+    }).then((row) => row !== null);
 
-  if (await one("hr_admins")) return ["hr"];
-  if (await one("meeting_admins")) return ["meeting_controller"];
-  if (await one("system_admins")) return ["system_admin"];
+  const [isHr, isMeeting, isSystem] = await Promise.all([
+    check("hr_admins"),
+    check("meeting_admins"),
+    check("system_admins"),
+  ]);
+  if (isHr) return ["hr"];
+  if (isMeeting) return ["meeting_controller"];
+  if (isSystem) return ["system_admin"];
   return ["employee"];
 }
 
@@ -113,43 +116,48 @@ export async function readSession(env, token) {
       return { ok: false };
     }
 
-    const employee = await db.select("employees", {
-      columns: "*",
-      filters: [["id", "eq", session.employee_id]],
-      single: true,
-    });
+    const [employee, allowed] = await Promise.all([
+      db.select("employees", {
+        columns: "*",
+        filters: [["id", "eq", session.employee_id]],
+        single: true,
+      }),
+      allowedLoginTypesFor(env, session.employee_id),
+    ]);
     if (!employee || employee.is_active !== true) {
       await revokeSession(env, session.id);
       return { ok: false };
     }
-
-    const allowed = await allowedLoginTypesFor(env, employee.id);
     if (!allowed.includes(session.login_role)) {
       await revokeSession(env, session.id);
       return { ok: false };
     }
 
-    if (now.getTime() - lastActiveMs >= TOUCH_INTERVAL_MS) {
-      await db.update(
-        SESSIONS_TABLE,
-        { last_active_at: now.toISOString() },
-        [
-          ["id", "eq", session.id],
-          ["revoked_at", "is", null],
-        ]
-      );
-    }
-
     const role = session.login_role;
+    const touchPromise =
+      now.getTime() - lastActiveMs >= TOUCH_INTERVAL_MS
+        ? db.update(
+            SESSIONS_TABLE,
+            { last_active_at: now.toISOString() },
+            [
+              ["id", "eq", session.id],
+              ["revoked_at", "is", null],
+            ]
+          )
+        : null;
+
     if (role === "employee") {
-      const pending = await db.select("leave_requests", {
-        columns: "id",
-        filters: [
-          ["approver_id", "eq", employee.id],
-          ["status", "eq", "pending"],
-        ],
-        single: true,
-      });
+      const [pending] = await Promise.all([
+        db.select("leave_requests", {
+          columns: "id",
+          filters: [
+            ["approver_id", "eq", employee.id],
+            ["status", "eq", "pending"],
+          ],
+          single: true,
+        }),
+        touchPromise,
+      ]);
       const target = landingPathFor(role, pending !== null);
       return {
         ok: true,
@@ -159,6 +167,7 @@ export async function readSession(env, token) {
       };
     }
 
+    if (touchPromise) await touchPromise;
     return {
       ok: true,
       employeeId: employee.id,

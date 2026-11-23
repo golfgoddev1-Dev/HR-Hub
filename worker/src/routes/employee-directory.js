@@ -32,6 +32,7 @@ import {
 } from "../import/validate.js";
 import { decryptNationalId, encryptNationalId } from "../import/national-id-crypto.js";
 import { requireRole } from "../require-role.js";
+import { normalizeSearch, buildSearchFilter } from "../search-filter.js";
 
 const EMPLOYEES_TABLE = "employees";
 const DEPARTMENTS_TABLE = "departments";
@@ -126,24 +127,6 @@ function ensureOk(result) {
 /** First row of a to-one embed, which PostgREST returns as object or array. */
 function firstEmbedded(value) {
   return Array.isArray(value) ? value[0] ?? null : value ?? null;
-}
-
-/** Collapses whitespace and trims. The search text is never logged. */
-function normalizeSearch(raw) {
-  return String(raw ?? "").replace(/\s+/g, " ").trim();
-}
-
-/**
- * The or filter for the name and employee code search. Each value is
- * URL-encoded so a comma or parenthesis in the typed text cannot open or close
- * the or=() group; PostgREST decodes each leaf value itself.
- */
-function buildSearchFilter(pattern) {
-  const encodeOrValue = (value) =>
-    encodeURIComponent(value).replace(/\(/g, "%28").replace(/\)/g, "%29");
-  const nameClause = `full_name.ilike.${encodeOrValue(pattern)}`;
-  const codeClause = `employee_code.ilike.${encodeOrValue(pattern)}`;
-  return `or=(${nameClause},${codeClause})`;
 }
 
 /**

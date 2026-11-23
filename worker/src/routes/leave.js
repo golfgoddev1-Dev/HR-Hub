@@ -42,7 +42,7 @@ import {
 import { deleteCertificate, uploadCertificate } from "../leave-storage.js";
 import { isSickLeaveName, sendCertificate } from "../medical-certificate.js";
 import { insertWithRequestCode } from "../leave-request-code.js";
-import { BLOCKING_STATUSES, findOverlappingRequest } from "../leave-overlap.js";
+import { BLOCKING_STATUSES, findOverlappingRequest, guardOverlapAfterInsert } from "../leave-overlap.js";
 import { applyLeaveDecision } from "../leave-decision.js";
 import { notifyLeaveDecisionSafely } from "../decision-notify.js";
 import { createApprovalLinkEmail } from "../approval-link.js";
@@ -688,22 +688,43 @@ leave.post("/requests", async (c) => {
 
     const row = result.row;
     const inserted = result.inserted;
+    const insertedId = inserted.data?.id;
 
-    ensureOk(
-      await db.insert(AUDIT_TABLE, {
-        actor_id: employee.id,
-        action: ACTION_REQUESTED,
-        entity: ENTITY,
-        entity_id: inserted.data?.id ?? null,
-        detail: JSON.stringify({
-          requestCode: row.request_code,
-          leaveType: leaveType.name ?? null,
-          days: computed.days,
-          shift: shift.code,
-          hasAttachment: row.medical_certificate_url !== null,
-        }),
-      })
-    );
+    if (insertedId) {
+      const raceConflict = await guardOverlapAfterInsert(db, LEAVE_REQUESTS_TABLE, {
+        insertedId,
+        employeeId: employee.id,
+        startDate: row.start_date,
+        endDate: row.end_date,
+      });
+      if (raceConflict) {
+        if (uploadedPath) await deleteCertificate(c.env, uploadedPath);
+        return c.json(
+          {
+            ok: false,
+            message: `ช่วงวันที่ทับกับใบลา ${raceConflict.requestCode ?? "(ไม่ทราบรหัส)"}`,
+            conflictRequestCode: raceConflict.requestCode,
+            conflictStatus: raceConflict.status,
+          },
+          409
+        );
+      }
+    }
+
+    const audit = await db.insert(AUDIT_TABLE, {
+      actor_id: employee.id,
+      action: ACTION_REQUESTED,
+      entity: ENTITY,
+      entity_id: inserted.data?.id ?? null,
+      detail: JSON.stringify({
+        requestCode: row.request_code,
+        leaveType: leaveType.name ?? null,
+        days: computed.days,
+        shift: shift.code,
+        hasAttachment: row.medical_certificate_url !== null,
+      }),
+    });
+    if (audit?.error) logError("audit insert after leave save", audit.error);
 
     // The approval email is queued, never sent inside this handler: a slow relay
     // must not slow down the submission. A missing approver address or a missing
@@ -1506,19 +1527,18 @@ async function decide(c, status) {
       return c.json({ ok: false, message: MESSAGE.alreadyDecided }, 409);
     }
 
-    ensureOk(
-      await db.insert(AUDIT_TABLE, {
-        actor_id: employee.id,
-        action: status === "approved" ? ACTION_APPROVED : ACTION_REJECTED,
-        entity: ENTITY,
-        entity_id: id,
-        detail: JSON.stringify({
-          requestCode: request.request_code ?? null,
-          employeeId: request.employee_id ?? null,
-          note,
-        }),
-      })
-    );
+    const audit = await db.insert(AUDIT_TABLE, {
+      actor_id: employee.id,
+      action: status === "approved" ? ACTION_APPROVED : ACTION_REJECTED,
+      entity: ENTITY,
+      entity_id: id,
+      detail: JSON.stringify({
+        requestCode: request.request_code ?? null,
+        employeeId: request.employee_id ?? null,
+        note,
+      }),
+    });
+    if (audit?.error) logError("audit insert after leave decision", audit.error);
 
     const queued = await enqueueNotificationSafely(db, {
       employeeId: request.employee_id,

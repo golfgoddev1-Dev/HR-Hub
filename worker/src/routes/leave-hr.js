@@ -31,7 +31,7 @@ import {
   isApproverOfEmployee,
   normalizePriority,
 } from "../leave-approvers.js";
-import { findOverlappingRequest } from "../leave-overlap.js";
+import { findOverlappingRequest, guardOverlapAfterInsert } from "../leave-overlap.js";
 import {
   DEFAULT_CERTIFICATE_RETENTION_DAYS,
   DEFAULT_LEAVE_RETENTION_DAYS,
@@ -247,15 +247,14 @@ async function guard(c) {
 }
 
 async function writeAudit(db, { actorId, action, entity, entityId = null, detail }) {
-  ensureOk(
-    await db.insert(AUDIT_TABLE, {
-      actor_id: actorId,
-      action,
-      entity,
-      entity_id: entityId,
-      detail: JSON.stringify(detail ?? {}),
-    })
-  );
+  const result = await db.insert(AUDIT_TABLE, {
+    actor_id: actorId,
+    action,
+    entity,
+    entity_id: entityId,
+    detail: JSON.stringify(detail ?? {}),
+  });
+  if (result?.error) logError("audit insert after save", result.error);
 }
 
 async function loadPeople(db, ids) {
@@ -777,12 +776,33 @@ leaveHr.post("/requests", async (c) => {
 
     const row = saved.row;
     const inserted = saved.inserted;
+    const insertedId = inserted.data?.id;
+
+    if (insertedId) {
+      const raceConflict = await guardOverlapAfterInsert(db, LEAVE_REQUESTS_TABLE, {
+        insertedId,
+        employeeId: employee.id,
+        startDate: row.start_date,
+        endDate: row.end_date,
+      });
+      if (raceConflict) {
+        return c.json(
+          {
+            ok: false,
+            message: `ช่วงวันที่ทับกับใบลา ${raceConflict.requestCode ?? "(ไม่ทราบรหัส)"}`,
+            conflictRequestCode: raceConflict.requestCode,
+            conflictStatus: raceConflict.status,
+          },
+          409
+        );
+      }
+    }
 
     await writeAudit(db, {
       actorId: session.employeeId,
       action: ACTION_BACKDATED,
       entity: ENTITY_REQUEST,
-      entityId: inserted.data?.id ?? null,
+      entityId: insertedId ?? null,
       detail: {
         requestCode: row.request_code,
         employeeCode: employee.employee_code ?? null,
