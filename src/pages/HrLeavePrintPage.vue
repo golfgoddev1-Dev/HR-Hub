@@ -4,6 +4,7 @@
 
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
+import AppLoader from '../components/AppLoader.vue'
 import { leavePrintModel } from '../leave-print.js'
 
 const LOAD_ERROR = 'โหลดใบลาไม่สำเร็จ กรุณาลองใหม่'
@@ -51,7 +52,7 @@ onMounted(load)
       </button>
     </div>
 
-    <p v-if="loading" class="status no-print">กำลังโหลด…</p>
+    <AppLoader v-if="loading" class="no-print" />
     <v-alert v-else-if="errorMessage" type="error" variant="tonal" class="no-print">
       {{ errorMessage }}
     </v-alert>

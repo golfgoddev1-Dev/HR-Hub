@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
+import AppLoader from '../components/AppLoader.vue'
 
 
 const LOAD_ERROR = 'โหลดข้อมูลไม่สำเร็จ กรุณาลองใหม่'
@@ -268,7 +269,7 @@ onMounted(async () => {
                   <td>{{ round.counts.total }}</td>
                 </tr>
                 <tr v-if="roundsState.rows.length === 0">
-                  <td colspan="9" class="empty">{{ roundsState.loading ? 'กำลังโหลด…' : 'ไม่พบข้อมูลตามตัวกรอง' }}</td>
+                  <td colspan="9" class="empty"><AppLoader v-if="roundsState.loading" /><template v-else>ไม่พบข้อมูลตามตัวกรอง</template></td>
                 </tr>
               </tbody>
             </table>
@@ -326,7 +327,7 @@ onMounted(async () => {
                     <td>{{ item.reason || '—' }}</td>
                   </tr>
                   <tr v-if="personState.items.length === 0">
-                    <td colspan="7" class="empty">{{ personState.loading ? 'กำลังโหลด…' : 'ไม่พบข้อมูลตามตัวกรอง' }}</td>
+                    <td colspan="7" class="empty"><AppLoader v-if="personState.loading" /><template v-else>ไม่พบข้อมูลตามตัวกรอง</template></td>
                   </tr>
                 </tbody>
               </table>
