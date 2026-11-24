@@ -260,7 +260,8 @@ describe('leave home page', () => {
 
   it('keeps the link targets exactly as they were', () => {
     const declared = [...PAGE_SOURCE.matchAll(/\sto="([^"]+)"/g)].map((match) => match[1])
-    expect(declared).toEqual(TARGETS)
+    // The rules reminder comes first, then the one primary action.
+    expect(declared).toEqual(['/leave/rules', ...TARGETS])
     expect(PAGE_SOURCE).not.toContain(':to=')
 
     const wrapper = mountPage()

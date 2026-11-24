@@ -101,10 +101,10 @@ describe('role shell routing', () => {
       expect(mine[0].label).toBe(NAV_SECTION_LABELS.mine)
       const expected =
         role === 'employee'
-          ? ['/leave', '/leave/new', '/leave/calendar', '/leave/my-approvers', '/profile']
+          ? ['/leave', '/leave/new', '/leave/calendar', '/leave/rules', '/leave/my-approvers', '/profile']
           : role === 'system_admin'
-            ? ['/leave', '/leave/new', '/profile']
-            : ['/leave', '/leave/new', '/leave/calendar', '/profile']
+            ? ['/leave', '/leave/new', '/leave/rules', '/profile']
+            : ['/leave', '/leave/new', '/leave/calendar', '/leave/rules', '/profile']
       expect(mine[0].items.map((item) => item.to), role).toEqual(expected)
     }
   })

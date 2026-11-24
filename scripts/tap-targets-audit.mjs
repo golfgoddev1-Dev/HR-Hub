@@ -235,6 +235,7 @@ const ROUTES = [
   { path: '/leave', session: EMPLOYEE, wait: 'main' },
   { path: '/leave/new', session: EMPLOYEE },
   { path: '/leave/my-approvers', session: EMPLOYEE },
+  { path: '/leave/rules', session: EMPLOYEE },
   { path: '/leave/approvals', session: EMPLOYEE },
   { path: '/leave/calendar', session: EMPLOYEE },
   { path: '/leave/approvals/history', session: EMPLOYEE },

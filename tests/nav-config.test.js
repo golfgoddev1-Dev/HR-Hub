@@ -15,6 +15,7 @@ const LEAVE_TABLE = [
   ['ใบลาของฉัน', '/leave', 'event_note'],
   ['ยื่นใบลา', '/leave/new', 'edit_calendar'],
   ['ปฏิทินการลา', '/leave/calendar', 'calendar_month'],
+  ['กฎระเบียบและวินัยการลางาน', '/leave/rules', 'info'],
   ['ข้อมูลส่วนตัว', '/profile', 'person'],
 ]
 
@@ -35,14 +36,14 @@ const HR_TABLE = [
 const table = (items) => items.map((item) => [item.label, item.to, item.icon])
 
 describe('leaveNavItems', () => {
-  it('keeps the four employee items in order, with unchanged routes and icons', () => {
+  it('keeps the five employee items in order, with unchanged routes and icons', () => {
     expect(table(leaveNavItems())).toEqual(LEAVE_TABLE)
   })
 
   it('returns a fresh array, so a caller cannot mutate the menu', () => {
     const first = leaveNavItems()
     first.push({ label: 'x', to: '/x', icon: 'x' })
-    expect(leaveNavItems()).toHaveLength(4)
+    expect(leaveNavItems()).toHaveLength(5)
   })
 
   it('never carries the approvals entry: that needs the session', () => {
@@ -117,6 +118,7 @@ describe('navSections', () => {
     expect(minePaths({ role: 'employee' })).toEqual([
       '/leave',
       '/leave/new',
+      '/leave/rules',
       '/leave/my-approvers',
       '/profile',
     ])
@@ -124,6 +126,7 @@ describe('navSections', () => {
       '/leave',
       '/leave/new',
       '/leave/calendar',
+      '/leave/rules',
       '/leave/my-approvers',
       '/profile',
     ])
@@ -132,10 +135,16 @@ describe('navSections', () => {
         '/leave',
         '/leave/new',
         '/leave/calendar',
+        '/leave/rules',
         '/profile',
       ])
     }
-    expect(minePaths({ role: 'system_admin' })).toEqual(['/leave', '/leave/new', '/profile'])
+    expect(minePaths({ role: 'system_admin' })).toEqual([
+      '/leave',
+      '/leave/new',
+      '/leave/rules',
+      '/profile',
+    ])
   })
 
   it('offers my approvers to the employee menu only', () => {

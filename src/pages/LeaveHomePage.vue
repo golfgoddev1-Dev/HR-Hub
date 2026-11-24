@@ -176,6 +176,15 @@ onBeforeUnmount(() => {
 
 <template>
   <main class="page">
+    <!-- The one standing reminder: read the leave rules before asking for leave. -->
+    <RouterLink to="/leave/rules" class="rules-notice">
+      <span class="material-symbols-outlined rules-icon" aria-hidden="true">info</span>
+      <span class="rules-text">
+        <strong>กรุณาอ่านกฎระเบียบและวินัยการลางานให้เข้าใจก่อนยื่นใบลา</strong>
+        <span>เปิดอ่านสิทธิการลาและเงื่อนไขค่าจ้างทุกประเภท</span>
+      </span>
+    </RouterLink>
+
     <!-- The desk: the page's own two numbers and the one action that starts work. -->
     <section class="hero" aria-labelledby="leave-title">
       <div class="hero-head">
@@ -457,6 +466,7 @@ onBeforeUnmount(() => {
   .page {
     grid-template-columns: 320px minmax(0, 1fr);
     grid-template-areas:
+      'notice notice'
       'hero hero'
       'rail balance'
       'rail list';
@@ -464,6 +474,10 @@ onBeforeUnmount(() => {
     column-gap: 24px;
     row-gap: 20px;
     padding-top: 32px;
+  }
+
+  .rules-notice {
+    grid-area: notice;
   }
 
   .hero {
@@ -481,6 +495,50 @@ onBeforeUnmount(() => {
   .list-panel {
     grid-area: list;
   }
+}
+
+/* The reminder is the one loud thing above the desk: indigo edge, indigo-900 ink
+   (13.4:1 on glass), indigo-700 icon. Colour is brand, not status. */
+.rules-notice {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: var(--tap);
+  padding: 16px 24px;
+  border: 2px solid var(--accent);
+  border-radius: var(--radius-row);
+  background-color: var(--leave-home-glass);
+  -webkit-backdrop-filter: var(--leave-home-filter);
+  backdrop-filter: var(--leave-home-filter);
+  box-shadow: var(--leave-home-shadow);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.rules-icon {
+  flex: 0 0 auto;
+  font-size: 28px;
+  color: var(--accent-deep);
+}
+
+.rules-text {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  font-size: 16px;
+  line-height: 1.55;
+  color: var(--ink-body);
+  overflow-wrap: anywhere;
+}
+
+.rules-text strong {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.rules-notice:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }
 
 .hero,

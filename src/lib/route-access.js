@@ -48,7 +48,7 @@ export const allowedPathsByRole = {
 // Pages any active employee may open with any login role, so the "งานของฉัน"
 // section is the same in every shell and no item leads to a page the role is
 // refused. The calendar is the employee's own leave view.
-export const employeeSelfPaths = ['/leave', '/leave/new', '/profile']
+export const employeeSelfPaths = ['/leave', '/leave/new', '/leave/rules', '/profile']
 
 // Detail pages carry an id in the path, so exact-path matching is not enough.
 export const allowedPrefixesByRole = {
