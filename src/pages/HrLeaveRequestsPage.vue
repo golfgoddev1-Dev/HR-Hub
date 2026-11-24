@@ -1,4 +1,5 @@
 <script setup>
+import AppLoader from '../components/AppLoader.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { postJson } from '../api.js'
 import { formatThaiDate, formatThaiDateRange } from '../lib/thai-date.js'
@@ -455,7 +456,7 @@ onBeforeUnmount(() => {
           <span class="page-chip">หน้า {{ page }}</span>
         </header>
 
-        <p v-if="loading" class="state-note">กำลังโหลด…</p>
+        <AppLoader v-if="loading" label="กำลังโหลด…" />
 
         <v-alert v-else-if="errorMessage" type="error" variant="tonal">{{ errorMessage }}</v-alert>
 
@@ -569,7 +570,7 @@ onBeforeUnmount(() => {
           </header>
 
           <p v-if="detail.error" class="state-note error">{{ detail.error }}</p>
-          <p v-else-if="detailLoading && !detail.requestCode" class="state-note">กำลังโหลด…</p>
+          <AppLoader v-else-if="detailLoading && !detail.requestCode" label="กำลังโหลด…" />
           <template v-else>
             <dl class="facts">
               <div class="fact"><dt>รหัส</dt><dd>{{ detail.requestCode || '—' }}</dd></div>

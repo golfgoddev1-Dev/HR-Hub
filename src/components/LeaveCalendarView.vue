@@ -1,4 +1,5 @@
 <script setup>
+import AppLoader from './AppLoader.vue'
 // The calendar itself. It is layout-free on purpose: LeaveCalendarPage puts it
 // inside the shared app layout (employee/approver or the HR shell).
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
@@ -588,7 +589,7 @@ onBeforeUnmount(() => {
         </button>
       </div>
 
-      <p v-if="loading" class="loading-note">กำลังโหลด…</p>
+      <AppLoader v-if="loading" label="กำลังโหลด…" />
       <FullCalendar ref="calendarRef" :options="options" />
       <p class="legend">
         <span class="legend-item"><span class="swatch swatch-approved" aria-hidden="true"></span>อนุมัติแล้ว</span>
@@ -610,7 +611,7 @@ onBeforeUnmount(() => {
       </div>
 
       <p v-if="rangeLabel" class="list-range">{{ rangeLabel }}</p>
-      <p v-if="loading" class="loading-note">กำลังโหลด…</p>
+      <AppLoader v-if="loading" label="กำลังโหลด…" />
 
       <p v-if="errorMessage" class="list-empty">{{ errorMessage }}</p>
       <p v-else-if="!loading && listGroups.length === 0" class="list-empty">

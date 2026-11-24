@@ -1,4 +1,5 @@
 <script setup>
+import AppLoader from '../components/AppLoader.vue'
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import QRCode from 'qrcode'
@@ -329,10 +330,7 @@ loadMonthlySessions()
 
       <div class="panels">
         <section class="card qr-card">
-          <div v-if="loading" class="state-box">
-            <v-progress-circular indeterminate color="primary" size="28" />
-            <span>กำลังโหลดข้อมูล…</span>
-          </div>
+          <AppLoader v-if="loading" label="กำลังโหลดข้อมูล…" />
 
           <div v-else-if="!selectedType" class="state-box">
             <span>ไม่พบข้อมูลการประชุมสำหรับรอบนี้</span>
@@ -378,9 +376,7 @@ loadMonthlySessions()
         <section class="card window-card">
           <h2 class="card-title">ช่วงเวลาเปิดรับลงทะเบียน</h2>
 
-          <div v-if="loading" class="state-box">
-            <v-progress-circular indeterminate color="primary" size="24" />
-          </div>
+          <AppLoader v-if="loading" />
 
           <template v-else-if="selectedType && selectedType.code === 'sup'">
             <p class="day-line">วันประชุม: {{ weekdayText }}</p>
@@ -436,9 +432,7 @@ loadMonthlySessions()
           </div>
         </div>
 
-        <div v-if="monthlyLoading" class="state-box small">
-          <v-progress-circular indeterminate color="primary" size="24" />
-        </div>
+        <AppLoader v-if="monthlyLoading" />
 
         <ul v-else-if="monthlySessions.length" class="cycle-list">
           <li v-for="session in monthlySessions" :key="session.id" class="cycle-row">

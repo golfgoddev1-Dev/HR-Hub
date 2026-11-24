@@ -1,4 +1,5 @@
 <script setup>
+import AppLoader from '../components/AppLoader.vue'
 // Approval history: the decision log. An active approver sees the requests they
 // decided; HR sees every decision. The list never carries a reason — opening a
 // row reads the scoped detail, which may.
@@ -160,7 +161,7 @@ onMounted(load)
       <button type="submit" class="apply-btn" :disabled="loading">ค้นหา</button>
     </form>
 
-    <p v-if="loading && rows.length === 0" class="hint">กำลังโหลด…</p>
+    <AppLoader v-if="loading && rows.length === 0" label="กำลังโหลด…" />
     <v-alert v-else-if="errorMessage" type="error" variant="tonal">{{ errorMessage }}</v-alert>
     <p v-else-if="rows.length === 0" class="hint">{{ EMPTY }}</p>
 
@@ -229,7 +230,7 @@ onMounted(load)
         </header>
 
         <div class="detail-body">
-          <p v-if="detailLoading" class="hint">กำลังโหลด…</p>
+          <AppLoader v-if="detailLoading" label="กำลังโหลด…" />
           <LeaveRequestDetail v-else-if="detail" :request="detail" />
         </div>
       </section>

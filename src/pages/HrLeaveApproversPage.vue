@@ -1,4 +1,5 @@
 <script setup>
+import AppLoader from '../components/AppLoader.vue'
 import { computed, onMounted, ref } from 'vue'
 import EmployeePicker from '../components/EmployeePicker.vue'
 import ShiftLeadsSection from '../components/ShiftLeadsSection.vue'
@@ -290,7 +291,7 @@ onMounted(async () => {
         <p v-if="notice" class="hint success">{{ notice }}</p>
         <v-alert v-if="errorMessage" type="error" variant="tonal" class="mb-3">{{ errorMessage }}</v-alert>
 
-        <p v-if="loading" class="hint">กำลังโหลด…</p>
+        <AppLoader v-if="loading" label="กำลังโหลด…" />
         <p v-else-if="rows.length === 0" class="hint">ยังไม่มีรายการในขอบเขตนี้</p>
 
         <div v-else class="list">

@@ -1,4 +1,5 @@
 <script setup>
+import AppLoader from '../components/AppLoader.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { formatThaiDate, formatThaiDateRange } from '../lib/thai-date.js'
 import { getCached } from '../lib/data-cache.js'
@@ -195,7 +196,7 @@ onMounted(load)
         <RouterLink to="/leave" class="back-link">← ใบลาของฉัน</RouterLink>
       </div>
 
-      <p v-if="loading" class="hint">กำลังโหลด…</p>
+      <AppLoader v-if="loading" label="กำลังโหลด…" />
 
       <v-alert v-else-if="loadError" type="error" variant="tonal">{{ loadError }}</v-alert>
 
@@ -360,8 +361,21 @@ onMounted(load)
 
         <p v-if="submitError" class="error-text" role="alert">{{ submitError }}</p>
 
-        <button type="button" class="primary-btn" :disabled="!canSubmit" @click="submit">
-          {{ submitting ? 'กำลังบันทึก…' : 'ยืนยันการยื่นใบลา' }}
+        <!-- From Uiverse.io by adamgiebl - https://uiverse.io/adamgiebl/smart-moth-68
+             MIT License, Copyright (c) adamgiebl (Adam Giebl) -->
+        <button type="button" class="submit-btn" :disabled="!canSubmit" @click="submit">
+          <span class="submit-icon">
+            <span class="submit-fly">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
+                <path fill="none" d="M0 0h24v24H0z"></path>
+                <path
+                  fill="currentColor"
+                  d="M1.946 9.315c-.522-.174-.527-.455.01-.634l19.087-6.362c.529-.176.832.12.684.638l-5.454 19.086c-.15.529-.455.547-.679.045L12 14l6-8-8 6-8.054-2.685z"
+                ></path>
+              </svg>
+            </span>
+          </span>
+          <span class="submit-label">{{ submitting ? 'กำลังบันทึก…' : 'ยืนยันการยื่นใบลา' }}</span>
         </button>
       </section>
     </main>
@@ -573,6 +587,81 @@ onMounted(load)
   background: #d7e0de;
   color: #7b8b8e;
   cursor: not-allowed;
+}
+
+/* From Uiverse.io by adamgiebl - https://uiverse.io/adamgiebl/smart-moth-68
+   MIT License, Copyright (c) adamgiebl (Adam Giebl)
+   Adapted: indigo-600 (white on it 6.29:1), transform-only motion, hover for
+   precise pointers only, no motion for reduced-motion visitors. */
+.submit-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+  min-height: 48px;
+  padding: 12px 16px;
+  border: 0;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #4f46e5;
+  color: #ffffff;
+  font-family: 'Prompt', 'Sarabun', sans-serif;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.submit-btn:focus-visible {
+  outline: 2px solid #8b5cf6;
+  outline-offset: 2px;
+}
+
+.submit-btn:disabled {
+  background: #d7e0de;
+  color: #7b8b8e;
+  cursor: not-allowed;
+}
+
+.submit-icon,
+.submit-fly,
+.submit-label {
+  display: block;
+}
+
+.submit-icon svg {
+  display: block;
+  transform-origin: center center;
+}
+
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .submit-label,
+  .submit-icon svg {
+    transition: transform 0.3s ease-in-out;
+  }
+
+  .submit-btn:not(:disabled):hover .submit-fly {
+    /* Finite (3.6s), not infinite: the repo allows no steady loop on a control. */
+    animation: submit-fly 0.6s ease-in-out 6 alternate;
+  }
+
+  .submit-btn:not(:disabled):hover .submit-icon svg {
+    transform: translateX(1.2em) rotate(45deg) scale(1.1);
+  }
+
+  .submit-btn:not(:disabled):hover .submit-label {
+    transform: translateX(5em);
+  }
+}
+
+@keyframes submit-fly {
+  from {
+    transform: translateY(0.1em);
+  }
+
+  to {
+    transform: translateY(-0.1em);
+  }
 }
 
 .primary-link {

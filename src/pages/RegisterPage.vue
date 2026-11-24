@@ -1,4 +1,5 @@
 <script setup>
+import AppLoader from '../components/AppLoader.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
@@ -183,8 +184,7 @@ onMounted(loadContext)
       </header>
 
       <section v-if="loading" class="card state-card" aria-live="polite">
-        <v-progress-circular indeterminate color="#00203b" size="32" width="3" />
-        <span class="state-card__loading-text">กำลังโหลดข้อมูล…</span>
+        <AppLoader label="กำลังโหลดข้อมูล…" />
       </section>
 
       <section v-else-if="loadError" class="card state-card" role="alert">
@@ -529,12 +529,6 @@ onMounted(loadContext)
   gap: 12px;
   padding: 32px 20px;
   text-align: center;
-}
-
-.state-card__loading-text {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--on-surface-variant);
 }
 
 .state-icon {

@@ -1,4 +1,5 @@
 <script setup>
+import AppLoader from '../components/AppLoader.vue'
 // Read-only contacts for the signed-in employee's own leave route. The Worker
 // takes the employee id from the session; this page never sends one.
 import { onMounted, ref } from 'vue'
@@ -52,7 +53,7 @@ onMounted(load)
       <p>{{ NOTE }}</p>
     </section>
 
-    <p v-if="loading" class="hint">กำลังโหลด…</p>
+    <AppLoader v-if="loading" label="กำลังโหลด…" />
     <v-alert v-else-if="loadError" type="error" variant="tonal">{{ loadError }}</v-alert>
 
     <template v-else>

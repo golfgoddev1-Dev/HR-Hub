@@ -1,4 +1,5 @@
 <script setup>
+import AppLoader from './AppLoader.vue'
 // The employee's own quota position for the current year, one card per leave
 // type that has a quota and a quiet line for a type without one.
 //
@@ -71,7 +72,7 @@ onMounted(load)
       <p class="quota-year">ปี {{ year }}</p>
     </header>
 
-    <p v-if="loading" class="quota-hint">กำลังโหลด…</p>
+    <AppLoader v-if="loading" label="กำลังโหลด…" />
 
     <div v-else-if="errorMessage" class="quota-error" role="alert">
       <p class="quota-error-text">{{ errorMessage }}</p>

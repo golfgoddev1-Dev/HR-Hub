@@ -1,4 +1,5 @@
 <script setup>
+import AppLoader from '../components/AppLoader.vue'
 import { onMounted, ref } from 'vue'
 import { formatThaiDateLong } from '../lib/thai-date.js'
 import { postJson } from '../api.js'
@@ -135,7 +136,7 @@ onMounted(load)
         <p v-if="notice" class="hint success">{{ notice }}</p>
         <v-alert v-if="errorMessage" type="error" variant="tonal" class="mb-3">{{ errorMessage }}</v-alert>
 
-        <p v-if="loading" class="hint">กำลังโหลด…</p>
+        <AppLoader v-if="loading" label="กำลังโหลด…" />
         <p v-else-if="holidays.length === 0" class="hint">ยังไม่มีวันหยุดในระบบ</p>
 
         <div v-else class="list">

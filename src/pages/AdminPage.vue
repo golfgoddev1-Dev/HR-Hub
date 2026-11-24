@@ -1,4 +1,5 @@
 <script setup>
+import AppLoader from '../components/AppLoader.vue'
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { getSession } from '../api.js'
@@ -99,7 +100,7 @@ onMounted(async () => {
         </article>
       </section>
 
-      <p v-if="loading" class="state-line" role="status">กำลังโหลดข้อมูล…</p>
+      <AppLoader v-if="loading" label="กำลังโหลดข้อมูล…" />
       <p v-else-if="emptyState" class="state-line state-line-empty">
         <span class="material-symbols-outlined state-icon">info</span>
         <span>

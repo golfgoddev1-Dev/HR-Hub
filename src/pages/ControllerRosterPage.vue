@@ -1,4 +1,5 @@
 <script setup>
+import AppLoader from '../components/AppLoader.vue'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
 
@@ -185,10 +186,7 @@ loadMembers()
             <span class="count-tag">{{ memberCount }} คน</span>
           </div>
 
-          <div v-if="loadingMembers" class="state-box">
-            <v-progress-circular indeterminate color="primary" size="26" />
-            <span>กำลังโหลดรายชื่อ…</span>
-          </div>
+          <AppLoader v-if="loadingMembers" label="กำลังโหลดรายชื่อ…" />
 
           <p v-else-if="loadError" class="inline-error" role="alert">{{ loadError }}</p>
 
@@ -234,9 +232,7 @@ loadMembers()
 
           <p v-if="searchError" class="inline-error" role="alert">{{ searchError }}</p>
 
-          <div v-if="searchLoading" class="state-box small">
-            <v-progress-circular indeterminate color="primary" size="22" />
-          </div>
+          <AppLoader v-if="searchLoading" />
 
           <ul v-else-if="searchResults.length" class="list">
             <li v-for="candidate in searchResults" :key="candidate.employeeId" class="row">

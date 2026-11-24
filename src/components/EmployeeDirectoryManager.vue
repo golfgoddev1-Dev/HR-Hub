@@ -1,4 +1,5 @@
 <script setup>
+import AppLoader from './AppLoader.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { getCached } from '../lib/data-cache.js'
 import {
@@ -510,7 +511,7 @@ onBeforeUnmount(() => {
       <p class="note note-strong">{{ RENAME_NOTE }}</p>
       <p class="hint">{{ RENAME_HINT }}</p>
 
-      <p v-if="catalogLoading" class="hint">กำลังโหลดรายการ…</p>
+      <AppLoader v-if="catalogLoading" label="กำลังโหลดรายการ…" />
       <p v-else-if="catalogError" class="inline-error" role="alert">{{ catalogError }}</p>
 
       <p v-if="renameError" class="inline-error" role="alert">{{ renameError }}</p>
@@ -637,10 +638,10 @@ onBeforeUnmount(() => {
             </div>
           </dl>
 
-          <p v-if="detailLoading" class="hint">กำลังโหลดข้อมูลพนักงาน…</p>
+          <AppLoader v-if="detailLoading" label="กำลังโหลดข้อมูลพนักงาน…" />
           <p v-else-if="detailError" class="inline-error" role="alert">{{ detailError }}</p>
 
-          <p v-if="catalogLoading" class="hint">กำลังโหลดรายการแผนกและตำแหน่ง…</p>
+          <AppLoader v-if="catalogLoading" label="กำลังโหลดรายการแผนกและตำแหน่ง…" />
           <p v-else-if="catalogError" class="inline-error" role="alert">{{ catalogError }}</p>
 
           <div v-if="props.full && !detailLoading && !detailError" class="form-grid">

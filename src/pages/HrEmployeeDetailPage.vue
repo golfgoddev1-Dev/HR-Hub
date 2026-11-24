@@ -1,4 +1,5 @@
 <script setup>
+import AppLoader from '../components/AppLoader.vue'
 // One employee's own page: /hr/employees/:id.
 //
 // The list opens this as a full page, never a panel or a sheet, so the page owns
@@ -206,7 +207,7 @@ onMounted(async () => {
     </header>
 
     <v-alert v-if="errorMessage" type="error" variant="tonal">{{ errorMessage }}</v-alert>
-    <p v-else-if="loading" class="hint">กำลังโหลด…</p>
+    <AppLoader v-else-if="loading" label="กำลังโหลด…" />
 
     <section v-if="employee" class="panel" aria-labelledby="employee-title">
       <div class="panel-head">
@@ -288,7 +289,7 @@ onMounted(async () => {
         </select>
       </div>
 
-      <p v-if="quotaLoading" class="hint">กำลังโหลด…</p>
+      <AppLoader v-if="quotaLoading" label="กำลังโหลด…" />
 
       <template v-else>
         <p v-if="quotaRows.length === 0" class="hint">ยังไม่มีประเภทการลาในระบบ</p>

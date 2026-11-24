@@ -1,4 +1,5 @@
 <script setup>
+import AppLoader from '../components/AppLoader.vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { formatThaiDate, formatThaiDateRange } from '../lib/thai-date.js'
@@ -101,7 +102,7 @@ onMounted(load)
         <span class="count">{{ count }} รายการ</span>
       </div>
 
-      <p v-if="loading" class="hint">กำลังโหลด…</p>
+      <AppLoader v-if="loading" label="กำลังโหลด…" />
 
       <v-alert v-else-if="errorMessage" type="error" variant="tonal">{{ errorMessage }}</v-alert>
 

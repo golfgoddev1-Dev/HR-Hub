@@ -1,4 +1,5 @@
 <script setup>
+import AppLoader from '../components/AppLoader.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import PushToggle from '../components/PushToggle.vue'
@@ -320,7 +321,7 @@ onBeforeUnmount(() => {
         <h2 id="requests-title" class="panel-title">รายการใบลา</h2>
       </div>
 
-      <p v-if="loading" class="status-line">กำลังโหลด…</p>
+      <AppLoader v-if="loading" label="กำลังโหลด…" />
 
       <v-alert v-else-if="errorMessage" type="error" variant="tonal" class="mb-4">
         {{ errorMessage }}

@@ -1,4 +1,5 @@
 <script setup>
+import AppLoader from '../components/AppLoader.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import EmployeePicker from '../components/EmployeePicker.vue'
 import { formatThaiDate } from '../lib/thai-date.js'
@@ -173,7 +174,7 @@ onMounted(load)
         <RouterLink to="/hr/leave" class="back-link">← จัดการใบลา</RouterLink>
       </div>
 
-      <p v-if="loading" class="hint">กำลังโหลด…</p>
+      <AppLoader v-if="loading" label="กำลังโหลด…" />
       <v-alert v-else-if="loadError" type="error" variant="tonal">{{ loadError }}</v-alert>
 
       <section v-else-if="receipt" class="card">

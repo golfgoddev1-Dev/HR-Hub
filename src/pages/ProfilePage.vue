@@ -1,4 +1,5 @@
 <script setup>
+import AppLoader from '../components/AppLoader.vue'
 import { onMounted, ref } from 'vue'
 import { getSession } from '../api.js'
 import { formatEmail, readProfile } from '../lib/profile-form.js'
@@ -58,7 +59,7 @@ onMounted(() => {
       <p>หากต้องการแก้ไขข้อมูล กรุณาติดต่อฝ่ายบุคคล (HR) เท่านั้น</p>
     </section>
 
-    <p v-if="loading" class="hint">กำลังโหลด…</p>
+    <AppLoader v-if="loading" label="กำลังโหลด…" />
     <v-alert v-else-if="loadError" type="error" variant="tonal">{{ loadError }}</v-alert>
 
     <PushToggle v-if="!loading && !loadError" :approver="isApprover" />

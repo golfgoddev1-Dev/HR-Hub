@@ -1,4 +1,5 @@
 <script setup>
+import AppLoader from '../components/AppLoader.vue'
 // Registrant list for the meeting controller. Read-only: it consumes the
 // existing Worker GET endpoints (dashboard summary for the cycle picker and
 // status labels, dashboard registrants for the rows) and never writes.
@@ -437,7 +438,7 @@ loadPage()
             </button>
           </div>
 
-          <div v-if="loading" class="state-box">กำลังโหลด…</div>
+          <AppLoader v-if="loading" label="กำลังโหลด…" />
 
           <p v-else-if="errorMessage" class="inline-error" role="alert">{{ errorMessage }}</p>
 

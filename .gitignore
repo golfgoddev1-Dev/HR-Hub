@@ -37,3 +37,7 @@ worker/.dev.vars
 
 # Local secret files: names only, values never belong in the repository
 *.secret
+
+# graphify output (generated, large)
+graphify-out/
+worker/.test-account.env

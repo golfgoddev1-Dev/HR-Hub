@@ -1,4 +1,5 @@
 <script setup>
+import AppLoader from '../components/AppLoader.vue'
 import { computed, reactive, ref } from 'vue'
 
 
@@ -140,10 +141,7 @@ loadOverview()
           {{ errorMessage }}
         </v-alert>
 
-        <div v-if="loading && !overview" class="state-box">
-          <v-progress-circular indeterminate color="primary" size="26" />
-          <span>กำลังโหลดภาพรวม…</span>
-        </div>
+        <AppLoader v-if="loading && !overview" label="กำลังโหลดภาพรวม…" />
 
         <template v-else-if="overview">
           <section class="card">
@@ -174,10 +172,7 @@ loadOverview()
               </div>
 
               <div v-if="pending.sup.open" class="pending-box">
-                <div v-if="pending.sup.loading" class="state-box">
-                  <v-progress-circular indeterminate color="primary" size="22" />
-                  <span>กำลังโหลดรายชื่อ…</span>
-                </div>
+                <AppLoader v-if="pending.sup.loading" label="กำลังโหลดรายชื่อ…" />
                 <p v-else-if="pending.sup.error" class="inline-error" role="alert">{{ pending.sup.error }}</p>
                 <p v-else-if="!pending.sup.items.length" class="empty-text">ไม่มีรายชื่อที่ยังไม่ลงทะเบียน</p>
                 <ul v-else class="pending-list">
@@ -227,10 +222,7 @@ loadOverview()
               </div>
 
               <div v-if="pending.monthly.open" class="pending-box">
-                <div v-if="pending.monthly.loading" class="state-box">
-                  <v-progress-circular indeterminate color="primary" size="22" />
-                  <span>กำลังโหลดรายชื่อ…</span>
-                </div>
+                <AppLoader v-if="pending.monthly.loading" label="กำลังโหลดรายชื่อ…" />
                 <p v-else-if="pending.monthly.error" class="inline-error" role="alert">{{ pending.monthly.error }}</p>
                 <p v-else-if="!pending.monthly.items.length" class="empty-text">ไม่มีรายชื่อที่ยังไม่ลงทะเบียน</p>
                 <ul v-else class="pending-list">

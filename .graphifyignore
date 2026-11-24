@@ -1,0 +1,14 @@
+.env.local
+.env
+.env.*
+worker/.dev.vars
+.dev.vars
+*.secret
+.freebuff/
+.cloud-attachments/
+.claude/
+node_modules/
+dist/
+dist-ssr/
+reports/
+worker/.test-account.env

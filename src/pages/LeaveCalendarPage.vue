@@ -1,4 +1,5 @@
 <script setup>
+import AppLoader from '../components/AppLoader.vue'
 // Content only: the layout route owns the dock (the HR dock for role hr via the
 // route's meta.hrDock). The page still needs the role to decide whether the
 // department filter belongs on the calendar.
@@ -21,7 +22,7 @@ onMounted(async () => {
 <template>
   <main class="content">
     <LeaveCalendarView v-if="ready" :is-hr="isHr" />
-    <p v-else class="hint">กำลังโหลด…</p>
+    <AppLoader v-else label="กำลังโหลด…" />
   </main>
 </template>
 

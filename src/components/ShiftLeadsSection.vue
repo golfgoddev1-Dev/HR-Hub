@@ -1,4 +1,5 @@
 <script setup>
+import AppLoader from './AppLoader.vue'
 import { computed, ref, watch } from 'vue'
 
 import EmployeePicker from './EmployeePicker.vue'
@@ -160,7 +161,7 @@ function labelCount(row) {
       {{ SHIFT_LEADS_LIMIT }} คน
     </p>
 
-    <p v-if="loading" class="hint">กำลังโหลด…</p>
+    <AppLoader v-if="loading" label="กำลังโหลด…" />
 
     <template v-else>
       <p v-if="loadError" class="hint error">

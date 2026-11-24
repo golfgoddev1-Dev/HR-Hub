@@ -1,4 +1,5 @@
 <script setup>
+import AppLoader from '../components/AppLoader.vue'
 import { computed, onMounted, ref } from 'vue'
 import { getCached } from '../lib/data-cache.js'
 import {
@@ -248,7 +249,7 @@ onMounted(load)
       </v-alert>
 
       <section class="card">
-        <p v-if="loading" class="hint">กำลังโหลด…</p>
+        <AppLoader v-if="loading" label="กำลังโหลด…" />
 
         <template v-else>
           <label class="label" for="retention">เก็บใบรับรองแพทย์ (วัน)</label>

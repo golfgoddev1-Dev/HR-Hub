@@ -1,4 +1,5 @@
 <script setup>
+import AppLoader from '../components/AppLoader.vue'
 // HR certificate access. Pick an employee, then open that employee's sick-leave
 // certificates. The list endpoint returns ids, codes, dates and status only; the
 // file itself is streamed by the Worker through the HR-only route, never a URL.
@@ -83,7 +84,7 @@ function selectEmployee(value) {
     <section v-if="employee" class="card">
       <h2 class="card-title">รายการที่พบ</h2>
 
-      <p v-if="loading" class="hint">กำลังโหลด…</p>
+      <AppLoader v-if="loading" label="กำลังโหลด…" />
       <p v-else-if="errorMessage" class="hint error">{{ errorMessage }}</p>
       <p v-else-if="results.length === 0" class="hint">{{ EMPTY }}</p>
 

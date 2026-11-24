@@ -1,4 +1,5 @@
 <script setup>
+import AppLoader from './AppLoader.vue'
 // The approval page body. It is outside the signed-in shell and never redirects.
 // The token comes from the URL fragment and travels only in POST bodies; it is
 // the only credential (no sign-in). Opening the page only reads; a decision is
@@ -147,7 +148,7 @@ onBeforeUnmount(() => {
         <h1 class="title">อนุมัติใบลา</h1>
       </header>
 
-      <p v-if="loading" class="hint">กำลังโหลด…</p>
+      <AppLoader v-if="loading" label="กำลังโหลด…" />
 
       <section v-else-if="invalidCategory" class="notice" role="alert">
         <h2 class="notice-title">{{ APPROVAL_LINK_MESSAGE }}</h2>

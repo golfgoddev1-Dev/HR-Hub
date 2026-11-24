@@ -1,4 +1,5 @@
 <script setup>
+import AppLoader from '../components/AppLoader.vue'
 import { computed, reactive, ref } from 'vue'
 
 
@@ -486,7 +487,7 @@ loadDashboard()
 
         <p v-if="errorMessage" class="alert" role="alert">{{ errorMessage }}</p>
 
-        <div v-if="loading && !dash" class="state-box">กำลังโหลดข้อมูล…</div>
+        <AppLoader v-if="loading && !dash" label="กำลังโหลดข้อมูล…" />
 
         <div v-else-if="dash" class="layout">
           <div class="col-main">
@@ -753,7 +754,7 @@ loadDashboard()
               </label>
 
               <p v-if="monthly.error" class="inline-error" role="alert">{{ monthly.error }}</p>
-              <div v-else-if="monthly.loading" class="state-box">กำลังโหลด…</div>
+              <AppLoader v-else-if="monthly.loading" label="กำลังโหลด…" />
               <p v-else-if="!monthly.data" class="empty-text">{{ NO_DATA_MESSAGE }}</p>
 
               <template v-else>
@@ -837,7 +838,7 @@ loadDashboard()
               </div>
               <p class="card-sub">{{ drawer.data?.cycle?.label ?? dash?.current?.label ?? DASH }}</p>
 
-              <div v-if="drawer.loading" class="state-box">กำลังโหลด…</div>
+              <AppLoader v-if="drawer.loading" label="กำลังโหลด…" />
               <p v-else-if="drawer.error" class="inline-error" role="alert">{{ drawer.error }}</p>
 
               <template v-else-if="drawer.data">
