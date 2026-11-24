@@ -597,10 +597,13 @@ onMounted(load)
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  width: 100%;
+  gap: 8px;
+  width: fit-content;
+  min-width: 220px;
+  max-width: 100%;
+  margin: 0 auto;
   min-height: 48px;
-  padding: 12px 16px;
+  padding: 12px 32px;
   border: 0;
   border-radius: 16px;
   overflow: hidden;
@@ -650,7 +653,13 @@ onMounted(load)
   }
 
   .submit-btn:not(:disabled):hover .submit-label {
-    transform: translateX(5em);
+    transform: translateX(3em);
+  }
+}
+
+@media (max-width: 480px) {
+  .submit-btn {
+    width: 100%;
   }
 }
 
