@@ -14,9 +14,9 @@
   จึงข้ามขั้นสำรองข้อมูลก่อน cutover (ข้อ 4) ข้อมูลจริงจะถูก import ภายหลัง และเมื่อ import แล้ว
   ค่า `pin_hash` กับ `national_id_hash` ต้องคำนวณด้วย pepper ของ Worker (`PIN_PEPPER`,
   `NATIONAL_ID_PEPPER`) ไม่ใช่รูปแบบ bcrypt ของ Express
-- **Index:** owner จะลบ index ซ้ำชื่อ `meeting_attendance_once` ด้วยตัวเองก่อน deploy และเก็บ
+- **Index:** ลบ index ซ้ำ `meeting_attendance_once` แล้ว (dump วันที่ 2026-11-25 ไม่มี index นี้) และเก็บ
   `meeting_attendance_session_employee_unique` ไว้ (รายละเอียดใน `reports/supabase-indexes.md`)
-  TODO: confirm with owner — วันที่ลงมือลบ index
+  ส่วน index ซ้ำอีก 4 ตัวถูกลบด้วย `worker/sql/drop-duplicate-indexes.sql` เมื่อ 2026-11-25
 - **Pages:** ใช้ Git connection โดย production branch คือ **`release`** — push ขึ้น `release`
   แล้ว Pages จะ deploy เอง
 - **Turnstile: ปิดเป็นค่าเริ่มต้น** (off by default) — ยังไม่ต้องตั้ง `TURNSTILE_SECRET_KEY`
@@ -38,7 +38,9 @@
 
 - โปรเจกต์ Supabase ที่ใช้: **KCS_DATA**
 - URL และคีย์ของโปรเจกต์เก็บเป็น secret ของ Worker เท่านั้น (ดูข้อ 2) ไม่เก็บในไฟล์หรือ repository
-- TODO: confirm with owner — ภูมิภาค (region) ของโปรเจกต์ และที่มาของ schema (ไฟล์ migration หรือผู้ดูแล)
+- Schema: baseline ของ schema `public` อยู่ที่ `worker/sql/baseline/` (dump วันที่ 2026-11-25, ไม่มีข้อมูลแถว)
+  ใช้กับฐานข้อมูลเปล่าเท่านั้น production ห้ามรันซ้ำ
+- TODO: confirm with owner — ภูมิภาค (region) ของโปรเจกต์
 
 ## 2. Cloudflare Worker (API)
 
