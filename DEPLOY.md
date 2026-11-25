@@ -10,7 +10,7 @@
 - **Rollback: fix-forward** — ไม่ rollback กลับไปใช้ Express หลัง cutover ถ้ามีปัญหาให้แก้ที่ Worker
   ต่อไป และ Express ไม่ได้เปิดเป็น public service แล้ว `reports/rollback-plan.md` เก็บไว้เป็น
   ข้อมูลอ้างอิงทางเทคนิคเท่านั้น ไม่ใช่แผนที่จะลงมือ
-- **Backup: ไม่มี pre-cutover export** — owner ตัดสินใจว่าฐานข้อมูลปัจจุบันยังไม่มีข้อมูลสำคัญ
+- **Backup (cutover ครั้งแรก — ใช้แล้ว ถูกแทนที่ด้วยข้อ 4):** ไม่มี pre-cutover export — owner ตัดสินใจว่าฐานข้อมูลปัจจุบันยังไม่มีข้อมูลสำคัญ
   จึงข้ามขั้นสำรองข้อมูลก่อน cutover (ข้อ 4) ข้อมูลจริงจะถูก import ภายหลัง และเมื่อ import แล้ว
   ค่า `pin_hash` กับ `national_id_hash` ต้องคำนวณด้วย pepper ของ Worker (`PIN_PEPPER`,
   `NATIONAL_ID_PEPPER`) ไม่ใช่รูปแบบ bcrypt ของ Express
@@ -124,7 +124,7 @@
 
 ## 5. ลำดับการ deploy
 
-1. สำรองข้อมูลตามข้อ 4 — owner ตัดสินใจข้ามขั้นนี้ในรอบนี้ (ดูหัวข้อ Decisions)
+1. สำรองข้อมูลตามข้อ 4 ก่อนรัน SQL ใหม่ (ฐานข้อมูลมีข้อมูลจริงแล้ว ห้ามข้าม)
 2. ตรวจว่า SQL ที่รันแล้วตรงกับหัวข้อ 8.1 (ไม่ต้องรันซ้ำ; ถ้าเป็นฐานข้อมูลใหม่ให้สำรองก่อน)
 3. สร้าง bucket `leave-certificates` เป็น **private** และตรวจว่าไฟล์เข้า/ออกผ่าน service role เท่านั้น
 4. ตั้ง secrets ทั้งห้ารายการบน `hr-hub-api` (ข้อ 2) รวม `TURNSTILE_SECRET_KEY` ถ้าเปิดใช้ Turnstile
