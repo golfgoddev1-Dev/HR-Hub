@@ -9,6 +9,11 @@ import { base64UrlToBytes, bytesToBase64Url, utf8 } from "./base64url.js";
 export const VAPID_TOKEN_LIFETIME_SECONDS = 12 * 60 * 60;
 export const VAPID_MAX_LIFETIME_SECONDS = 24 * 60 * 60;
 
+// ECDSA signing is the costliest step per push and the token is valid for
+// hours, so one signed token per push origin is reused for the isolate's life.
+const REUSE_MIN_REMAINING_MS = 60 * 60 * 1000;
+const tokenCache = new Map();
+
 function requireP256Public(value) {
   const bytes = base64UrlToBytes(value);
   if (!bytes || bytes.length !== 65 || bytes[0] !== 0x04) throw new Error("invalid vapid public key");
@@ -51,6 +56,12 @@ export async function buildVapidAuthorization({
   const privateBytes = requireP256Private(privateKey);
   const claims = vapidClaims({ endpoint, subject, now });
 
+  const cacheKey = `${claims.aud}|${claims.sub}|${publicKey}`;
+  const cached = tokenCache.get(cacheKey);
+  if (cached && cached.claims.exp * 1000 - now.getTime() > REUSE_MIN_REMAINING_MS) {
+    return cached;
+  }
+
   const header = { typ: "JWT", alg: "ES256" };
   const signingInput = `${bytesToBase64Url(utf8(JSON.stringify(header)))}.${bytesToBase64Url(
     utf8(JSON.stringify(claims))
@@ -76,10 +87,12 @@ export async function buildVapidAuthorization({
   );
 
   const token = `${signingInput}.${bytesToBase64Url(signature)}`;
-  return {
+  const result = {
     authorization: `vapid t=${token}, k=${publicKey}`,
     token,
     claims,
     expiresAt: new Date(claims.exp * 1000).toISOString(),
   };
+  tokenCache.set(cacheKey, result);
+  return result;
 }
