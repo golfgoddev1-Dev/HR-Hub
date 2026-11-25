@@ -1,7 +1,7 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import NotificationSwitch from './NotificationSwitch.vue'
-import { getCached } from '../lib/data-cache.js'
+import { getCached, patchCached } from '../lib/data-cache.js'
 import { DATA_KEYS, PAGE_TTL_MS, loaders } from '../lib/shared-data.js'
 import {
   autoEnablePush,
@@ -46,6 +46,9 @@ const toggle = createNotificationToggle({
   },
   onConfirm: (value) => {
     writeNotificationState(employeeId, value)
+    // The shared status read lives for a minute; without this the next visit
+    // would adopt the old value and flip the switch back.
+    patchCached(DATA_KEYS.notificationStatus, (status) => ({ ...status, enabled: value }))
   },
   onNotice: (text) => {
     errorMessage.value = text
