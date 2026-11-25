@@ -35,7 +35,7 @@ const AUDIT_ACTION = "meeting_backfill_imported";
 const AUDIT_ENTITY = "meeting_backfill";
 
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-const MAX_FILE_BYTES = 5 * 1024 * 1024;
+const MAX_FILE_BYTES = 1024 * 1024;
 const MAX_FORM_BYTES = MAX_FILE_BYTES + 128 * 1024;
 const MAX_DATA_ROWS = 5000;
 const MAX_BATCH_ROWS = 500;

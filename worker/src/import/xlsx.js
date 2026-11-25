@@ -20,8 +20,8 @@ const FORBIDDEN_ENTRY_PATTERNS = [
 // A 2 MB upload can inflate to gigabytes (zip bomb), which would exhaust the
 // Worker's memory and CPU. Sizes come from the archive's central directory, so
 // an oversized entry is refused before anything is inflated.
-const MAX_ENTRY_BYTES = 8 * 1024 * 1024;
-const MAX_TOTAL_BYTES = 24 * 1024 * 1024;
+const MAX_ENTRY_BYTES = 4 * 1024 * 1024;
+const MAX_TOTAL_BYTES = 8 * 1024 * 1024;
 
 const EXTERNAL_RELATIONSHIP = /TargetMode\s*=\s*"External"/i;
 const EXTERNAL_TYPES = /relationships\/(externalLink|oleObject|package)/i;
