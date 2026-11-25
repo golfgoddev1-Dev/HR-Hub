@@ -40,4 +40,5 @@ worker/.dev.vars
 
 # graphify output (generated, large)
 graphify-out/
+graph-custom/
 worker/.test-account.env
