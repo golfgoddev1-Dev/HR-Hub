@@ -5,7 +5,8 @@
 // - enqueue never breaks the leave action itself (a failed insert is logged);
 // - a row is claimed with a conditional update (status pending -> sending), so
 //   two overlapping runs cannot send the same row twice;
-// - at most NOTIFICATION_BATCH rows per run, to stay inside the free plan;
+// - at most NOTIFICATION_BATCH rows per run and SUBREQUEST_BUDGET subrequests,
+//   to stay inside the free plan;
 // - 404/410 from the push service deletes that subscription;
 // - the payload never carries a reason or a leave type (see push/payload.js).
 
@@ -32,6 +33,25 @@ export const RETRY_DELAY_MINUTES = [1, 5, 15, 60, 240];
 export const PUSH_TTL_SECONDS = 3600;
 export const MAX_SUBSCRIPTIONS_PER_EMPLOYEE = 10;
 export const STALE_CLAIM_MINUTES = 10;
+// Workers Free allows 50 subrequests per invocation; keep 2 for the audit row.
+// A row starts only if its worst case (claim, subscriptions, update, plus one
+// send and one delete per subscription) still fits. The rest wait a minute.
+export const SUBREQUEST_BUDGET = 48;
+const ROW_WORST_CASE = 3 + 2 * MAX_SUBSCRIPTIONS_PER_EMPLOYEE;
+const NOTICE_WORST_CASE = 6 + 2 * MAX_SUBSCRIPTIONS_PER_EMPLOYEE;
+
+function meterDb(db, budget) {
+  return new Proxy(db, {
+    get(target, key) {
+      const value = target[key];
+      if (typeof value !== "function") return value;
+      return (...args) => {
+        budget.left -= 1;
+        return value.apply(target, args);
+      };
+    },
+  });
+}
 export const PENDING_NOTICE_INTERVAL_MINUTES = 60;
 const PENDING_NOTICE_INTERVAL_MS = PENDING_NOTICE_INTERVAL_MINUTES * 60 * 1000;
 
@@ -293,7 +313,7 @@ async function deleteSubscriptions(db, endpoints, employeeId) {
  * overlapping runs cannot send twice. Nothing here is logged with an endpoint
  * or a count.
  */
-export async function sendPendingApproverNotices(env, db, now, summary = null) {
+export async function sendPendingApproverNotices(env, db, now, summary = null, budget = null) {
   let sent = 0;
   const rows = await db.select(PUSH_SUBSCRIPTIONS_TABLE, {
     columns: "id,employee_id,endpoint,p256dh,auth",
@@ -314,6 +334,7 @@ export async function sendPendingApproverNotices(env, db, now, summary = null) {
 
   const nowIso = now.toISOString();
   for (const [employeeId, subscriptions] of byEmployee) {
+    if (budget && budget.left < NOTICE_WORST_CASE) break;
     try {
       const employee = await db.select("employees", {
         columns: "id,notifications_enabled,pending_notice_at",
@@ -353,6 +374,7 @@ export async function sendPendingApproverNotices(env, db, now, summary = null) {
       const payloadText = JSON.stringify(buildSignedOutPendingPayload(pendingCount));
       const results = [];
       for (const subscription of subscriptions) {
+        if (budget) budget.left -= 1;
         try {
           results.push(await sendToSubscription(env, subscription, payloadText, now));
         } catch (error) {
@@ -460,7 +482,8 @@ export async function runNotificationQueue(env, now = new Date(), { ids = null }
   }
 
   try {
-    const db = createDb(env);
+    const budget = { left: SUBREQUEST_BUDGET };
+    const db = meterDb(createDb(env), budget);
     const nowIso = now.toISOString();
 
     // A run that died between claim and update leaves a row in 'sending'. Put
@@ -497,6 +520,7 @@ export async function runNotificationQueue(env, now = new Date(), { ids = null }
     });
 
     for (const row of rows) {
+      if (budget.left < ROW_WORST_CASE) break;
       if (!(await claimRow(db, row.id))) continue;
       summary.selected += 1;
 
@@ -519,6 +543,7 @@ export async function runNotificationQueue(env, now = new Date(), { ids = null }
       const results = [];
       if (payloadText) {
         for (const subscription of subscriptions) {
+          budget.left -= 1;
           // A signed-out browser only ever receives the generic pending-count
           // notice below, never a request-scoped payload on a shared device.
           if (subscription.signed_out === true) continue;
@@ -570,7 +595,7 @@ export async function runNotificationQueue(env, now = new Date(), { ids = null }
     // sends the row it just queued and leaves this once-a-minute work to the
     // trigger, so a leave submit does not count every signed-out queue.
     if (!Array.isArray(ids) || ids.length === 0) {
-      await sendPendingApproverNotices(env, db, now, summary);
+      await sendPendingApproverNotices(env, db, now, summary, budget);
     }
 
     if (summary.errors > 0 || summary.failed > 0 || summary.deactivated > 0) {

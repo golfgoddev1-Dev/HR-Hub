@@ -525,3 +525,28 @@ test("other cron expressions run neither job", async (t) => {
     fake.restore();
   }
 });
+
+test("a run stops starting rows once the subrequest budget is spent", async (t) => {
+  const queue = Array.from({ length: 30 }, (_, index) => queueRow({ id: `queue-${index}` }));
+  const fake = await createBackend({
+    queue,
+    subscriptions: [
+      {
+        id: "sub-1",
+        employee_id: EMPLOYEE_ID,
+        endpoint: "https://push.invalid/one",
+        p256dh: "AAAA",
+        auth: "BBBB",
+        is_active: true,
+      },
+    ],
+  });
+  t.after(() => fake.restore());
+  t.after(fake.silence());
+
+  const summary = await runNotificationQueue(ENV, NOW);
+
+  assert.ok(summary.selected > 0 && summary.selected < 30);
+  assert.ok(fake.calls.length <= 50);
+  assert.ok(fake.state.notification_queue.some((row) => row.status === "pending"));
+});
