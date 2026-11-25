@@ -1,20 +1,5 @@
-// CSV reading for the employee import. Pure text functions, no I/O.
-
-const BOM = "\uFEFF";
-
-/**
- * Decodes bytes as UTF-8, rejecting anything that is not valid text.
- * Returns null for binary or malformed input.
- */
-export function decodeUtf8(bytes) {
-  try {
-    const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-    if (text.includes("\u0000")) return null;
-    return text.startsWith(BOM) ? text.slice(BOM.length) : text;
-  } catch {
-    return null;
-  }
-}
+// Test-only CSV parser: the browser parses real files; tests use this to build
+// the rows it would send.
 
 /**
  * RFC 4180 style parser: quoted fields, escaped double quotes, CRLF or LF,

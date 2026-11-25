@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 
 const MAX_FILE_BYTES = 2 * 1024 * 1024
-const ZIP_SIGNATURE = [0x50, 0x4b, 0x03, 0x04]
+const MAX_DATA_ROWS = 500
 const LOAD_ERROR = 'ไม่สามารถตรวจไฟล์ได้ กรุณาลองใหม่'
 const SAVE_ERROR = 'ระบบขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้ง'
 
@@ -10,6 +10,7 @@ const stage = ref('idle') // idle | checking | preview | saving | done
 const errorMessage = ref('')
 const fileError = ref('')
 const selectedFile = ref(null)
+const parsedRows = ref(null)
 const preview = ref(null)
 const result = ref(null)
 const decisions = ref({})
@@ -26,29 +27,62 @@ function reset() {
   errorMessage.value = ''
   fileError.value = ''
   selectedFile.value = null
+  parsedRows.value = null
 }
 
-async function checkFile(file) {
-  if (!file) return 'ไม่พบไฟล์'
-  if (file.size > MAX_FILE_BYTES) return 'ไฟล์ใหญ่เกิน 2 MB'
+async function postJson(path, body) {
+  const response = await fetch(path, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  const data = await response.json().catch(() => ({}))
+  return { ok: response.ok && data.ok === true, data }
+}
+
+/** Reads the first worksheet in the browser; returns { rows } or { error }. */
+async function readRows(file) {
   const lower = file.name.toLowerCase()
-  if (lower.endsWith('.xlsm')) return 'ไม่รับไฟล์ .xlsm'
-  if (!lower.endsWith('.xlsx') && !lower.endsWith('.csv')) return 'รับเฉพาะไฟล์ .xlsx หรือ .csv'
-
-  const bytes = new Uint8Array(await file.arrayBuffer())
-  const isZip = ZIP_SIGNATURE.every((byte, index) => bytes[index] === byte)
   const isXlsx = lower.endsWith('.xlsx')
-
-  if (isXlsx && !isZip) return 'ไฟล์ .xlsx ต้องเป็นไฟล์ Excel ที่ถูกต้อง'
+  const bytes = new Uint8Array(await file.arrayBuffer())
+  let text = ''
   if (!isXlsx) {
     try {
-      const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
-      if (text.includes('\u0000') || isZip) return 'ไฟล์ .csv ต้องเป็นข้อความ UTF-8'
+      text = new TextDecoder('utf-8', { fatal: true }).decode(bytes).replace(/^\uFEFF/, '')
     } catch {
-      return 'ไฟล์ .csv ต้องเป็นข้อความ UTF-8'
+      return { error: 'ไฟล์ .csv ต้องเป็นข้อความ UTF-8' }
     }
+    if (text.includes('\u0000')) return { error: 'ไฟล์ .csv ต้องเป็นข้อความ UTF-8' }
   }
-  return ''
+
+  const XLSX = await import('xlsx')
+  let workbook
+  try {
+    workbook = isXlsx
+      ? XLSX.read(bytes, { type: 'array', cellDates: false })
+      : XLSX.read(text, { type: 'string', cellDates: false })
+  } catch {
+    return { error: isXlsx ? 'ไฟล์ .xlsx ต้องเป็นไฟล์ Excel ที่ถูกต้อง' : 'ไฟล์ .csv ต้องเป็นข้อความ UTF-8' }
+  }
+
+  const sheet = workbook.Sheets[workbook.SheetNames[0]]
+  if (!sheet) return { rows: [] }
+
+  const grid = XLSX.utils.sheet_to_json(sheet, {
+    header: 1,
+    range: 0,
+    raw: false,
+    defval: '',
+    blankrows: true,
+  })
+  const rows = []
+  grid.forEach((cells, index) => {
+    const values = cells.map((value) => String(value ?? ''))
+    if (values.every((value) => value.trim() === '')) return
+    rows.push({ rowNumber: index + 1, cells: values })
+  })
+  return { rows }
 }
 
 async function onFileChange(event) {
@@ -60,25 +94,46 @@ async function onFileChange(event) {
   result.value = null
   decisions.value = {}
 
-  const problem = await checkFile(file)
-  if (problem) {
-    fileError.value = problem
+  const lower = file.name.toLowerCase()
+  if (file.size > MAX_FILE_BYTES) {
+    fileError.value = 'ไฟล์ใหญ่เกิน 2 MB'
+    selectedFile.value = null
+    return
+  }
+  if (lower.endsWith('.xlsm')) {
+    fileError.value = 'ไม่รับไฟล์ .xlsm'
+    selectedFile.value = null
+    return
+  }
+  if (!lower.endsWith('.xlsx') && !lower.endsWith('.csv')) {
+    fileError.value = 'รับเฉพาะไฟล์ .xlsx หรือ .csv'
+    selectedFile.value = null
+    return
+  }
+
+  stage.value = 'checking'
+  const read = await readRows(file)
+  if (read.error) {
+    stage.value = 'idle'
+    fileError.value = read.error
+    selectedFile.value = null
+    return
+  }
+  if (read.rows.length > MAX_DATA_ROWS + 1) {
+    stage.value = 'idle'
+    fileError.value = `จำนวนแถวเกิน ${MAX_DATA_ROWS} แถวต่อครั้ง`
     selectedFile.value = null
     return
   }
 
   selectedFile.value = file
-  stage.value = 'checking'
+  parsedRows.value = read.rows
   try {
-    const form = new FormData()
-    form.append('file', file)
-    const response = await fetch('/api/hr/employees/import/preview', {
-      method: 'POST',
-      credentials: 'same-origin',
-      body: form,
+    const { ok, data } = await postJson('/api/hr/employees/import/preview', {
+      fileName: file.name,
+      rows: read.rows,
     })
-    const data = await response.json().catch(() => ({}))
-    if (!response.ok || data.ok !== true) {
+    if (!ok) {
       stage.value = 'idle'
       errorMessage.value = typeof data.message === 'string' ? data.message : LOAD_ERROR
       return
@@ -95,25 +150,16 @@ async function onFileChange(event) {
 }
 
 async function confirmImport() {
-  if (stage.value === 'saving' || !selectedFile.value) return
+  if (stage.value === 'saving' || !selectedFile.value || !parsedRows.value) return
   stage.value = 'saving'
   errorMessage.value = ''
   try {
-    const form = new FormData()
-    form.append('file', selectedFile.value)
-    form.append(
-      'choices',
-      JSON.stringify(
-        Object.entries(decisions.value).map(([row, decision]) => ({ row: Number(row), decision }))
-      )
-    )
-    const response = await fetch('/api/hr/employees/import/confirm', {
-      method: 'POST',
-      credentials: 'same-origin',
-      body: form,
+    const { ok, data } = await postJson('/api/hr/employees/import/confirm', {
+      fileName: selectedFile.value.name,
+      rows: parsedRows.value,
+      choices: Object.entries(decisions.value).map(([row, decision]) => ({ row: Number(row), decision })),
     })
-    const data = await response.json().catch(() => ({}))
-    if (!response.ok || data.ok !== true) {
+    if (!ok) {
       stage.value = 'preview'
       errorMessage.value = typeof data.message === 'string' ? data.message : SAVE_ERROR
       return

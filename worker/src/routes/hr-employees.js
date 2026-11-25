@@ -10,7 +10,7 @@ import { getRequiredEnv } from "../env.js";
 import { nationalIdHash } from "../national-id.js";
 import { decryptNationalId, encryptNationalId } from "../import/national-id-crypto.js";
 import { buildPlan, DECISION_USE_FILE } from "../import/plan.js";
-import { FILE_ERRORS, MAX_DATA_ROWS, MAX_FILE_BYTES, XLSX_MIME, readTable } from "../import/file.js";
+import { FILE_ERRORS, MAX_DATA_ROWS, XLSX_MIME, tableFromRows } from "../import/file.js";
 import { MAX_LENGTHS, maskNationalId } from "../import/validate.js";
 import { buildTemplateXlsx } from "../import/xlsx.js";
 import { checkRateLimit, clientIp, ipRateLimitKey } from "../rate-limit.js";
@@ -68,7 +68,10 @@ const RESET_CODE_TTL_MS = 24 * 60 * 60 * 1000;
 const VIEW_COUNTER_FUNCTION = "increment_national_id_view";
 
 const MAX_CHOICES = MAX_DATA_ROWS;
-const MAX_FORM_BYTES = MAX_FILE_BYTES + 64 * 1024;
+const MAX_BODY_BYTES = 1024 * 1024;
+const MAX_ENTRIES = 10 * MAX_DATA_ROWS;
+const MAX_CELLS_PER_ROW = 50;
+const MAX_CELL_CHARS = 1000;
 
 const INVALID_MESSAGE = "ข้อมูลไม่ถูกต้อง";
 const NO_FILE_MESSAGE = "ไม่พบไฟล์ที่อัปโหลด";
@@ -90,7 +93,7 @@ const UUID_PATTERN =
   /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/i;
 
 const SETTINGS = {
-  maxFileBytes: MAX_FILE_BYTES,
+  maxFileBytes: 2 * 1024 * 1024,
   maxRows: MAX_DATA_ROWS,
   maxLengths: MAX_LENGTHS,
   acceptedTypes: [".xlsx", ".csv"],
@@ -175,48 +178,59 @@ async function decryptStored(env, stored) {
   }
 }
 
-/** Reads and validates the uploaded file from a multipart body. */
+/** Reads the browser-parsed rows from a JSON body and checks them. */
 async function readUpload(c) {
   const contentType = c.req.header("Content-Type") ?? "";
-  if (!contentType.toLowerCase().startsWith("multipart/form-data")) {
+  if (!contentType.toLowerCase().startsWith("application/json")) {
     return { ok: false, message: INVALID_MESSAGE };
   }
 
   const declaredLength = Number(c.req.header("Content-Length"));
-  if (Number.isFinite(declaredLength) && declaredLength > MAX_FORM_BYTES) {
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_BODY_BYTES) {
     return { ok: false, message: FILE_ERRORS.tooBig };
   }
 
-  let form;
+  let body;
   try {
-    form = await c.req.formData();
+    body = await c.req.json();
   } catch {
     return { ok: false, message: INVALID_MESSAGE };
   }
-
-  const file = form.get("file");
-  if (!file || typeof file.arrayBuffer !== "function") {
-    return { ok: false, message: NO_FILE_MESSAGE };
-  }
-  if (typeof file.size === "number" && file.size > MAX_FILE_BYTES) {
-    return { ok: false, message: FILE_ERRORS.tooBig };
+  if (!isPlainObject(body) || typeof body.fileName !== "string") {
+    return { ok: false, message: INVALID_MESSAGE };
   }
 
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  const table = readTable({ bytes, fileName: file.name });
+  const extension = /\.([a-z0-9]+)$/i.exec(body.fileName.trim())?.[1]?.toLowerCase() ?? "";
+  if (extension === "xlsm") return { ok: false, message: FILE_ERRORS.xlsm };
+  if (extension !== "xlsx" && extension !== "csv") return { ok: false, message: FILE_ERRORS.extension };
+
+  const entries = readEntries(body.rows);
+  if (entries === null) return { ok: false, message: INVALID_MESSAGE };
+
+  const table = tableFromRows(entries);
   if (!table.ok) return { ok: false, message: table.error };
-  return { ok: true, rows: table.rows, fileName: String(file.name ?? ""), form };
+  return { ok: true, rows: table.rows, fileName: body.fileName, body };
+}
+
+function readEntries(raw) {
+  if (!Array.isArray(raw) || raw.length > MAX_ENTRIES) return null;
+  const entries = [];
+  for (const entry of raw) {
+    if (!isPlainObject(entry)) return null;
+    const rowNumber = Number(entry.rowNumber);
+    if (!Number.isInteger(rowNumber) || rowNumber < 1) return null;
+    if (!Array.isArray(entry.cells) || entry.cells.length > MAX_CELLS_PER_ROW) return null;
+    if (!entry.cells.every((cell) => typeof cell === "string" && cell.length <= MAX_CELL_CHARS)) {
+      return null;
+    }
+    entries.push({ rowNumber, cells: entry.cells });
+  }
+  return entries;
 }
 
 /** Parses the per-row decisions sent by the confirm step. */
-function readDecisions(raw) {
-  if (raw === null || raw === undefined || raw === "") return new Map();
-  let parsed;
-  try {
-    parsed = JSON.parse(String(raw));
-  } catch {
-    return null;
-  }
+function readDecisions(parsed) {
+  if (parsed === null || parsed === undefined) return new Map();
   if (!Array.isArray(parsed) || parsed.length > MAX_CHOICES) return null;
 
   const decisions = new Map();
@@ -431,7 +445,7 @@ hrEmployees.post("/import/confirm", async (c) => {
   const upload = await readUpload(c);
   if (!upload.ok) return c.json({ ok: false, message: upload.message }, 400);
 
-  const decisions = readDecisions(upload.form ? upload.form.get("choices") : null);
+  const decisions = readDecisions(upload.body.choices);
   if (decisions === null) return c.json({ ok: false, message: INVALID_MESSAGE }, 400);
 
   try {

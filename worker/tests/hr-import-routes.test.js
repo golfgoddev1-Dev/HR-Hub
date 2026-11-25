@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import app from "../src/app.js";
 import { hmacSha256Hex, sha256Hex } from "../src/crypto.js";
+import { parseCsv } from "./helpers/parse-csv.js";
 
 const TOKEN = "t".repeat(43);
 const EMPLOYEE_TOKEN = "e".repeat(43);
@@ -246,17 +247,23 @@ function csv(rows) {
   return [HEADERS.join(","), ...rows].join("\n");
 }
 
-async function postFile(path, { content, fileName, choices, cookie = `hr_session=${TOKEN}` }) {
-  const form = new FormData();
-  form.append("file", new File([new TextEncoder().encode(content)], fileName, { type: "text/csv" }));
-  if (choices !== undefined) form.append("choices", JSON.stringify(choices));
+// The browser parses the file and posts its non-blank rows; this mirrors that.
+function browserRows(content) {
+  return parseCsv(content)
+    .map((cells, index) => ({ rowNumber: index + 1, cells }))
+    .filter((entry) => entry.cells.some((cell) => cell.trim() !== ""));
+}
 
-  const headers = {};
+async function postFile(path, { content, fileName, choices, cookie = `hr_session=${TOKEN}` }) {
+  const payload = { fileName, rows: browserRows(content) };
+  if (choices !== undefined) payload.choices = choices;
+
+  const headers = { "Content-Type": "application/json" };
   if (cookie) headers.Cookie = cookie;
   const response = await request(`https://fake.local${path}`, {
     method: "POST",
     headers,
-    body: form,
+    body: JSON.stringify(payload),
   });
   const text = await response.text();
   let json = null;
@@ -532,12 +539,16 @@ test("upload rate limit answers 429 and stops before any database read", async (
   t.after(() => fake.restore());
   // Hono reads bindings from the third argument of request(); env overrides are
   // applied there, so this test calls the app directly.
-  const form = new FormData();
-  form.append("file", new File([new TextEncoder().encode(csv([`ABC-00220,นาย,ก,ข,ฝ่ายบุคคล,${ID_MATCH}`]))], "employees.csv"));
-
   const response = await request(
     "https://fake.local/api/hr/employees/import/preview",
-    { method: "POST", headers: { Cookie: `hr_session=${TOKEN}` }, body: form },
+    {
+      method: "POST",
+      headers: { Cookie: `hr_session=${TOKEN}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fileName: "employees.csv",
+        rows: browserRows(csv([`ABC-00220,นาย,ก,ข,ฝ่ายบุคคล,${ID_MATCH}`])),
+      }),
+    },
     makeEnv({ RL_CONTEXT_IP: makeLimiter({ success: false }) })
   );
   assert.equal(response.status, 429);
@@ -563,6 +574,41 @@ test("a rejected file answers 400 with a reason and no national ID", async (t) =
   assert.equal(json.ok, false);
   assert.match(json.message, /คอลัมน์เกิน/);
   assert.equal(/\d{13}/.test(text), false);
+});
+
+test("a multipart upload is refused: the server takes rows, not files", async (t) => {
+  const fake = await createFake();
+  t.after(() => fake.restore());
+
+  const form = new FormData();
+  form.append("file", new File([new TextEncoder().encode(csv([`ABC-00220,นาย,ก,ข,ฝ่ายบุคคล,${ID_MATCH}`]))], "employees.csv"));
+  const response = await request("https://fake.local/api/hr/employees/import/preview", {
+    method: "POST",
+    headers: { Cookie: `hr_session=${TOKEN}` },
+    body: form,
+  });
+  assert.equal(response.status, 400);
+  assert.equal(fake.calls.filter((call) => call.url.includes("name_prefixes")).length, 0);
+});
+
+test("malformed rows are refused before any database read", async (t) => {
+  const fake = await createFake();
+  t.after(() => fake.restore());
+
+  const bad = [
+    { fileName: "employees.csv", rows: "not rows" },
+    { fileName: "employees.csv", rows: [{ rowNumber: 0, cells: [] }] },
+    { fileName: "employees.csv", rows: [{ rowNumber: 1, cells: [1, 2, 3] }] },
+  ];
+  for (const body of bad) {
+    const response = await request("https://fake.local/api/hr/employees/import/preview", {
+      method: "POST",
+      headers: { Cookie: `hr_session=${TOKEN}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    assert.equal(response.status, 400);
+  }
+  assert.equal(fake.calls.filter((call) => call.url.includes("name_prefixes")).length, 0);
 });
 
 test("xlsm uploads are refused before parsing", async (t) => {
