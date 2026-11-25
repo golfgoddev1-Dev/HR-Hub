@@ -160,6 +160,9 @@ async function swipe(wrapper, { from = 100, to = 60, dy = 0, kind = 'touch' } = 
 }
 
 beforeEach(() => {
+  // The balance panel fetches on mount; reject like a refused connection so no
+  // test reaches localhost:3000. Set per test: afterEach unstubs all globals.
+  vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('fetch stubbed') }))
   H.results = []
   H.counts = { pending: 0, approved: 0 }
   H.loaderCalls = 0

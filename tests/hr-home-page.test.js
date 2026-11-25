@@ -8,12 +8,16 @@
 // The contrast maths is self-tested first with known pairs, so a broken formula
 // cannot report optimistic numbers.
 import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import HrHomePage from '../src/pages/HrHomePage.vue'
 import { QUALITY_TIERS } from '../src/lib/background-quality.js'
 
 import { readSource } from './helpers/read-source.js'
+
+// The page fetches on mount; a stub that rejects like a refused connection keeps
+// the test off the network (happy-dom would otherwise call localhost:3000).
+vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('fetch stubbed') }))
 
 const PAGE_SOURCE = readSource('src/pages/HrHomePage.vue')
 const PAGE_STYLES = [...PAGE_SOURCE.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)]

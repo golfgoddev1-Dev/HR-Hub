@@ -4,6 +4,10 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+// The landing page's balance panel fetches on mount; reject like a refused connection
+// so no test reaches localhost:3000.
+vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('fetch stubbed') }))
+
 const H = vi.hoisted(() => ({
   counts: { pending: 0, approved: 0 },
 }))

@@ -142,6 +142,10 @@ const H = vi.hoisted(() => ({
   approvalLoads: 0,
 }))
 
+// The landing page's balance panel fetches on mount; reject like a refused connection
+// so no test reaches localhost:3000.
+vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('fetch stubbed') }))
+
 vi.mock('../src/api.js', () => ({
   getSession: async () => ({ isApprover: false }),
 }))
