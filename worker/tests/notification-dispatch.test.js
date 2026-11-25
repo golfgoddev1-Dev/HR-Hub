@@ -141,7 +141,9 @@ async function createBackend({ failQueueInsert = false, queue = [], subscription
     calls.push({ url, method, table });
 
     if (method === "GET") {
-      return jsonResponse((state[table] ?? []).filter((row) => matches(params, row)));
+      const found = (state[table] ?? []).filter((row) => matches(params, row));
+      const limit = Number(params.get("limit"));
+      return jsonResponse(Number.isInteger(limit) && limit > 0 ? found.slice(0, limit) : found);
     }
 
     if (method === "POST") {
@@ -242,9 +244,9 @@ test("a leave submit queues the push with next_attempt_at and dispatches it", as
 
   const queued = fake.state.notification_queue[0];
   assert.equal(queued.employee_id, APPROVER_ID);
-  // The in-request pass may already have claimed the row, so its final status
-  // is asserted after waitUntil below.
-  assert.equal(queued.next_attempt_at, queued.created_at);
+  // The in-request pass may already have claimed the row, and a claim restamps
+  // next_attempt_at with the claim time. The final status is asserted after
+  // waitUntil below.
   assert.equal(typeof queued.next_attempt_at, "string");
 
   // The response was returned before dispatch ran; the pass is in waitUntil.
@@ -549,4 +551,66 @@ test("a run stops starting rows once the subrequest budget is spent", async (t) 
   assert.ok(summary.selected > 0 && summary.selected < 30);
   assert.ok(fake.calls.length <= 50);
   assert.ok(fake.state.notification_queue.some((row) => row.status === "pending"));
+});
+
+test("a run takes at most two rows and leaves the rest pending for the next minute", async (t) => {
+  const queue = Array.from({ length: 5 }, (_, index) => queueRow({ id: `queue-${index}` }));
+  const fake = await createBackend({
+    queue,
+    subscriptions: [
+      {
+        id: "sub-1",
+        employee_id: EMPLOYEE_ID,
+        endpoint: "https://push.invalid/one",
+        p256dh: "AAAA",
+        auth: "BBBB",
+        is_active: true,
+      },
+    ],
+  });
+  t.after(() => fake.restore());
+  t.after(fake.silence());
+
+  // The fake refuses every send, so a tried row goes back to pending with
+  // attempts = 1; the three rows a run never took keep attempts = 0.
+  const first = await runNotificationQueue(ENV, NOW);
+  assert.equal(first.selected, 2);
+  assert.equal(fake.claims(), 2);
+  assert.equal(fake.state.notification_queue.filter((row) => row.attempts === 0).length, 3);
+
+  const second = await runNotificationQueue(ENV, new Date(NOW.getTime() + 60 * 1000));
+  assert.ok(second.selected <= 2);
+});
+
+test("a row cut off mid-send is not sent again inside the stale window, then once after it", async (t) => {
+  const claimedAt = new Date(NOW.getTime() - 60 * 1000);
+  const fake = await createBackend({
+    queue: [queueRow({ id: "cut-off", status: "sending", next_attempt_at: claimedAt.toISOString() })],
+    subscriptions: [
+      {
+        id: "sub-1",
+        employee_id: EMPLOYEE_ID,
+        endpoint: "https://push.invalid/one",
+        p256dh: "AAAA",
+        auth: "BBBB",
+        is_active: true,
+      },
+    ],
+  });
+  t.after(() => fake.restore());
+  t.after(fake.silence());
+
+  // One minute after the claim: still inside the window, so nothing is sent.
+  const within = await runNotificationQueue(ENV, NOW);
+  assert.equal(within.recovered, 0);
+  assert.equal(within.selected, 0);
+  assert.equal(fake.state.notification_queue[0].status, "sending");
+
+  // Past the window the row returns to pending and is sent exactly once.
+  const after = await runNotificationQueue(ENV, new Date(claimedAt.getTime() + 11 * 60 * 1000));
+  assert.equal(after.recovered, 1);
+  assert.equal(after.selected, 1);
+
+  const again = await runNotificationQueue(ENV, new Date(claimedAt.getTime() + 11 * 60 * 1000));
+  assert.equal(again.selected, 0);
 });

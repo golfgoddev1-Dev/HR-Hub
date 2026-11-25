@@ -6,7 +6,8 @@
 // - a row is claimed with a conditional update (status pending -> sending), so
 //   two overlapping runs cannot send the same row twice;
 // - at most NOTIFICATION_BATCH rows per run and SUBREQUEST_BUDGET subrequests,
-//   to stay inside the free plan;
+//   to stay inside the free plan (10 ms CPU per invocation); rows left over
+//   stay pending and the every-minute cron takes them;
 // - 404/410 from the push service deletes that subscription;
 // - the payload never carries a reason or a leave type (see push/payload.js).
 
@@ -27,7 +28,7 @@ export const PUSH_SUBSCRIPTIONS_TABLE = "push_subscriptions";
 export const AUDIT_TABLE = "audit_logs";
 
 export const NOTIFICATION_CRON = "* * * * *";
-export const NOTIFICATION_BATCH = 50;
+export const NOTIFICATION_BATCH = 2;
 export const MAX_ATTEMPTS = 5;
 export const RETRY_DELAY_MINUTES = [1, 5, 15, 60, 240];
 export const PUSH_TTL_SECONDS = 3600;
@@ -271,11 +272,13 @@ export async function enqueueNotificationSafely(db, options) {
 }
 
 /** Conditional claim: only the run that flips pending -> sending may send. */
-async function claimRow(db, id) {
+async function claimRow(db, id, nowIso) {
   if (!id) return false;
   const claimed = await db.update(
     NOTIFICATION_QUEUE_TABLE,
-    { status: "sending" },
+    // next_attempt_at is stamped with the claim time so the stale window below
+    // counts from the claim, not from when the row first became due.
+    { status: "sending", next_attempt_at: nowIso },
     [
       ["id", "eq", id],
       ["status", "eq", "pending"],
@@ -375,6 +378,7 @@ export async function sendPendingApproverNotices(env, db, now, summary = null, b
       const results = [];
       for (const subscription of subscriptions) {
         if (budget) budget.left -= 1;
+        if (summary) summary.sends += 1;
         try {
           results.push(await sendToSubscription(env, subscription, payloadText, now));
         } catch (error) {
@@ -468,6 +472,7 @@ export async function runNotificationQueue(env, now = new Date(), { ids = null }
     selected: 0,
     recovered: 0,
     sent: 0,
+    sends: 0,
     retried: 0,
     failed: 0,
     cancelled: 0,
@@ -521,7 +526,7 @@ export async function runNotificationQueue(env, now = new Date(), { ids = null }
 
     for (const row of rows) {
       if (budget.left < ROW_WORST_CASE) break;
-      if (!(await claimRow(db, row.id))) continue;
+      if (!(await claimRow(db, row.id, nowIso))) continue;
       summary.selected += 1;
 
       let payloadText;
@@ -544,6 +549,7 @@ export async function runNotificationQueue(env, now = new Date(), { ids = null }
       if (payloadText) {
         for (const subscription of subscriptions) {
           budget.left -= 1;
+          summary.sends += 1;
           // A signed-out browser only ever receives the generic pending-count
           // notice below, never a request-scoped payload on a shared device.
           if (subscription.signed_out === true) continue;
@@ -596,6 +602,15 @@ export async function runNotificationQueue(env, now = new Date(), { ids = null }
     // trigger, so a leave submit does not count every signed-out queue.
     if (!Array.isArray(ids) || ids.length === 0) {
       await sendPendingApproverNotices(env, db, now, summary, budget);
+    }
+
+    if (summary.selected > 0 || summary.pendingNotices > 0) {
+      // Counts only: lets `wrangler tail` show how many sends one invocation made.
+      console.log("[notification-run]", {
+        selected: summary.selected,
+        sends: summary.sends,
+        request: Array.isArray(ids) && ids.length > 0,
+      });
     }
 
     if (summary.errors > 0 || summary.failed > 0 || summary.deactivated > 0) {
