@@ -40,7 +40,7 @@
 - URL และคีย์ของโปรเจกต์เก็บเป็น secret ของ Worker เท่านั้น (ดูข้อ 2) ไม่เก็บในไฟล์หรือ repository
 - Schema: baseline ของ schema `public` อยู่ที่ `worker/sql/baseline/` (dump วันที่ 2026-11-25, ไม่มีข้อมูลแถว)
   ใช้กับฐานข้อมูลเปล่าเท่านั้น production ห้ามรันซ้ำ
-- TODO: confirm with owner — ภูมิภาค (region) ของโปรเจกต์
+- ภูมิภาค (region) ของโปรเจกต์: **ap-south-1** (South Asia, Mumbai)
 
 ## 2. Cloudflare Worker (API)
 
