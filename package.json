@@ -15,7 +15,8 @@
     "check:supabase": "node scripts/check-supabase.js",
     "check:meeting-types": "node scripts/check-meeting-types.js",
     "check:ui-skill": "node scripts/check-ui-skill.mjs",
-    "issue:reset-code": "node scripts/issue-reset-code.js"
+    "issue:reset-code": "node scripts/issue-reset-code.js",
+    "graph": "graphify update . && node graph-custom/build-galaxy.mjs && node graph-custom/inject.mjs"
   },
   "dependencies": {
     "@fontsource/ibm-plex-sans": "^5.3.0",
