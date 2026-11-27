@@ -201,6 +201,7 @@ describe('persistent shell route', () => {
       '/admin',
       '/admin/permissions',
       '/admin/audit',
+      '/admin/health',
       '/:pathMatch(.*)*',
     ]
     expect(DECLARED_PATHS.sort()).toEqual(expected.sort())

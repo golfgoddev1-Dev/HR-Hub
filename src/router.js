@@ -223,6 +223,11 @@ export const router = createRouter({
           component: page(() => import('./pages/AdminAuditPage.vue')),
           meta: { requiresAuth: true, role: 'system_admin' },
         },
+        {
+          path: '/admin/health',
+          component: page(() => import('./pages/AdminHealthPage.vue')),
+          meta: { requiresAuth: true, role: 'system_admin' },
+        },
       ],
     },
 

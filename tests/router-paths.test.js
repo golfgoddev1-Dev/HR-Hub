@@ -82,7 +82,7 @@ describe('system_admin landing page', () => {
 
   it('the admin menu links only to the pages that exist', () => {
     // The two live entries come from the shared config; both have a route.
-    for (const target of ['/admin', '/admin/permissions', '/admin/audit']) {
+    for (const target of ['/admin', '/admin/permissions', '/admin/audit', '/admin/health']) {
       expect(NAV_CONFIG).toContain(`to: '${target}'`)
       expect(ROUTER).toContain(`path: '${target}'`)
     }

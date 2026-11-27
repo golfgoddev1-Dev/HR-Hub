@@ -1,8 +1,9 @@
 // Admin routes, mounted at /api/admin by src/app.js.
 //
-// Three parts:
+// Four parts:
 // - /overview, a read-only summary of database counts (no rows, no audit);
 // - /audit, a read-only, paged view of audit_logs without its detail column;
+// - /health, read-only counts of the push and email send queues;
 // - /permissions, where a system_admin searches one employee and sets the four
 //   permission flags that exist in this system: hr_admins, meeting_admins,
 //   system_admins, and the leave approver tables the HR approvers page already
@@ -28,6 +29,7 @@ import {
   approverDeactivation,
   approverReactivation,
 } from "../leave-approvers.js";
+import { HEALTH_QUEUES, healthCutoffs, queueFilters } from "../admin-health.js";
 import {
   AUDIT_PAGE_SIZE,
   auditPeopleIds,
@@ -414,6 +416,54 @@ admin.get("/audit", async (c) => {
     );
   } catch (error) {
     logError("admin audit read failed", error);
+    return c.json({ ok: false, message: MESSAGE.saveError }, 500);
+  }
+});
+
+// --- GET /api/admin/health ---------------------------------------------------
+// Ten small reads (five per queue), well inside the Worker subrequest budget.
+
+async function readQueueHealth(db, table, cutoffs) {
+  const filters = queueFilters(cutoffs);
+  const [pending, sending, overdue, failed, lastSent] = await Promise.all([
+    db.count(table, { filters: filters.pending }),
+    db.count(table, { filters: filters.sending }),
+    db.count(table, { filters: filters.overdue }),
+    db.count(table, { filters: filters.failed }),
+    db.select(table, {
+      columns: "sent_at",
+      filters: filters.lastSent,
+      order: "sent_at.desc",
+      limit: 1,
+    }),
+  ]);
+  return {
+    pending,
+    sending,
+    overdue,
+    failed24h: failed,
+    lastSentAt: lastSent[0]?.sent_at ?? null,
+  };
+}
+
+admin.get("/health", async (c) => {
+  const denied = await guard(c);
+  if (denied) return denied.response;
+
+  const now = new Date();
+  try {
+    const db = createDb(c.env);
+    const cutoffs = healthCutoffs(now);
+    const results = await Promise.all(
+      HEALTH_QUEUES.map((queue) => readQueueHealth(db, queue.table, cutoffs))
+    );
+    const queues = {};
+    HEALTH_QUEUES.forEach((queue, index) => {
+      queues[queue.key] = results[index];
+    });
+    return c.json({ ok: true, checkedAt: now.toISOString(), queues }, 200);
+  } catch (error) {
+    logError("admin health read failed", error);
     return c.json({ ok: false, message: MESSAGE.saveError }, 500);
   }
 });

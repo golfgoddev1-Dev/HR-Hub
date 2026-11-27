@@ -206,6 +206,18 @@ function stubFor(session) {
     if (path === '/api/leave/hr/catalog' || path === '/api/hr/catalog') {
       return route.fulfill(json({ ok: true, departments: [{ id: 'd1', name: 'การเงิน' }], leaveTypes: [{ id: 't1', name: 'ลาป่วย' }] }))
     }
+    if (path === '/api/admin/health') {
+      return route.fulfill(
+        json({
+          ok: true,
+          checkedAt: '2026-11-27T05:00:00.000Z',
+          queues: {
+            push: { pending: 3, sending: 0, overdue: 1, failed24h: 0, lastSentAt: '2026-11-27T04:58:00.000Z' },
+            email: { pending: 0, sending: 0, overdue: 0, failed24h: 2, lastSentAt: null },
+          },
+        })
+      )
+    }
     if (path === '/api/admin/audit') {
       const actor = { fullName: 'ผู้ดูแล ระบบ', employeeCode: 'ADM001' }
       return route.fulfill(
@@ -278,6 +290,7 @@ const ROUTES = [
   { path: '/admin', session: ADMIN },
   { path: '/admin/permissions', session: ADMIN },
   { path: '/admin/audit', session: ADMIN },
+  { path: '/admin/health', session: ADMIN },
   { path: '/leave/hr/requests/req-1/print', session: HR, name: '/leave/hr/requests/:id/print' },
 ]
 

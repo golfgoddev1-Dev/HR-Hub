@@ -112,6 +112,10 @@ const DYNAMIC_ICON_BINDINGS = {
     icons: ['sync', 'logout'],
   },
   'src/components/AppLayout.vue|brand.icon': { count: 1, icons: ['groups', 'beach_access', 'qr_code_2'] },
+  'src/pages/AdminHealthPage.vue|HEALTH_LEVELS[queueLevel(health.queues[meta.key])].icon': {
+    count: 1,
+    icons: ['check_circle', 'pending', 'error'],
+  },
   'src/pages/AdminPage.vue|stat.icon': {
     count: 1,
     icons: ['groups', 'pending_actions', 'how_to_reg', 'event_busy'],
