@@ -56,6 +56,7 @@ export function adminNavItems() {
   return [
     { label: 'ภาพรวมผู้ดูแล', to: '/admin', icon: 'space_dashboard' },
     { label: 'สิทธิ์ผู้ใช้', to: '/admin/permissions', icon: 'manage_accounts' },
+    { label: 'ประวัติการใช้งาน', to: '/admin/audit', icon: 'history' },
     { label: 'เปลี่ยน PIN', to: '/change-pin', icon: 'password' },
     // Not built yet: labels only, never a target.
     { label: 'จัดการผู้ใช้', icon: 'manage_accounts', disabled: true },

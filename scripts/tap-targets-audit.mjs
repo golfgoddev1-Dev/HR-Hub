@@ -206,6 +206,20 @@ function stubFor(session) {
     if (path === '/api/leave/hr/catalog' || path === '/api/hr/catalog') {
       return route.fulfill(json({ ok: true, departments: [{ id: 'd1', name: 'การเงิน' }], leaveTypes: [{ id: 't1', name: 'ลาป่วย' }] }))
     }
+    if (path === '/api/admin/audit') {
+      const actor = { fullName: 'ผู้ดูแล ระบบ', employeeCode: 'ADM001' }
+      return route.fulfill(
+        json({
+          ok: true,
+          items: [
+            { id: '3', createdAt: '2026-11-02T07:15:00.000Z', action: 'permission_revoked', entity: 'permission', actor, target: { fullName: 'สมชาย ใจดีมากเป็นพิเศษ', employeeCode: 'EMP001' }, permission: 'hr_admin' },
+            { id: '2', createdAt: '2026-11-02T02:40:00.000Z', action: 'leave_approved', entity: 'leave_request', actor, target: null, permission: null },
+            { id: '1', createdAt: '2026-11-01T01:05:00.000Z', action: 'auto_absent_done', entity: 'meeting_session', actor: null, target: null, permission: null },
+          ],
+          nextBefore: '1',
+        })
+      )
+    }
     if (path === '/api/leave/hr/settings') {
       return route.fulfill(
         json({
@@ -263,6 +277,7 @@ const ROUTES = [
   { path: '/meeting/register', session: null },
   { path: '/admin', session: ADMIN },
   { path: '/admin/permissions', session: ADMIN },
+  { path: '/admin/audit', session: ADMIN },
   { path: '/leave/hr/requests/req-1/print', session: HR, name: '/leave/hr/requests/:id/print' },
 ]
 

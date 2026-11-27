@@ -1,7 +1,8 @@
 // Admin routes, mounted at /api/admin by src/app.js.
 //
-// Two parts:
+// Three parts:
 // - /overview, a read-only summary of database counts (no rows, no audit);
+// - /audit, a read-only, paged view of audit_logs without its detail column;
 // - /permissions, where a system_admin searches one employee and sets the four
 //   permission flags that exist in this system: hr_admins, meeting_admins,
 //   system_admins, and the leave approver tables the HR approvers page already
@@ -27,6 +28,12 @@ import {
   approverDeactivation,
   approverReactivation,
 } from "../leave-approvers.js";
+import {
+  AUDIT_PAGE_SIZE,
+  auditPeopleIds,
+  parseAuditQuery,
+  shapeAuditRow,
+} from "../admin-audit.js";
 import {
   MIN_SEARCH_LENGTH,
   SEARCH_LIMIT,
@@ -361,6 +368,52 @@ admin.get("/overview", async (c) => {
     );
   } catch (error) {
     logError("admin overview failed", error);
+    return c.json({ ok: false, message: MESSAGE.saveError }, 500);
+  }
+});
+
+// --- GET /api/admin/audit?action=&from=&to=&before= --------------------------
+// Read-only, newest first, one page of AUDIT_PAGE_SIZE. `nextBefore` is the id to
+// pass as `before` for the next page, or null on the last page. detail is never
+// returned (see admin-audit.js).
+
+admin.get("/audit", async (c) => {
+  const denied = await guard(c);
+  if (denied) return denied.response;
+
+  const filters = parseAuditQuery(new URL(c.req.raw.url).searchParams);
+  if (!filters) return invalidBody(c);
+
+  try {
+    const db = createDb(c.env);
+    const rows = await db.select(AUDIT_TABLE, {
+      columns: "id,actor_id,action,entity,entity_id,detail,created_at",
+      filters,
+      order: "id.desc",
+      limit: AUDIT_PAGE_SIZE + 1,
+    });
+
+    const page = rows.slice(0, AUDIT_PAGE_SIZE);
+    const people = new Map();
+    const ids = auditPeopleIds(page);
+    for (let index = 0; index < ids.length; index += ID_CHUNK) {
+      const found = await db.select(EMPLOYEES_TABLE, {
+        columns: "id,employee_code,full_name",
+        filters: [["id", "in", ids.slice(index, index + ID_CHUNK)]],
+      });
+      for (const row of found) people.set(row.id, row);
+    }
+
+    return c.json(
+      {
+        ok: true,
+        items: page.map((row) => shapeAuditRow(row, people)),
+        nextBefore: rows.length > AUDIT_PAGE_SIZE ? String(page[page.length - 1].id) : null,
+      },
+      200
+    );
+  } catch (error) {
+    logError("admin audit read failed", error);
     return c.json({ ok: false, message: MESSAGE.saveError }, 500);
   }
 });

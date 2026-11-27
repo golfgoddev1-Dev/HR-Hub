@@ -218,6 +218,11 @@ export const router = createRouter({
           component: page(() => import('./pages/AdminPermissionsPage.vue')),
           meta: { requiresAuth: true, role: 'system_admin' },
         },
+        {
+          path: '/admin/audit',
+          component: page(() => import('./pages/AdminAuditPage.vue')),
+          meta: { requiresAuth: true, role: 'system_admin' },
+        },
       ],
     },
 
