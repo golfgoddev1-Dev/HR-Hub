@@ -270,3 +270,30 @@ test("logs carry no reason or name, only table, count, duration and cutoff", asy
   assert.equal(logged.includes("ลับเฉพาะบุคคล"), false);
   assert.equal(logged.includes("Somchai"), false);
 });
+
+test("leave cleanup deletes the stored certificate object written by the upload", async (t) => {
+  t.mock.method(console, "log", () => {});
+  const stored = "leave/emp-1/LV-0001/cert.pdf";
+  const sent = [];
+  t.mock.method(globalThis, "fetch", async (url, init) => {
+    sent.push({ url: String(url), method: init.method, body: JSON.parse(init.body) });
+    return new Response("[]", { status: 200 });
+  });
+
+  const fake = createFakeDb({
+    leaveRows: [leave("with-cert", "approved", "2026-01-01", { medical_certificate_url: stored })],
+  });
+  const summary = await purgeOldLeaveData(fake, NOW, {
+    enabled: true,
+    retentionDays: 30,
+    env: { SUPABASE_URL: "https://db.example.test", SUPABASE_SERVICE_ROLE_KEY: "test-key" },
+  });
+
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].method, "DELETE");
+  assert.equal(sent[0].url, "https://db.example.test/storage/v1/object/leave-certificates");
+  assert.deepEqual(sent[0].body, { prefixes: [stored] });
+  assert.equal(summary.certificates, 1);
+  assert.equal(summary.leaveRequests, 1);
+  assert.deepEqual(fake.state.leave_requests, []);
+});

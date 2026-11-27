@@ -8,6 +8,7 @@ import {
   certificateStoragePath,
   selectExpiredCertificates,
 } from '../worker/src/leave-retention.js'
+import { attachmentPath } from '../worker/src/leave-attachment.js'
 
 const NOW = new Date('2026-11-03T00:00:00.000Z')
 
@@ -101,6 +102,23 @@ describe('certificateStoragePath', () => {
     expect(certificateStoragePath('/a/b.png')).toBe(null)
     expect(certificateStoragePath('leave-attachments/a/b.png')).toBe(null)
     expect(certificateStoragePath('https://cdn.example.test/cert.pdf')).toBe(null)
+    expect(certificateStoragePath('leave/../x/y/z.pdf')).toBe(null)
+  })
+
+  it('accepts the bare object path the upload stores', () => {
+    const stored = attachmentPath({
+      employeeId: 'emp-1',
+      requestCode: 'LV-0001',
+      fileName: 'cert.pdf',
+    })
+    expect(stored).toBe('leave/emp-1/LV-0001/cert.pdf')
+    expect(certificateStoragePath(stored)).toBe(stored)
+
+    const [expired] = selectExpiredCertificates(
+      [row('uploaded', 100, { medical_certificate_url: stored })],
+      { now: NOW, retentionDays: 90 }
+    )
+    expect(expired.path).toBe(stored)
   })
 
   it('drops an external link to null but still clears the column', () => {

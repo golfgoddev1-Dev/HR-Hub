@@ -9,6 +9,7 @@
 // column clear.
 
 import { createDb } from "./db.js";
+import { CERTIFICATE_BUCKET, isCertificatePath } from "./leave-attachment.js";
 import { getRequiredEnv } from "./env.js";
 import { isMissingTableError } from "./pg-errors.js";
 import { readLeaveSettings } from "./leave-settings.js";
@@ -35,8 +36,9 @@ function safeDecode(value) {
 
 /**
  * Object path inside `bucket`. Only links addressed to this bucket count:
- * `<bucket>/<object>`, a public/signed/authenticated URL of that bucket, or an
- * object key that already starts with the bucket. Anything else returns null,
+ * `<bucket>/<object>`, a public/signed/authenticated URL of that bucket, an
+ * object key that already starts with the bucket, or the bare object path the
+ * upload stores (`leave/<employee>/<code>/<file>`). Anything else returns null,
  * which the cleanup clears without deleting the source object.
  */
 export function certificateStoragePath(value, bucket = CERT_BUCKET) {
@@ -45,6 +47,8 @@ export function certificateStoragePath(value, bucket = CERT_BUCKET) {
   if (trimmed.length === 0) return null;
 
   if (/^https?:\/\//i.test(trimmed) === false) {
+    // The upload stores the bare object path; it always lives in the certificate bucket.
+    if (bucket === CERTIFICATE_BUCKET && isCertificatePath(trimmed)) return trimmed;
     return objectPathInBucket(trimmed, bucket);
   }
 
