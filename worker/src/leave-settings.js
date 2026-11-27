@@ -51,6 +51,8 @@ export function settingsFromRow(row) {
       certificateRetentionDays: DEFAULT_CERTIFICATE_RETENTION_DAYS,
       leaveRetentionEnabled: DEFAULT_LEAVE_RETENTION_ENABLED,
       leaveRetentionDays: DEFAULT_LEAVE_RETENTION_DAYS,
+      updatedAt: null,
+      updatedBy: null,
     };
   }
   const days = normalizeRetentionDays(row.certificate_retention_days);
@@ -61,6 +63,8 @@ export function settingsFromRow(row) {
     // Only a real boolean turns deletion on; anything else is off.
     leaveRetentionEnabled: row.leave_retention_enabled === true,
     leaveRetentionDays: leaveDays ?? DEFAULT_LEAVE_RETENTION_DAYS,
+    updatedAt: row.updated_at ?? null,
+    updatedBy: row.updated_by ?? null,
   };
 }
 

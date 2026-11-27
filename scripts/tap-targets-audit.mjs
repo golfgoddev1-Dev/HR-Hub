@@ -219,6 +219,16 @@ function stubFor(session) {
         })
       )
     }
+    if (path === '/api/admin/settings') {
+      return route.fulfill(
+        json({
+          ok: true,
+          leave: { configured: true, certificateRetentionDays: 90, leaveRetentionEnabled: true, leaveRetentionDays: 1825, updatedAt: '2026-11-01T03:00:00.000Z', updatedBy: { employeeCode: 'HR001', fullName: 'เจ้าหน้าที่ฝ่ายบุคคลชื่อยาวมากเป็นพิเศษเพื่อทดสอบ' } },
+          holidays: { year: '2026', count: 18, next: { date: '2026-12-05', name: 'วันคล้ายวันพระบรมราชสมภพ รัชกาลที่ 9 วันชาติ และวันพ่อแห่งชาติ' } },
+          security: { sessionIdleMinutes: 15, maxFailedPins: 5, lockMinutes: 15, sessionRetentionDays: 30, auditRetentionDays: 365 },
+        })
+      )
+    }
     if (path === '/api/admin/health') {
       return route.fulfill(
         json({
@@ -305,6 +315,7 @@ const ROUTES = [
   { path: '/admin/audit', session: ADMIN },
   { path: '/admin/health', session: ADMIN },
   { path: '/admin/sessions', session: ADMIN },
+  { path: '/admin/settings', session: ADMIN },
   { path: '/leave/hr/requests/req-1/print', session: HR, name: '/leave/hr/requests/:id/print' },
 ]
 

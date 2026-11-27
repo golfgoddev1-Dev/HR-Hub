@@ -82,7 +82,7 @@ describe('system_admin landing page', () => {
 
   it('the admin menu links only to the pages that exist', () => {
     // The two live entries come from the shared config; both have a route.
-    for (const target of ['/admin', '/admin/permissions', '/admin/audit', '/admin/health', '/admin/sessions']) {
+    for (const target of ['/admin', '/admin/permissions', '/admin/audit', '/admin/health', '/admin/sessions', '/admin/settings']) {
       expect(NAV_CONFIG).toContain(`to: '${target}'`)
       expect(ROUTER).toContain(`path: '${target}'`)
     }
@@ -90,20 +90,19 @@ describe('system_admin landing page', () => {
   })
 
   it('marks the unfinished items as disabled without a route', () => {
-    // One template link now renders every item; the two live entries and the
-    // two disabled placeholders live in the shared nav config.
+    // One template link now renders every item; the live entries and the
+    // disabled placeholder live in the shared nav config.
     expect((ADMIN_NAV.match(/<RouterLink/g) ?? []).length).toBe(1)
     expect(ADMIN_NAV).toContain('v-if="!item.disabled"')
 
     expect(ADMIN_NAV).toContain('aria-disabled="true"')
     expect(ADMIN_NAV).toContain('nav-link-disabled')
     expect(NAV_CONFIG).toContain("label: 'จัดการผู้ใช้'")
-    expect(NAV_CONFIG).toContain("label: 'ตั้งค่าระบบ'")
     expect(ADMIN_NAV).toContain('เร็วๆ นี้')
 
     // The disabled placeholders in the config carry no target of any kind.
     expect(NAV_CONFIG).toMatch(/\{ label: 'จัดการผู้ใช้', icon: 'manage_accounts', disabled: true \}/)
-    expect(NAV_CONFIG).toMatch(/\{ label: 'ตั้งค่าระบบ', icon: 'settings', disabled: true \}/)
+    expect(NAV_CONFIG).toContain("{ label: 'ตั้งค่าระบบ', to: '/admin/settings', icon: 'settings' }")
     expect(ADMIN_NAV).not.toContain('href=')
   })
 

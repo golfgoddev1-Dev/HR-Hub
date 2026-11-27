@@ -32,6 +32,8 @@ import {
   approverReactivation,
 } from "../leave-approvers.js";
 import { HEALTH_QUEUES, healthCutoffs, queueFilters } from "../admin-health.js";
+import { SECURITY_POLICY, shapeLeaveSettings } from "../admin-settings.js";
+import { readLeaveSettings } from "../leave-settings.js";
 import {
   LOCKED_LIMIT,
   SESSIONS_LIMIT,
@@ -483,6 +485,54 @@ admin.get("/health", async (c) => {
     return c.json({ ok: true, checkedAt: now.toISOString(), queues }, 200);
   } catch (error) {
     logError("admin health read failed", error);
+    return c.json({ ok: false, message: MESSAGE.saveError }, 500);
+  }
+});
+
+// --- GET /api/admin/settings -------------------------------------------------
+// Read-only. HR still edits the leave values and holidays on its own pages.
+
+admin.get("/settings", async (c) => {
+  const denied = await guard(c);
+  if (denied) return denied.response;
+
+  const today = bangkokToday();
+  const year = today.slice(0, 4);
+  try {
+    const db = createDb(c.env);
+    const [settings, holidayCount, nextHoliday] = await Promise.all([
+      readLeaveSettings(db),
+      db.count(HOLIDAYS_TABLE, {
+        filters: [
+          [HOLIDAY_DATE_COLUMN, "gte", `${year}-01-01`],
+          [HOLIDAY_DATE_COLUMN, "lte", `${year}-12-31`],
+        ],
+      }),
+      db.select(HOLIDAYS_TABLE, {
+        columns: `${HOLIDAY_DATE_COLUMN},name`,
+        filters: [[HOLIDAY_DATE_COLUMN, "gte", today]],
+        order: `${HOLIDAY_DATE_COLUMN}.asc`,
+        limit: 1,
+      }),
+    ]);
+    const people = settings.updatedBy ? await loadPeople(db, [settings.updatedBy]) : new Map();
+    const next = nextHoliday[0];
+
+    return c.json(
+      {
+        ok: true,
+        leave: shapeLeaveSettings(settings, people.get(settings.updatedBy)),
+        holidays: {
+          year,
+          count: holidayCount,
+          next: next ? { date: String(next[HOLIDAY_DATE_COLUMN]).slice(0, 10), name: next.name ?? "" } : null,
+        },
+        security: SECURITY_POLICY,
+      },
+      200
+    );
+  } catch (error) {
+    logError("admin settings read failed", error);
     return c.json({ ok: false, message: MESSAGE.saveError }, 500);
   }
 });
