@@ -8,6 +8,7 @@ import { getCached, peekCached } from '../lib/data-cache.js'
 import HrLeave3DScene from '../components/HrLeave3DScene.vue'
 import { allowsPointerTilt } from '../lib/lite-mode.js'
 import { focusPanel, restoreFocus, trapTabKey } from '../lib/dialog-focus.js'
+import { EXPORT_ERROR, collectLeaveRows, exportFileName, leaveRowsToCsv } from '../lib/leave-export.js'
 import {
   DATA_KEYS,
   PAGE_TTL_MS,
@@ -58,6 +59,12 @@ const filters = ref({
   from: '',
   to: '',
 })
+// What the list on screen was loaded with; the export uses this, so a filter
+// edited but not searched yet cannot change what the file contains.
+const appliedFilters = ref({ ...filters.value })
+const exporting = ref(false)
+const exportMessage = ref('')
+const exportError = ref('')
 
 // Pointer tilt on the rows: a 6-degree follow of the pointer, off on lite
 // devices and wherever the visitor asked for reduced motion.
@@ -171,6 +178,9 @@ async function animateStats() {
 }
 
 async function load(targetPage = page.value) {
+  appliedFilters.value = { ...filters.value }
+  exportMessage.value = ''
+  exportError.value = ''
   const query = buildQuery()
   const key = dataKey.hrRequests(query)
   loading.value = !peekCached(key)
@@ -291,6 +301,39 @@ async function resendApprovalLink(id) {
     resendError.value = 'ส่งลิงก์อนุมัติใหม่ไม่สำเร็จ กรุณาลองใหม่'
   } finally {
     resendBusy.value = false
+  }
+}
+
+async function fetchExportPage(query) {
+  const response = await fetch(`/api/leave/hr/requests?${query}`, { credentials: 'same-origin' })
+  return response.json().catch(() => null)
+}
+
+async function exportCsv() {
+  if (exporting.value) return
+  exporting.value = true
+  exportMessage.value = ''
+  exportError.value = ''
+  const used = { ...appliedFilters.value }
+  try {
+    const { rows, truncated, scanCapped: capped } = await collectLeaveRows(fetchExportPage, used)
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date())
+    const url = URL.createObjectURL(new Blob([leaveRowsToCsv(rows)], { type: 'text/csv;charset=utf-8' }))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = exportFileName(used, today)
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 0)
+    exportMessage.value =
+      truncated || capped
+        ? `ส่งออก ${rows.length} รายการแล้ว แต่ยังไม่ครบ กรุณาเลือกช่วงวันที่ให้แคบลงแล้วส่งออกอีกครั้ง`
+        : `ส่งออก ${rows.length} รายการแล้ว`
+  } catch (error) {
+    exportError.value = error?.userMessage ?? EXPORT_ERROR
+  } finally {
+    exporting.value = false
   }
 }
 
@@ -453,8 +496,22 @@ onBeforeUnmount(() => {
             <h2 id="hr-leave-results-title" class="results-title">รายการใบลา</h2>
             <p class="results-sub">{{ visibleSummary }}</p>
           </div>
-          <span class="page-chip">หน้า {{ page }}</span>
+          <div class="results-tools">
+            <button
+              type="button"
+              class="ghost-btn"
+              :disabled="exporting || loading || Boolean(errorMessage) || results.length === 0"
+              @click="exportCsv"
+            >
+              <span class="material-symbols-outlined btn-icon" aria-hidden="true">download</span>
+              {{ exporting ? 'กำลังส่งออก…' : 'ส่งออก CSV' }}
+            </button>
+            <span class="page-chip">หน้า {{ page }}</span>
+          </div>
         </header>
+
+        <p v-if="exportMessage" class="state-note" role="status">{{ exportMessage }}</p>
+        <p v-if="exportError" class="state-note error" role="alert">{{ exportError }}</p>
 
         <AppLoader v-if="loading" label="กำลังโหลด…" />
 
@@ -1086,6 +1143,14 @@ onBeforeUnmount(() => {
   margin: 3px 0 0;
   font-size: 12.5px;
   color: var(--slate-600);
+}
+
+.results-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .page-chip {
