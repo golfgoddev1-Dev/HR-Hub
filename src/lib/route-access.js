@@ -41,8 +41,8 @@ export const allowedPathsByRole = {
     '/meeting/controller/backfill/import',
     '/leave/calendar',
   ],
-  // The overview, the permission screen, the audit log and the queue health; all system_admin only.
-  system_admin: ['/admin', '/admin/permissions', '/admin/audit', '/admin/health', '/change-pin'],
+  // The overview, the permission screen, the audit log, the queue health and the sessions; all system_admin only.
+  system_admin: ['/admin', '/admin/permissions', '/admin/audit', '/admin/health', '/admin/sessions', '/change-pin'],
 }
 
 // Pages any active employee may open with any login role, so the "งานของฉัน"

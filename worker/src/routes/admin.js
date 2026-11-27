@@ -1,9 +1,11 @@
 // Admin routes, mounted at /api/admin by src/app.js.
 //
-// Four parts:
+// Five parts:
 // - /overview, a read-only summary of database counts (no rows, no audit);
 // - /audit, a read-only, paged view of audit_logs without its detail column;
 // - /health, read-only counts of the push and email send queues;
+// - /sessions, who is signed in and which accounts are PIN-locked, with a
+//   per-session sign-out and a per-account unlock (each writes one audit row);
 // - /permissions, where a system_admin searches one employee and sets the four
 //   permission flags that exist in this system: hr_admins, meeting_admins,
 //   system_admins, and the leave approver tables the HR approvers page already
@@ -30,6 +32,15 @@ import {
   approverReactivation,
 } from "../leave-approvers.js";
 import { HEALTH_QUEUES, healthCutoffs, queueFilters } from "../admin-health.js";
+import {
+  LOCKED_LIMIT,
+  SESSIONS_LIMIT,
+  activeSince,
+  personIds,
+  shapeLocked,
+  shapeSession,
+} from "../admin-sessions.js";
+import { isLockActive } from "../pin-verify.js";
 import {
   AUDIT_PAGE_SIZE,
   auditPeopleIds,
@@ -65,6 +76,11 @@ const ID_CHUNK = 100;
 const ACTION_PERMISSION_GRANTED = "permission_granted";
 const ACTION_PERMISSION_REVOKED = "permission_revoked";
 const ENTITY_PERMISSION = "permission";
+const ENTITY_EMPLOYEE = "employee";
+const ACTION_SESSION_REVOKED = "session_revoked";
+const ACTION_ACCOUNT_UNLOCKED = "account_unlocked";
+const SESSIONS_TABLE = "auth_sessions";
+const CREDENTIALS_TABLE = "employee_credentials";
 
 const MESSAGE = {
   saveError: "ระบบขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้ง",
@@ -75,6 +91,9 @@ const MESSAGE = {
   lastSystemAdmin: "ต้องมีผู้ดูแลระบบที่ใช้งานอยู่อย่างน้อยหนึ่งคน",
   inactiveGrant: "พนักงานที่ปิดใช้งานอยู่ไม่สามารถเพิ่มสิทธิ์ได้",
   noDepartment: "พนักงานคนนี้ยังไม่มีแผนก จึงยังเพิ่มเป็นผู้อนุมัติการลาไม่ได้",
+  sessionGone: "ไม่พบเซสชันนี้ หรือออกจากระบบไปแล้ว",
+  ownSession: "ไม่สามารถออกจากระบบเซสชันของตนเองจากหน้านี้ได้ กรุณาใช้ปุ่มออกจากระบบ",
+  accountGone: "ไม่พบบัญชีนี้",
 };
 
 // The flag to the table the existing feature already uses. leaveApprover is
@@ -464,6 +483,168 @@ admin.get("/health", async (c) => {
     return c.json({ ok: true, checkedAt: now.toISOString(), queues }, 200);
   } catch (error) {
     logError("admin health read failed", error);
+    return c.json({ ok: false, message: MESSAGE.saveError }, 500);
+  }
+});
+
+// --- /api/admin/sessions and /api/admin/accounts/:employeeId/unlock ----------
+
+async function loadPeople(db, ids) {
+  const people = new Map();
+  for (let index = 0; index < ids.length; index += ID_CHUNK) {
+    const found = await db.select(EMPLOYEES_TABLE, {
+      columns: "id,employee_code,full_name",
+      filters: [["id", "in", ids.slice(index, index + ID_CHUNK)]],
+    });
+    for (const row of found) people.set(row.id, row);
+  }
+  return people;
+}
+
+async function writeEmployeeAudit(db, { actorId, action, employeeId, detail }) {
+  ensureOk(
+    await db.insert(AUDIT_TABLE, {
+      actor_id: actorId,
+      action,
+      entity: ENTITY_EMPLOYEE,
+      entity_id: employeeId,
+      detail: JSON.stringify(detail),
+    })
+  );
+}
+
+admin.get("/sessions", async (c) => {
+  const denied = await guard(c);
+  if (denied) return denied.response;
+
+  const now = new Date();
+  try {
+    const db = createDb(c.env);
+    const ownId = c.get("adminSession").employeeId;
+
+    const [sessionRows, lockedRows] = await Promise.all([
+      db.select(SESSIONS_TABLE, {
+        columns: "id,employee_id,login_role,created_at,last_active_at",
+        filters: [
+          ["revoked_at", "is", null],
+          ["expires_at", "gt", now.toISOString()],
+          ["last_active_at", "gt", activeSince(now)],
+        ],
+        order: "last_active_at.desc",
+        limit: SESSIONS_LIMIT,
+      }),
+      db.select(CREDENTIALS_TABLE, {
+        columns: "employee_id,locked_until",
+        filters: [["locked_until", "gt", now.toISOString()]],
+        order: "locked_until.desc",
+        limit: LOCKED_LIMIT,
+      }),
+    ]);
+
+    const people = await loadPeople(db, [
+      ...new Set([...personIds(sessionRows, "employee_id"), ...personIds(lockedRows, "employee_id")]),
+    ]);
+
+    return c.json(
+      {
+        ok: true,
+        sessions: sessionRows.map((row) => shapeSession(row, people, ownId)),
+        locked: lockedRows.map((row) => shapeLocked(row, people)),
+        sessionsLimit: SESSIONS_LIMIT,
+      },
+      200
+    );
+  } catch (error) {
+    logError("admin sessions read failed", error);
+    return c.json({ ok: false, message: MESSAGE.saveError }, 500);
+  }
+});
+
+admin.post("/sessions/:sessionId/revoke", async (c) => {
+  const denied = await guard(c);
+  if (denied) return denied.response;
+
+  const sessionId = c.req.param("sessionId");
+  if (!isUuid(sessionId)) return invalidBody(c);
+
+  try {
+    const db = createDb(c.env);
+    const actorId = c.get("adminSession").employeeId;
+
+    const target = await db.select(SESSIONS_TABLE, {
+      columns: "id,employee_id,login_role",
+      filters: [
+        ["id", "eq", sessionId],
+        ["revoked_at", "is", null],
+      ],
+      single: true,
+    });
+    if (!target) return c.json({ ok: false, message: MESSAGE.sessionGone }, 404);
+    if (target.employee_id === actorId) return conflict(c, MESSAGE.ownSession);
+
+    const result = ensureOk(
+      await db.update(
+        SESSIONS_TABLE,
+        { revoked_at: new Date().toISOString() },
+        [
+          ["id", "eq", sessionId],
+          ["revoked_at", "is", null],
+        ],
+        { returning: true, columns: "id" }
+      )
+    );
+    if (result.data.length === 0) return c.json({ ok: false, message: MESSAGE.sessionGone }, 404);
+
+    await writeEmployeeAudit(db, {
+      actorId,
+      action: ACTION_SESSION_REVOKED,
+      employeeId: target.employee_id,
+      detail: { loginRole: target.login_role ?? null },
+    });
+    return c.json({ ok: true }, 200);
+  } catch (error) {
+    logError("admin session revoke failed", error);
+    return c.json({ ok: false, message: MESSAGE.saveError }, 500);
+  }
+});
+
+admin.post("/accounts/:employeeId/unlock", async (c) => {
+  const denied = await guard(c);
+  if (denied) return denied.response;
+
+  const employeeId = c.req.param("employeeId");
+  if (!isUuid(employeeId)) return invalidBody(c);
+
+  try {
+    const db = createDb(c.env);
+    const credential = await db.select(CREDENTIALS_TABLE, {
+      columns: "employee_id,locked_until",
+      filters: [["employee_id", "eq", employeeId]],
+      single: true,
+    });
+    if (!credential) return c.json({ ok: false, message: MESSAGE.accountGone }, 404);
+
+    // Not locked: nothing to change and nothing to audit.
+    if (!isLockActive(credential.locked_until, new Date())) {
+      return c.json({ ok: true, changed: false }, 200);
+    }
+
+    ensureOk(
+      await db.update(
+        CREDENTIALS_TABLE,
+        { failed_attempts: 0, locked_until: null, updated_at: new Date().toISOString() },
+        [["employee_id", "eq", employeeId]]
+      )
+    );
+    await writeEmployeeAudit(db, {
+      actorId: c.get("adminSession").employeeId,
+      action: ACTION_ACCOUNT_UNLOCKED,
+      employeeId,
+      detail: {},
+    });
+    return c.json({ ok: true, changed: true }, 200);
+  } catch (error) {
+    logError("admin account unlock failed", error);
     return c.json({ ok: false, message: MESSAGE.saveError }, 500);
   }
 });

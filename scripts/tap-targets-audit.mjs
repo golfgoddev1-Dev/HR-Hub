@@ -206,6 +206,19 @@ function stubFor(session) {
     if (path === '/api/leave/hr/catalog' || path === '/api/hr/catalog') {
       return route.fulfill(json({ ok: true, departments: [{ id: 'd1', name: 'การเงิน' }], leaveTypes: [{ id: 't1', name: 'ลาป่วย' }] }))
     }
+    if (path === '/api/admin/sessions') {
+      return route.fulfill(
+        json({
+          ok: true,
+          sessionsLimit: 100,
+          locked: [{ employeeId: 'e9', employeeCode: 'EMP009', fullName: 'วิภา ใจเย็นมากเป็นพิเศษยาวมากเพื่อทดสอบ', lockedUntil: '2026-11-27T05:15:00.000Z' }],
+          sessions: [
+            { id: 's1', employeeId: 'e0', employeeCode: 'ADM001', fullName: 'ผู้ดูแลระบบ', role: 'system_admin', createdAt: '2026-11-27T01:00:00.000Z', lastActiveAt: '2026-11-27T04:59:00.000Z', isOwn: true },
+            { id: 's2', employeeId: 'e1', employeeCode: 'EMP001', fullName: 'สมชาย ใจดี', role: 'employee', createdAt: '2026-11-27T02:00:00.000Z', lastActiveAt: '2026-11-27T04:50:00.000Z', isOwn: false },
+          ],
+        })
+      )
+    }
     if (path === '/api/admin/health') {
       return route.fulfill(
         json({
@@ -291,6 +304,7 @@ const ROUTES = [
   { path: '/admin/permissions', session: ADMIN },
   { path: '/admin/audit', session: ADMIN },
   { path: '/admin/health', session: ADMIN },
+  { path: '/admin/sessions', session: ADMIN },
   { path: '/leave/hr/requests/req-1/print', session: HR, name: '/leave/hr/requests/:id/print' },
 ]
 

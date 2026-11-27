@@ -4,7 +4,7 @@ import { sha256Hex } from "./crypto.js";
 import { createDb } from "./db.js";
 
 const SESSION_HOURS = 12;
-const SESSION_IDLE_MS = 15 * 60 * 1000;
+export const SESSION_IDLE_MS = 15 * 60 * 1000;
 // last_active_at only needs to be fresh to well inside the idle window, so a
 // write is skipped when the stored value is younger than this. It saves one
 // database write per request on a busy page.

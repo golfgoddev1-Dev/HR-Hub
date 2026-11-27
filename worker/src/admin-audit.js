@@ -10,6 +10,8 @@ import { PERMISSION_NAMES } from "./admin-permissions.js";
 
 export const AUDIT_PAGE_SIZE = 50;
 export const PERMISSION_ENTITY = "permission";
+// Rows whose entity_id is the employee the action was done to.
+const TARGET_ACTIONS = new Set(["session_revoked", "account_unlocked"]);
 
 const ACTION_PATTERN = /^[a-z][a-z0-9_]{0,63}$/;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -79,6 +81,10 @@ function person(employee) {
   return { employeeCode: employee.employee_code ?? null, fullName: employee.full_name ?? null };
 }
 
+function hasTarget(row) {
+  return row.entity === PERMISSION_ENTITY || TARGET_ACTIONS.has(row.action);
+}
+
 /** One audit row as the page sees it. `people` maps employee id to its row. */
 export function shapeAuditRow(row, people) {
   const isPermission = row.entity === PERMISSION_ENTITY;
@@ -88,7 +94,7 @@ export function shapeAuditRow(row, people) {
     action: row.action,
     entity: row.entity,
     actor: person(people.get(row.actor_id)),
-    target: isPermission ? person(people.get(row.entity_id)) : null,
+    target: hasTarget(row) ? person(people.get(row.entity_id)) : null,
     permission: isPermission ? permissionOf(row.detail) : null,
   };
 }
@@ -98,7 +104,7 @@ export function auditPeopleIds(rows) {
   const ids = new Set();
   for (const row of rows) {
     if (row.actor_id) ids.add(row.actor_id);
-    if (row.entity === PERMISSION_ENTITY && row.entity_id) ids.add(row.entity_id);
+    if (hasTarget(row) && row.entity_id) ids.add(row.entity_id);
   }
   return [...ids];
 }

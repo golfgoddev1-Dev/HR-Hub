@@ -228,6 +228,11 @@ export const router = createRouter({
           component: page(() => import('./pages/AdminHealthPage.vue')),
           meta: { requiresAuth: true, role: 'system_admin' },
         },
+        {
+          path: '/admin/sessions',
+          component: page(() => import('./pages/AdminSessionsPage.vue')),
+          meta: { requiresAuth: true, role: 'system_admin' },
+        },
       ],
     },
 

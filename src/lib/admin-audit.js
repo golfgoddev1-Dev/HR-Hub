@@ -25,6 +25,8 @@ export const AUDIT_ACTION_LABELS = {
   pin_reset_code_issued: 'ออกรหัสรีเซ็ต PIN',
   pin_set: 'ตั้ง PIN',
   pin_changed: 'เปลี่ยน PIN',
+  session_revoked: 'ออกจากระบบให้ผู้ใช้',
+  account_unlocked: 'ปลดล็อกบัญชี',
   logout: 'ออกจากระบบ',
   employees_imported: 'นำเข้าข้อมูลพนักงาน',
   employee_leave_quotas_updated: 'แก้โควตาวันลา',

@@ -176,3 +176,18 @@ test("audit refuses a malformed filter instead of ignoring it", async (t) => {
 test("parseAuditQuery returns no filters for an empty query", () => {
   assert.deepEqual(parseAuditQuery(new URLSearchParams("")), []);
 });
+
+test("audit names the employee a session sign-out or an unlock was done to", async (t) => {
+  const fake = await createFake([
+    row(1, { action: "session_revoked", entity: "employee", entity_id: TARGET_ID, detail: { loginRole: "employee" } }),
+    row(2, { action: "account_unlocked", entity: "employee", entity_id: TARGET_ID, detail: {} }),
+    row(3, { action: "employee_profile_updated", entity: "employee", entity_id: TARGET_ID }),
+  ]);
+  t.after(() => fake.restore());
+
+  const body = await (await get("/api/admin/audit")).json();
+  const byAction = Object.fromEntries(body.items.map((item) => [item.action, item]));
+  assert.equal(byAction.session_revoked.target.employeeCode, "AB001");
+  assert.equal(byAction.account_unlocked.target.employeeCode, "AB001");
+  assert.equal(byAction.employee_profile_updated.target, null);
+});
